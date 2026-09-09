@@ -10,6 +10,9 @@ export interface VertexMetadata {
 }
 
 export interface VertexAttributes {
+    /** Transient appearance within one graph result; never part of a style preset. */
+    viewHidden?: boolean;
+    viewDimmed?: boolean;
     label: string;
     color: string;
     borderColor: string;

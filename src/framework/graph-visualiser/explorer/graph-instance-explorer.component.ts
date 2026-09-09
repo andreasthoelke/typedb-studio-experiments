@@ -276,7 +276,27 @@ export class GraphInstanceExplorerComponent implements OnChanges {
         const kind = this.type.kind === "relationType" ? "relation"
             : this.type.kind === "attributeType" ? "attribute" : "entity";
         const key = this.visualiser?.instanceNodeKey(kind, this.type.label, this.instanceIID);
-        if (key) this.visualiser?.revealNodes([key]);
+        if (key) {
+            this.visualiser?.setNodeAppearance(key, "viewHidden", false);
+            this.visualiser?.revealNodes([key]);
+        }
+    }
+
+    get selfNodeKey(): string | null {
+        if (!this.type || !this.instanceIID) return null;
+        const kind = this.type.kind === "relationType" ? "relation"
+            : this.type.kind === "attributeType" ? "attribute" : "entity";
+        return this.visualiser?.instanceNodeKey(kind, this.type.label, this.instanceIID) ?? null;
+    }
+
+    appearanceEnabled(flag: "viewHidden" | "viewDimmed"): boolean {
+        const key = this.selfNodeKey;
+        return !!(key && this.visualiser?.graph.getNodeAttribute(key, flag));
+    }
+
+    toggleAppearance(flag: "viewHidden" | "viewDimmed"): void {
+        const key = this.selfNodeKey;
+        if (key) this.visualiser?.setNodeAppearance(key, flag, !this.appearanceEnabled(flag));
     }
 
     addLink(_link: LinkData) {

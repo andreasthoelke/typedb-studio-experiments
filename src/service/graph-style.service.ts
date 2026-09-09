@@ -4,6 +4,7 @@ import chroma from "chroma-js";
 import { VertexKind } from "@typedb/graph-utils";
 import { GraphStyles, defaultEdgeLabelColors, defaultQueryStyleParams, calAestheticsKindStyles } from "../framework/graph-visualiser/engine/styles";
 import { ThemeService } from "./theme.service";
+import { exportGraphPresets, mergeGraphPresets, parseGraphPresets } from "../framework/util/graph-presets";
 
 export interface NodeStyle {
     color: string;
@@ -719,6 +720,19 @@ export class GraphStyleService implements OnDestroy {
         return this._customPresets;
     }
 
+    exportPresets(name?: string): string {
+        return exportGraphPresets(name ? this._customPresets.filter(p => p.name === name) : this._customPresets);
+    }
+
+    importPresets(text: string): number {
+        const incoming = parseGraphPresets(text);
+        const merged = mergeGraphPresets(this._customPresets, incoming);
+        // Write first so a storage failure leaves the in-memory collection unchanged too.
+        localStorage.setItem(CUSTOM_PRESETS_KEY, JSON.stringify(merged));
+        this._customPresets = merged;
+        return incoming.length;
+    }
+
     saveCustomPreset(name: string, description: string): void {
         const preset: CustomPreset = {
             name,
@@ -761,6 +775,7 @@ export class GraphStyleService implements OnDestroy {
         this._degreeScaling = preset.degreeScaling;
         this._edgesCurvedByDefault = preset.edgesCurvedByDefault ?? false;
         if (preset.fillOpacity != null) this._fillOpacity = preset.fillOpacity;
+        this._background = { ...preset.background };
         this._activePreset = `custom:${name}`;
         this.save();
         this.styles$.next();

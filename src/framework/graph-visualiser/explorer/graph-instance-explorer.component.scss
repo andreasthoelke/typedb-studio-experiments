@@ -7,6 +7,14 @@
 @use "colors";
 @use "shapes";
 
+.instance-view-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px;
+    margin-top: 8px;
+}
+
 // Override the absolute positioning that the data-side inspector applies via
 // :host. Inside the side panel we live in a flex column and need to honor the
 // parent's allocated height.
@@ -94,9 +102,6 @@
 // edge regardless of how short the type label is — the cell reserves a
 // right-padding track for it (see `.attr-label` in the shared SCSS).
 // "Reveal in graph" for the inspected instance itself, under its IID.
-.reveal-self {
-    margin-top: 8px;
-}
 
 // In role-player details, stack the IID under the type (rather than beside it)
 // so the link-info column stays narrow and leaves more width for the attribute
@@ -243,4 +248,3 @@
         padding: 4px 6px;
     }
 }
-

@@ -63,8 +63,8 @@ fullscreen graph. It provides:
 - **Seed variable**: blank chooses the first eligible directly typed entity or
   relation variable, such as `$item`. Set it explicitly for queries with several
   possible starting points.
-- **Relation types**: a comma-separated allowlist for entity-neighbour expansion.
-  Blank includes all relation types. These labels are checked against the live
+- **Relation types**: a multiple-choice list from the current database schema,
+  used as an allowlist for entity-neighbour expansion. No selection includes all relation types. These labels are checked against the live
   schema. Selected relations still include their role players.
 - **Apply to latest Neovim query**: saves the options locally and regenerates the
   query from the original received source. The resulting query is visible and
@@ -88,6 +88,29 @@ renderable instances. The pure preparation function in
 The default total answer limit is 1000, independently of any limit already in the
 query. Preserving an existing limit before the added context bounds the seed
 results; the overall answer limit can still truncate a large neighbourhood.
+
+## Exploring and styling a result
+
+Use Explorer's **here** mode to inspect an individual node and add its actual
+relations, links, or attributes. These actions change the graph result without
+rewriting the query. The Neovim menu controls the initial automatic expansion;
+Explorer is the more direct way to explore further.
+
+Beside **Reveal in graph**, **Hide / Show** hides the selected node and its incident
+edges, and **Dim / Undim** fades them. Hidden nodes remain in the result, including
+its counts and layout; they are not deleted from TypeDB. **Restore hidden / dimmed
+nodes** in the panel footer clears these view overrides. Reveal also unhides the
+inspected node. Overrides survive docking and switching run tabs, but a new query
+result starts fresh. They are separate from saved styling presets.
+
+The **Themes** panel imports and exports custom presets as JSON. Importing keeps
+existing presets and adds a suffix to duplicate names; choose Apply to activate
+an imported preset. Saved backgrounds, colours, shapes, labels, and edge options
+travel together. Each saved preset's menu also exports that preset individually.
+
+Two presets inspired by the Neovim TypeQL palette are available in
+[contrib/graph-presets](../contrib/graph-presets/README.md): **Munsell Ink** and
+**Munsell Paper**. See that guide for import instructions and the colour choices.
 
 ## Query lifecycle
 

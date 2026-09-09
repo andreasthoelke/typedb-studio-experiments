@@ -204,6 +204,7 @@ export class GraphVisualiser {
         const fadeSoftForPreview = buildFadeSoft(0.3);
 
         this.sigma.setSetting("nodeReducer", (node, data) => {
+            if (data["viewHidden"]) return { ...data, hidden: true, label: "" };
             const state = this.interactionHandler.state;
             // The node being dragged is lifted above all others so its body,
             // label, and hover overlay stack as one consistent group on top.
@@ -251,6 +252,7 @@ export class GraphVisualiser {
             // Lift the hovered node above its peers so body + label come to the
             // front together (a faded node keeps its blanked label, so there's
             // nothing to lift — leave it at the normal level).
+            if (data["viewDimmed"]) { shouldFade = true; isPreviewFade = false; }
             if (!shouldFade) return { ...data, zIndex: node === state.hoveredNode ? 2 : 1 };
             const res = { ...data };
             if (isPreviewFade) {
@@ -268,6 +270,8 @@ export class GraphVisualiser {
         });
 
         this.sigma.setSetting("edgeReducer", (edge, data) => {
+            const endpoints = this.graph.extremities(edge).map(node => this.graph.getNodeAttributes(node));
+            if (endpoints.some(node => node["viewHidden"])) return { ...data, hidden: true, label: "" };
             const state = this.interactionHandler.state;
             let shouldFade = false;
             let isPreviewFade = false;
@@ -332,6 +336,7 @@ export class GraphVisualiser {
                 }
             }
 
+            if (endpoints.some(node => node["viewDimmed"])) { shouldFade = true; isPreviewFade = false; }
             if (!shouldFade) return { ...data, zIndex: 1 };
             const res = { ...data };
             res["color"] = (isPreviewFade ? fadeForPreview : fade)(data["color"] ?? "#ccc");
@@ -907,6 +912,25 @@ export class GraphVisualiser {
      *  attribute by type+value), or null if it isn't in the graph. */
     instanceNodeKey(kind: "entity" | "relation" | "attribute", typeLabel: string, instanceId: string): string | null {
         return this.findInstanceNode(kind, typeLabel, instanceId);
+    }
+
+    /** View-only flags live with the result graph, surviving docking and tab switches. */
+    setNodeAppearance(node: string, flag: "viewHidden" | "viewDimmed", enabled: boolean): void {
+        if (!this.graph.hasNode(node)) return;
+        this.graph.setNodeAttribute(node, flag, enabled);
+        this.sigma.refresh();
+    }
+
+    get hasAppearanceOverrides(): boolean {
+        return this.graph.someNode((_, attrs) => !!(attrs["viewHidden"] || attrs["viewDimmed"]));
+    }
+
+    restoreNodeAppearance(): void {
+        this.graph.forEachNode((node, attrs) => {
+            if (attrs["viewHidden"]) this.graph.removeNodeAttribute(node, "viewHidden");
+            if (attrs["viewDimmed"]) this.graph.removeNodeAttribute(node, "viewDimmed");
+        });
+        this.sigma.refresh();
     }
 
     /** Resolve a graph node by entity/relation IID without needing its kind —

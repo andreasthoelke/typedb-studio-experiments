@@ -45,10 +45,20 @@
               </span>
               <span class="instance-iid">{{ instanceIID }}</span>
             </div>
-            <button class="open-details-button reveal-self" (click)="revealSelf()">
-              Reveal in graph
-              <i class="fa-light fa-arrow-right"></i>
-            </button>
+            <div class="instance-view-actions">
+              <button class="open-details-button reveal-self" (click)="revealSelf()" [disabled]="!selfNodeKey">
+                Reveal in graph
+                <i class="fa-light fa-arrow-right"></i>
+              </button>
+              <button class="open-details-button" (click)="toggleAppearance('viewHidden')" [disabled]="!selfNodeKey"
+                      matTooltip="Hide this node and its edges in this result. The query and database are unchanged.">
+                {{ appearanceEnabled('viewHidden') ? 'Show' : 'Hide' }}
+              </button>
+              <button class="open-details-button" (click)="toggleAppearance('viewDimmed')" [disabled]="!selfNodeKey"
+                      [attr.aria-pressed]="appearanceEnabled('viewDimmed')">
+                {{ appearanceEnabled('viewDimmed') ? 'Undim' : 'Dim' }}
+              </button>
+            </div>
           </div>
 
           <!-- Links Section (only for relations) -->

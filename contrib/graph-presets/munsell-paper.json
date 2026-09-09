@@ -1,0 +1,84 @@
+{
+  "format": "typedb-studio-graph-presets",
+  "version": 1,
+  "presets": [
+    {
+      "name": "Munsell Paper",
+      "description": "Muted rose entities, teal relations and ochre attributes. Inspired by your Munsell TypeQL highlighting.",
+      "kindStyles": {
+        "entity": {
+          "color": "#AD6068",
+          "shape": "rounded-rect",
+          "width": 64,
+          "height": 28
+        },
+        "entityType": {
+          "color": "#AD6068",
+          "shape": "rounded-rect",
+          "width": 64,
+          "height": 28
+        },
+        "relation": {
+          "color": "#359184",
+          "shape": "hexagon",
+          "width": 46,
+          "height": 28
+        },
+        "relationType": {
+          "color": "#359184",
+          "shape": "hexagon",
+          "width": 46,
+          "height": 28
+        },
+        "attribute": {
+          "color": "#967C40",
+          "shape": "diamond",
+          "width": 38,
+          "height": 30
+        },
+        "attributeType": {
+          "color": "#967C40",
+          "shape": "diamond",
+          "width": 38,
+          "height": 30
+        },
+        "roleType": {
+          "color": "#A57588",
+          "shape": "ellipse",
+          "width": 42,
+          "height": 24
+        },
+        "value": {
+          "color": "#967C40",
+          "shape": "ellipse",
+          "width": 46,
+          "height": 24
+        },
+        "unavailable": {
+          "color": "#8C9DA4",
+          "shape": "ellipse",
+          "width": 32,
+          "height": 24
+        }
+      },
+      "typeStyles": {},
+      "edgeLabelColors": {},
+      "defaultEdgeColor": "#8C9DA4",
+      "colorEdgesByConstraint": false,
+      "labelColorMode": "auto",
+      "labelsVisible": true,
+      "edgeLabelsVisible": false,
+      "showHoverLabel": true,
+      "degreeScaling": false,
+      "edgesCurvedByDefault": false,
+      "fillOpacity": 0.1,
+      "background": {
+        "type": "solid",
+        "color1": "#E3E6E9",
+        "color2": "#E3E6E9",
+        "gradientAngle": 180,
+        "themed": false
+      }
+    }
+  ]
+}

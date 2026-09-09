@@ -11,6 +11,32 @@ import { GraphVisualiser } from "../engine";
     imports: [FormsModule, MatMenuModule],
 })
 export class ThemesTabComponent {
+    importMessage = "";
+    importError = false;
+
+    async importPresets(event: Event): Promise<void> {
+        const input = event.target as HTMLInputElement;
+        const file = input.files?.[0];
+        if (!file) return;
+        try {
+            if (file.size > 1024 * 1024) throw new Error("Preset file exceeds 1 MiB.");
+            const count = this.styleService.importPresets(await file.text());
+            this.importError = false;
+            this.importMessage = `Imported ${count} preset${count === 1 ? '' : 's'}. Choose Apply to use one.`;
+        } catch (error) {
+            this.importError = true;
+            this.importMessage = error instanceof Error ? error.message : "Could not import presets.";
+        } finally { input.value = ""; }
+    }
+
+    exportPresets(name?: string): void {
+        const url = URL.createObjectURL(new Blob([this.styleService.exportPresets(name)], { type: "application/json" }));
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = `${name?.replace(/[^a-z0-9_-]+/gi, '-') || 'studio-graph-presets'}.json`;
+        link.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
 
     @Input() visualiser: GraphVisualiser | null = null;
 
@@ -92,6 +118,7 @@ export class ThemesTabComponent {
         this.styleService.applyCustomPreset(name);
         this.visualiser?.restoreLabels();
         this.visualiser?.applyEdgeStyleUpdate();
+        this.visualiser?.applyEdgeCurvature();
         if (this.appliedTimer) clearTimeout(this.appliedTimer);
         this.appliedPreset = `custom:${name}`;
         this.appliedTimer = setTimeout(() => { this.appliedPreset = null; }, 2000);

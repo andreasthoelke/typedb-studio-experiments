@@ -6,6 +6,8 @@ import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatInputModule } from "@angular/material/input";
 import { MatMenuModule } from "@angular/material/menu";
 import { MatTooltipModule } from "@angular/material/tooltip";
+import { MatSelectModule } from "@angular/material/select";
+import { SchemaState } from "../../service/schema-state.service";
 import { NvimQueryBridge } from "../../service/nvim-query-bridge.service";
 
 @Component({
@@ -23,8 +25,11 @@ import { NvimQueryBridge } from "../../service/nvim-query-bridge.service";
             <input matInput [(ngModel)]="bridge.seedVariable" placeholder="$item">
           </mat-form-field>
           <mat-form-field>
-            <mat-label>Relation types (comma-separated)</mat-label>
-            <input matInput [(ngModel)]="bridge.relationTypes" placeholder="All relation types">
+            <mat-label>Relation types</mat-label>
+            <mat-select multiple [ngModel]="selectedRelations" (ngModelChange)="selectRelations($event)" placeholder="All relation types">
+              @for (label of availableRelations; track label) { <mat-option [value]="label">{{ label }}</mat-option> }
+            </mat-select>
+            <mat-hint>None selected includes all types.</mat-hint>
           </mat-form-field>
           <p>{{ bridge.note }}</p>
           <p>One relation hop. Selected relations include their role players. Existing row limits are preserved.</p>
@@ -34,11 +39,31 @@ import { NvimQueryBridge } from "../../service/nvim-query-bridge.service";
     `,
     styleUrls: ["./nvim-query-controls.component.scss"],
     imports: [FormsModule, MatButtonModule, MatCheckboxModule, MatFormFieldModule,
-        MatInputModule, MatMenuModule, MatTooltipModule],
+        MatInputModule, MatMenuModule, MatTooltipModule, MatSelectModule],
 })
 export class NvimQueryControlsComponent {
     @HostBinding("class.floating") @Input() floating = false;
     bridge = inject(NvimQueryBridge);
+    private schema = inject(SchemaState);
+    private relationText?: string;
+    private relationSelection: string[] = [];
+
+    get availableRelations(): string[] {
+        return Object.keys(this.schema.value$.value?.relations ?? {}).sort();
+    }
+
+    get selectedRelations(): string[] {
+        // NgModel schedules updates when array identity changes; retain it across view checks.
+        if (this.relationText !== this.bridge.relationTypes) {
+            this.relationText = this.bridge.relationTypes;
+            this.relationSelection = this.relationText.split(",").map(label => label.trim()).filter(Boolean);
+        }
+        return this.relationSelection;
+    }
+
+    selectRelations(labels: string[]): void {
+        this.bridge.relationTypes = labels.join(", ");
+    }
 
     onSettingsKeydown(event: KeyboardEvent): void {
         // Let Escape close the menu, while text fields keep their own arrow keys.
