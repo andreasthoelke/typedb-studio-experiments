@@ -11,7 +11,11 @@
     "watch": "ng build --watch --configuration development",
     "tauri": "tauri",
     "tauri:dev": "tauri dev",
-    "set-version": "node scripts/set-version.js"
+    "set-version": "node scripts/set-version.js",
+    "viewer": "node scripts/viewer-server.mjs",
+    "viewer:dev": "node scripts/viewer-server.mjs --dev",
+    "build:viewer": "ng build --configuration local",
+    "test:viewer": "node --test scripts/viewer-server.test.mjs"
   },
   "private": true,
   "dependencies": {

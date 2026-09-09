@@ -46,6 +46,8 @@ TypeDB Studio will automatically select a *default* database if there are no oth
 
 ## Build from source
 
+For a canvas-only graph viewer driven by Neovim, see the [local graph viewer guide](docs/local-graph-viewer.md).
+
 TypeDB Studio is a Web application powered by [Angular](https://angular.dev), with desktop application support provided by [Tauri](https://tauri.app).
 
 There is a wide variety of Web toolchains; the process below is one way to compile TypeDB Studio from source.

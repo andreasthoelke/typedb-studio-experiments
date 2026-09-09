@@ -526,6 +526,13 @@ export class DriverState {
         return false;
     }
 
+    /** Independent read for embedded viewers; never reuses or commits a Studio transaction. */
+    queryReadOnly(query: string, databaseName: string, queryOptions?: QueryOptions): Observable<ApiResponse<QueryResponse>> {
+        return defer(() => this.requireDriver().oneShotQuery(
+            query, false, databaseName, "read", this.transactionOptions("read"), queryOptions,
+        ));
+    }
+
     /**
      * Execute a query in auto mode with automatic transaction type detection.
      * Uses oneShotQuery for better performance (single HTTP call handles transaction lifecycle).

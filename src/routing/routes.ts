@@ -50,6 +50,7 @@ const connectGuard: CanActivateFn = (route) => {
 }
 
 export const routes: Routes = [
+    { path: "viewer", loadComponent: () => import("../module/viewer/viewer-page.component").then(m => m.ViewerPageComponent), title: "Graph viewer" },
     { path: "", canActivate: [homeGuard], children: [] },
     { path: "welcome", component: HomeComponent, title: "Welcome", data: { domain: "overview" } },
     { path: "connect", component: ConnectionCreatorComponent, canActivate: [connectGuard], title: "Connect" },

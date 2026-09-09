@@ -154,7 +154,7 @@ export class ConnectionCreatorComponent {
     constructor(
         private formBuilder: FormBuilder, private appData: AppData,
         private driver: DriverState, private snackbar: SnackbarService, private location: Location,
-        private router: Router, route: ActivatedRoute, private dialog: MatDialog,
+        private router: Router, private route: ActivatedRoute, private dialog: MatDialog,
     ) {
         (window as any).connectionCreator = this;
 
@@ -281,7 +281,8 @@ export class ConnectionCreatorComponent {
                     this.appData.recentAddresses.push(submittedAddress);
                 }
                 this.snackbar.success(`Connected to ${config.name}`);
-                this.router.navigate([this.appData.viewState.lastUsedToolRoute()]).then((navigated) => {
+                this.router.navigate([this.route.snapshot.queryParamMap.get("returnTo") === "/viewer"
+                    ? "/viewer" : this.appData.viewState.lastUsedToolRoute()]).then((navigated) => {
                     if (!navigated) throw new Error(INTERNAL_ERROR);
                 });
             },

@@ -35,6 +35,8 @@ export class GraphCanvasComponent implements AfterViewInit, AfterViewChecked, On
     @Input() graphPercent = 75;
     @Input() stylesPanePercent = 25;
     @Input() maximised = false;
+    /** Embed the canvas without Studio's database exploration panels. */
+    @Input() canvasOnly = false;
 
     /** Side-panel size when docked bottom. Kept separate from
      *  `stylesPanePercent` (the right-dock width) because a width-tuned value

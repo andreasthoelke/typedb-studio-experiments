@@ -4,18 +4,22 @@
      renderer (preserving graph + camera). -->
 <div class="graph-canvas-container"
      [class.maximised]="maximised"
-     [class.dock-bottom]="dock === 'bottom'">
-  @if (isVertical) {
+     [class.dock-bottom]="!canvasOnly && dock === 'bottom'">
+  @if (canvasOnly) {
     <ng-container *ngTemplateOutlet="canvasPane"></ng-container>
-    <ng-container *ngTemplateOutlet="sidePanel"></ng-container>
   } @else {
-    <ng-container *ngTemplateOutlet="canvasPane"></ng-container>
-    <ng-container *ngTemplateOutlet="sidePanel"></ng-container>
+    @if (isVertical) {
+      <ng-container *ngTemplateOutlet="canvasPane"></ng-container>
+      <ng-container *ngTemplateOutlet="sidePanel"></ng-container>
+    } @else {
+      <ng-container *ngTemplateOutlet="canvasPane"></ng-container>
+      <ng-container *ngTemplateOutlet="sidePanel"></ng-container>
+    }
   }
 </div>
 
 <ng-template #canvasPane>
-  <div class="graph-split-left" resizable [percent]="graphPercent" (percentChange)="graphPercentChange.emit($event)">
+  <div class="graph-split-left" resizable [percent]="canvasOnly ? 100 : graphPercent" (percentChange)="graphPercentChange.emit($event)">
     <div class="canvas-element" #canvasEl></div>
 
     <div class="graph-search-bar">
@@ -45,16 +49,20 @@
       </mat-menu>
     }
 
-    <button class="graph-maximise-button" (click)="toggleMaximised()"
-            [matTooltip]="maximised ? 'Exit fullscreen' : 'Fullscreen'" [matTooltipShowDelay]="500">
-      <i class="fa-light" [class.fa-expand]="!maximised" [class.fa-compress]="maximised"></i>
-    </button>
+    @if (!canvasOnly) {
+      <button class="graph-maximise-button" (click)="toggleMaximised()"
+              [matTooltip]="maximised ? 'Exit fullscreen' : 'Fullscreen'" [matTooltipShowDelay]="500">
+        <i class="fa-light" [class.fa-expand]="!maximised" [class.fa-compress]="maximised"></i>
+      </button>
+    }
 
     <ts-graph-controls [visualiser]="visualiser" [queryRunning]="queryRunning"
                        [hasChanges]="hasChanges"
                        (resetChangesClicked)="resetChangesClicked.emit()"/>
 
-    <ts-graph-context-menu [visualiser]="visualiser" [run]="run"/>
+    @if (!canvasOnly) {
+      <ts-graph-context-menu [visualiser]="visualiser" [run]="run"/>
+    }
 
     @switch (status) {
       @case ("error") {
