@@ -44,7 +44,7 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
         try {
             const url = new URL(request.url, 'http://127.0.0.1');
             if (url.pathname === '/api/viewer/health' && request.method === 'GET') {
-                return json(response, 200, { viewers: clients.size, latestRequestId: latest?.id ?? null });
+                return json(response, 200, { service: 'typedb-studio-bridge', viewers: clients.size, latestRequestId: latest?.id ?? null });
             }
             if (url.pathname === '/api/viewer/events' && request.method === 'GET') {
                 response.writeHead(200, {
@@ -86,6 +86,10 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                 return json(response, 202, { id: latest.id, viewers: clients.size });
             }
             if (url.pathname.startsWith('/api/viewer/')) return json(response, 404, { error: 'Unknown viewer endpoint or method.' });
+            if (url.pathname === '/viewer') {
+                response.writeHead(302, { Location: '/query?nvim=1' });
+                return response.end();
+            }
 
             if (devPort) {
                 const upstream = httpRequest({ hostname: '127.0.0.1', port: devPort, path: request.url,
@@ -93,7 +97,13 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                     response.writeHead(result.statusCode, result.headers);
                     result.pipe(response);
                 });
-                upstream.on('error', () => json(response, 503, { error: 'Angular is starting. Reload this page in a moment.' }));
+                upstream.on('error', () => {
+                    if (response.headersSent || response.destroyed) return;
+                    if (request.headers.accept?.includes('text/html')) {
+                        response.writeHead(503, { 'Content-Type': 'text/html', Refresh: '1' });
+                        response.end('<!doctype html><title>Starting Studio</title><p>TypeDB Studio is starting…</p>');
+                    } else json(response, 503, { error: 'Angular is starting. Retry in a moment.' });
+                });
                 response.on('close', () => upstream.destroy());
                 request.pipe(upstream);
                 return;
@@ -161,8 +171,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
     };
     server.on('error', error => { console.error(error.message); child?.kill(); process.exitCode = 1; });
     server.listen(port, '127.0.0.1', () => {
-        console.log(`Graph viewer: http://127.0.0.1:${port}/viewer`);
-        console.log(`Submit queries: POST http://127.0.0.1:${port}/api/viewer/query`);
+        console.log(`TypeDB Studio: http://localhost:${port}/query?nvim=1`);
+        console.log(`Submit queries: POST http://localhost:${port}/api/viewer/query`);
         if (dev) {
             child = spawn(process.execPath, [resolve(root, 'node_modules/@angular/cli/bin/ng.js'),
                 'serve', '--configuration', 'local', '--host', '127.0.0.1', '--port', String(devPort), '--ssl=false'],

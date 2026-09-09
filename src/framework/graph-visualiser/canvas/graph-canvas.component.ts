@@ -4,7 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { Component, ElementRef, EventEmitter, HostBinding, Input, OnDestroy, Output, ViewChild, AfterViewInit, AfterViewChecked } from "@angular/core";
+import { Component, ElementRef, EventEmitter, HostBinding, Input, OnChanges, OnDestroy, Output, ViewChild, AfterViewInit, AfterViewChecked } from "@angular/core";
 import { NgTemplateOutlet } from "@angular/common";
 import { MatTooltipModule } from "@angular/material/tooltip";
 import { MatMenuModule } from "@angular/material/menu";
@@ -29,14 +29,12 @@ export type GraphCanvasStatusAction = "viewLog" | "openTransaction" | "switchToA
     styleUrls: ["graph-canvas.component.scss"],
     imports: [NgTemplateOutlet, MatTooltipModule, MatMenuModule, MatButtonModule, ResizableDirective, GraphControlsComponent, GraphSidePanelComponent, GraphContextMenuComponent],
 })
-export class GraphCanvasComponent implements AfterViewInit, AfterViewChecked, OnDestroy {
+export class GraphCanvasComponent implements OnChanges, AfterViewInit, AfterViewChecked, OnDestroy {
     @Input() visualiser: GraphVisualiser | null = null;
     @Input() status: GraphCanvasStatus = "ok";
     @Input() graphPercent = 75;
     @Input() stylesPanePercent = 25;
     @Input() maximised = false;
-    /** Embed the canvas without Studio's database exploration panels. */
-    @Input() canvasOnly = false;
 
     /** Side-panel size when docked bottom. Kept separate from
      *  `stylesPanePercent` (the right-dock width) because a width-tuned value
@@ -45,6 +43,8 @@ export class GraphCanvasComponent implements AfterViewInit, AfterViewChecked, On
     /** The run that owns this canvas's graph. Passed through to the side panel
      *  so the Inspector knows where to push instances/attributes/links. */
     @Input() run: RunOutputState | null = null;
+    /** Query pages keep a shared canvas reference for future runs as well. */
+    @Input() parentManagesCanvas = false;
     /** True if the parent surface tracks a "Reset changes" capability and the
      *  graph currently has something to reset (e.g. a graph-view tab whose
      *  contents have diverged from the initial query). Drives the
@@ -69,8 +69,8 @@ export class GraphCanvasComponent implements AfterViewInit, AfterViewChecked, On
     /** Fires when the `#canvasEl` host node is rebuilt (dock axis flip rebuilds
      *  the resizable subtree). Surfaces are responsible for re-homing their
      *  sigma renderer onto the new element. The internal `[run]`-driven path in
-     *  `ngAfterViewChecked` already handles this for the graph page; the query
-     *  page (which doesn't pass `[run]`) listens to this instead. Emits the new
+     *  `ngAfterViewChecked` already handles this for the graph page; surfaces
+     *  with `parentManagesCanvas` listen to this instead. Emits the new
      *  element. */
     @Output() canvasElRebuilt = new EventEmitter<HTMLElement>();
 
@@ -96,6 +96,10 @@ export class GraphCanvasComponent implements AfterViewInit, AfterViewChecked, On
      *  node here and move the renderer onto it (preserving graph + camera). */
     private attachedCanvasEl: HTMLElement | null = null;
 
+    ngOnChanges() {
+        if (this.selectionMode) this.visualiser?.interactionHandler.setSelectionMode(this.selectionMode);
+    }
+
     ngAfterViewInit() {
         this.applyBackground();
     }
@@ -106,7 +110,7 @@ export class GraphCanvasComponent implements AfterViewInit, AfterViewChecked, On
             // The host element was rebuilt (dock axis changed). Re-home the
             // renderer onto the new node.
             this.attachedCanvasEl = el;
-            if (this.run) {
+            if (this.run && !this.parentManagesCanvas) {
                 // Graph page: this canvas owns its run, so re-home here.
                 // GraphOutputState.attach/detach preserves the graph and
                 // restores the camera, so no graph state is lost. Deferred via
@@ -125,7 +129,7 @@ export class GraphCanvasComponent implements AfterViewInit, AfterViewChecked, On
                     run.graph.visualiser?.sigma.refresh();
                 });
             } else {
-                // Query page (and other run-less surfaces): the parent manages
+                // Query page (and run-less surfaces): the parent manages
                 // attach/detach centrally, so hand it the new element. Deferred
                 // for the same CD-safety reason as above.
                 setTimeout(() => {

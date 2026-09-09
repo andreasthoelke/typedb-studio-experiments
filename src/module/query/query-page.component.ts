@@ -19,10 +19,12 @@ import { MatSortModule } from "@angular/material/sort";
 import { MatTableModule } from "@angular/material/table";
 import { MatTabsModule } from "@angular/material/tabs";
 import { MatTooltipModule } from "@angular/material/tooltip";
-import { Router, RouterLink } from "@angular/router";
+import { ActivatedRoute, Router, RouterLink } from "@angular/router";
 import { Prec } from "@codemirror/state";
 import { ResizableDirective } from "@hhangular/resizable";
-import { map, skip, startWith } from "rxjs";
+import { map, skip, startWith, Subscription } from "rxjs";
+import { NvimQueryBridge } from "../../service/nvim-query-bridge.service";
+import { NvimQueryControlsComponent } from "./nvim-query-controls.component";
 import { CodeEditorComponent } from "../../framework/code-editor/code-editor.component";
 import { otherExampleLinter, TypeQL, typeqlAutocompleteExtension } from "../../framework/codemirror-lang-typeql";
 import { basicDark } from "../../framework/code-editor/theme";
@@ -60,7 +62,7 @@ import { HistoryPaneComponent } from "../query-history/history-pane/history-pane
         MatInputModule, FormsModule, ReactiveFormsModule, MatButtonToggleModule, ResizableDirective,
         SpinnerComponent, MatTableModule, MatSortModule, MatTabsModule, MatTooltipModule, MatButtonModule,
         MatMenuModule, MatSelectModule, SchemaToolWindowComponent, CodeEditorComponent,
-        GraphCanvasComponent, HistoryPaneComponent,
+        GraphCanvasComponent, HistoryPaneComponent, NvimQueryControlsComponent,
     ]
 })
 export class QueryPageComponent implements OnInit, AfterViewInit, AfterViewChecked, OnDestroy {
@@ -78,6 +80,9 @@ export class QueryPageComponent implements OnInit, AfterViewInit, AfterViewCheck
     @ViewChild("runTabsScrollContainer") runTabsScrollContainer?: ElementRef<HTMLElement>;
 
     state = inject(QueryPageState);
+    bridge = inject(NvimQueryBridge);
+    private route = inject(ActivatedRoute);
+    private bridgeRouteSubscription?: Subscription;
     driver = inject(DriverState);
     queryTabsState = inject(QueryTabsState);
     exportService = inject(QueryExportService);
@@ -103,6 +108,7 @@ export class QueryPageComponent implements OnInit, AfterViewInit, AfterViewCheck
     newTabContextMenuPosition = { x: 0, y: 0 };
 
     graphMaximised = false;
+    graphSelectionMode: "types" | "instances" = "instances";
 
     get currentRun(): RunOutputState | null {
         const runs = this.state.currentTabRuns;
@@ -141,6 +147,7 @@ export class QueryPageComponent implements OnInit, AfterViewInit, AfterViewCheck
     private runTabsScrollObserver?: ResizeObserver;
 
     ngOnInit() {
+        this.bridgeRouteSubscription = this.route.queryParamMap.subscribe(params => this.bridge.attach(params.get("nvim")));
         this.appData.viewState.setLastUsedTool("query");
         const saved = this.appData.panelLayout.get("query");
         if (saved && saved.length === QueryPageComponent.DEFAULT_PANEL_SIZES.length) {
@@ -209,6 +216,8 @@ export class QueryPageComponent implements OnInit, AfterViewInit, AfterViewCheck
     }
 
     ngOnDestroy() {
+        this.bridgeRouteSubscription?.unsubscribe();
+        this.bridge.detach();
         this.state.detachAllGraphOutputs();
         this.logResizeObserver?.disconnect();
         this.tabsScrollObserver?.disconnect();

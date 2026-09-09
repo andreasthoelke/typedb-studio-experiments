@@ -418,7 +418,10 @@ export class QueryPageState {
         this.runQuery(currentTab.query);
     }
 
-    runQuery(query: string): Observable<RunResult> {
+    runQuery(query: string, externalRead?: { limit: number }): Observable<RunResult> {
+        if (externalRead && splitTypeQLQueries(query).length > 1) {
+            throw new Error("Editor graph requests must contain one query.");
+        }
         this._queryRunning$.next(true);
         const tabState = this.currentTabOutputState;
 
@@ -450,8 +453,9 @@ export class QueryPageState {
         const result$ = executeQueryToRun(newRun, query, {
             driver: this.driver,
             snackbar: this.snackbar,
-            rowLimit: this.rowLimitControl.value,
-            answersOutputEnabled: this.answersOutputEnabled,
+            rowLimit: externalRead?.limit ?? this.rowLimitControl.value,
+            answersOutputEnabled: externalRead ? true : this.answersOutputEnabled,
+            readOnly: !!externalRead,
             stopSignal$: this._queryStop$,
         });
         result$.subscribe({
@@ -470,7 +474,9 @@ export class QueryPageState {
 export interface RunExecutionDeps {
     driver: DriverState;
     snackbar: SnackbarService;
-    rowLimit: RowLimit;
+    rowLimit: number;
+    /** Editor integrations use fresh reads, independent of Studio's manual transaction. */
+    readOnly?: boolean;
     /** Defaults to true; when false, query results are reported as success/error without answer details. */
     answersOutputEnabled?: boolean;
     stopSignal$?: Observable<void>;
@@ -491,6 +497,9 @@ export function executeQueryToRun(
 ): Observable<RunResult> {
     const completion$ = new Subject<RunResult>();
     const queries = splitTypeQLQueries(queryText);
+    if (deps.readOnly && queries.length > 1) {
+        throw new Error("Editor graph requests must contain one query.");
+    }
     if (queries.length <= 1) {
         runSingleQueryToRun(run, queries[0] || queryText, deps, completion$);
     } else {
@@ -513,7 +522,10 @@ function runSingleQueryToRun(
 
     const queryOptions = { answerCountLimit: deps.rowLimit };
     let completed = false;
-    deps.driver.query(query, queryOptions).pipe(
+    const query$ = deps.readOnly
+        ? deps.driver.queryReadOnly(query, deps.driver.requireDatabase().name, queryOptions)
+        : deps.driver.query(query, queryOptions);
+    query$.pipe(
         takeUntil(deps.stopSignal$ ?? NEVER),
     ).subscribe({
         next: (res) => {

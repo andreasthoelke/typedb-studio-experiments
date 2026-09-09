@@ -120,6 +120,7 @@
                 <mat-button-toggle [value]="outputType">{{ outputType }}</mat-button-toggle>
               }
             </mat-button-toggle-group>
+            @if (bridge.enabled && !graphMaximised) { <ts-nvim-query-controls/> }
           </div>
         </div>
         @if ((driver.status$ | async) === "connected" && (driver.database$ | async) && state.currentTabRuns.length > 0) {
@@ -246,12 +247,17 @@
             <ts-graph-canvas #graphCanvas
                             [class.invisible]="state.outputTypeControl.value !== 'graph'"
                             [visualiser]="state.graphOutput.visualiser"
+                            [run]="currentRun"
+                            [parentManagesCanvas]="true"
+                            [selectionMode]="bridge.enabled ? graphSelectionMode : null"
+                            (selectionModeChange)="graphSelectionMode = $event"
                             [status]="state.graphOutput.status"
                             [graphPercent]="panelSizes[5]" (graphPercentChange)="onPanelResize(5, $event)"
                             [stylesPanePercent]="panelSizes[6]" (stylesPanePercentChange)="onPanelResize(6, $event)"
                             [(maximised)]="graphMaximised"
                             (canvasElRebuilt)="onGraphCanvasRebuilt($event)"
                             (statusAction)="onGraphStatusAction($event)">
+              @if (bridge.enabled && graphMaximised) { <ts-nvim-query-controls [floating]="true"/> }
             </ts-graph-canvas>
             <div class="answers-container answers-text-container" [hidden]="state.outputTypeControl.value !== 'raw'">
               @if (currentRun?.batchSummary) {

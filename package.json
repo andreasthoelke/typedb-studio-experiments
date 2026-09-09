@@ -15,7 +15,7 @@
     "viewer": "node scripts/viewer-server.mjs",
     "viewer:dev": "node scripts/viewer-server.mjs --dev",
     "build:viewer": "ng build --configuration local",
-    "test:viewer": "node --test scripts/viewer-server.test.mjs"
+    "test:viewer": "node --experimental-strip-types --test scripts/viewer-server.test.mjs scripts/graph-query.test.mjs"
   },
   "private": true,
   "dependencies": {

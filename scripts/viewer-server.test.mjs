@@ -12,7 +12,7 @@ async function start(t, options) {
     server.listen(0, '127.0.0.1');
     await once(server, 'listening');
     t.after(() => { server.closeViewers(); server.closeAllConnections(); server.close(); });
-    const origin = `http://127.0.0.1:${server.address().port}`;
+    const origin = `http://localhost:${server.address().port}`;
     const post = (body, headers = {}) => fetch(`${origin}/api/viewer/query`, {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...headers }, body: JSON.stringify(body),
     });
@@ -60,7 +60,9 @@ test('queues before a browser connects, preserves query text, and broadcasts upd
     assert.equal((await second()).limit, 1000);
     const reconnected = await subscribe();
     assert.equal((await reconnected()).id, update.id);
-    assert.equal((await (await fetch(`${origin}/api/viewer/health`)).json()).latestRequestId, update.id);
+    const health = await (await fetch(`${origin}/api/viewer/health`)).json();
+    assert.equal(health.latestRequestId, update.id);
+    assert.equal(health.service, 'typedb-studio-bridge');
 });
 
 test('rejects malformed, excessive, and foreign-origin requests without replacing latest', { timeout: 5000 }, async t => {
@@ -93,15 +95,18 @@ test('serves built assets and SPA routes, with clear missing-build and traversal
     const dist = await mkdtemp(join(tmpdir(), 'typedb-viewer-test-'));
     t.after(() => rm(dist, { recursive: true, force: true }));
     const { origin } = await start(t, { dist });
-    assert.equal((await fetch(`${origin}/viewer`)).status, 404);
+    const legacy = await fetch(`${origin}/viewer`, { redirect: 'manual' });
+    assert.equal(legacy.status, 302);
+    assert.equal(legacy.headers.get('location'), '/query?nvim=1');
+    assert.equal((await fetch(`${origin}/query?nvim=1`)).status, 404);
     await writeFile(join(dist, 'index.html'), '<html>viewer</html>');
     await writeFile(join(dist, 'main.js'), 'window.loaded = true;');
-    assert.equal(await (await fetch(`${origin}/viewer`)).text(), '<html>viewer</html>');
+    assert.equal(await (await fetch(`${origin}/query?nvim=1`)).text(), '<html>viewer</html>');
     assert.equal(await (await fetch(`${origin}/`)).text(), '<html>viewer</html>');
     assert.equal((await fetch(`${origin}/main.js`)).headers.get('content-type'), 'text/javascript');
     assert.equal((await fetch(`${origin}/missing.js`)).status, 404);
     assert.equal((await fetch(`${origin}/..%2fsecret`)).status, 403);
-    assert.equal(await (await fetch(`${origin}/viewer`, { method: 'HEAD' })).text(), '');
+    assert.equal(await (await fetch(`${origin}/query?nvim=1`, { method: 'HEAD' })).text(), '');
 });
 
 test('development proxy serves Angular while keeping query events local', async t => {
@@ -110,6 +115,6 @@ test('development proxy serves Angular while keeping query events local', async 
     await once(upstream, 'listening');
     t.after(() => { upstream.closeAllConnections(); upstream.close(); });
     const { origin, post } = await start(t, { devPort: upstream.address().port });
-    assert.equal(await (await fetch(`${origin}/viewer`)).text(), 'Angular /viewer');
+    assert.equal(await (await fetch(`${origin}/query?nvim=1`)).text(), 'Angular /query?nvim=1');
     assert.equal((await post({ query: 'q' })).status, 202);
 });
