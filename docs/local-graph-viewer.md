@@ -115,6 +115,17 @@ nodes** in the panel footer clears these view overrides. Reveal also unhides the
 inspected node. Overrides survive docking and switching run tabs, but a new query
 result starts fresh. They are separate from saved styling presets.
 
+The type Explorer's **Display attribute** selector loads values for node labels
+without adding attribute nodes. New query results load label values automatically
+and restore your saved choice for each type and database. **(auto)** uses Studio's
+existing attribute-name heuristic. Attribute chips and the instance Explorer's
+**Add to graph** buttons still add separate attribute nodes when you want them.
+Label values and choices survive docking and switching run tabs.
+
+Labels can extend past a node's outline; wrapping and ellipsis limit their width
+to 1.5 times the normal label area and their height to three lines. Tapered shapes
+such as diamonds and hexagons do not clip individual letters.
+
 The **Themes** panel imports and exports custom presets as JSON. Importing keeps
 existing presets and adds a suffix to duplicate names; choose Apply to activate
 an imported preset. Saved backgrounds, colours, shapes, labels, and edge options

@@ -107,6 +107,7 @@
 
           <div class="detail-section">
             <h6 class="section-title">Display Settings</h6>
+            @if (labelLoadError) { <p role="status">{{ labelLoadError }}</p> }
             <div class="display-setting-row">
               <span class="display-setting-label">Display attribute</span>
               <mat-form-field subscriptSizing="dynamic" class="display-setting-select">

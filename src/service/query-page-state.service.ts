@@ -23,6 +23,7 @@ import {
 } from "@typedb/driver-http";
 import { AppData, RowLimit } from "./app-data.service";
 import { GraphStyleService } from "./graph-style.service";
+import { GraphLabelService } from "./graph-label.service";
 import { splitTypeQLQueries } from "../framework/util/typeql-split";
 
 export type OutputType = "raw" | "log" | "table" | "graph";
@@ -135,6 +136,7 @@ export class QueryPageState {
     private snackbar = inject(SnackbarService);
     queryTabs = inject(QueryTabsState);
     private graphStyleService = inject(GraphStyleService);
+    private graphLabels = inject(GraphLabelService);
 
     outputTypes: OutputType[] = ["log", "table", "graph", "raw"];
     rowLimitControl = new FormControl(this.appData.preferences.queryRowLimit(), { nonNullable: true });
@@ -449,6 +451,11 @@ export class QueryPageState {
         if (this._graphCanvasEl) {
             newRun.graph.canvasEl = this._graphCanvasEl;
         }
+
+        newRun.graph.independentRead = !!externalRead;
+        newRun.graph.database = this.driver.requireDatabase().name;
+        newRun.graph.applyLabelOverrides(this.appData.nodeLabelPrefs.getAll(newRun.graph.database!));
+        newRun.graph.onGraphUpdated = () => { void this.graphLabels.load(newRun.graph); };
 
         const result$ = executeQueryToRun(newRun, query, {
             driver: this.driver,
@@ -1166,6 +1173,9 @@ function compareCells(a: string | undefined, b: string | undefined): number {
 export type GraphOutputStatus = "ok" | "running" | "graphlessQueryType" | "answerOutputDisabled" | "noQueryAnswers" | "noInstancesFound" | "error" | "multiQuery" | "needsTransaction";
 
 export class GraphOutputState {
+    independentRead = false;
+    destroyed = false;
+    onGraphUpdated?: () => void;
 
     status: GraphOutputStatus = "ok";
     visualiser: GraphVisualiser | null = null;
@@ -1175,11 +1185,9 @@ export class GraphOutputState {
     private _preservedGraph: Graph | null = null;
     private _preservedCamera: { x: number; y: number; ratio: number; angle: number } | null = null;
     private _pendingResponses: ApiResponse<QueryResponse>[] = [];
-    /** Display-attribute responses recorded *before* the visualiser exists.
-     *  Drained into the visualiser as soon as `pushInternal` constructs it. */
-    private _pendingDisplayAttrs: Array<{ res: ApiResponse<QueryResponse>; ownerVar: string; attrVar: string }> = [];
-    /** Pre-visualiser buffer for the label override map (same pattern as
-     *  display-attrs). Drained into the visualiser as soon as it's created. */
+    /** Retain off-graph label values when the renderer is rebuilt or detached. */
+    private _displayAttributeResponses: Array<{ res: ApiResponse<QueryResponse>; ownerVar: string; attrVar: string }> = [];
+    /** Preserve label overrides before creation and across renderer rebuilds. */
     private _pendingLabelOverrides: Map<string, string> | null = null;
     private _styleService: GraphStyleService;
 
@@ -1214,22 +1222,26 @@ export class GraphOutputState {
      *  if the visualiser hasn't been constructed yet (instance push hasn't
      *  fired). Buffered records are replayed before any instance build runs. */
     recordDisplayAttributes(res: ApiResponse<QueryResponse>, ownerVar: string, attrVar: string = "a"): void {
+        if (this.destroyed) return;
+        this._displayAttributeResponses.push({ res, ownerVar, attrVar });
         if (this.visualiser) {
             this.visualiser.recordDisplayAttributes(res, ownerVar, attrVar);
             this.visualiser.refreshLabels();
-        } else {
-            this._pendingDisplayAttrs.push({ res, ownerVar, attrVar });
         }
+    }
+
+    clearDisplayAttributes(): void {
+        this._displayAttributeResponses = [];
+        this.visualiser?.clearDisplayAttributes();
     }
 
     /** Apply the full per-type label override map to the visualiser, or buffer
      *  it if the visualiser doesn't exist yet (so the very first build's
      *  labels reflect persisted user overrides). */
     applyLabelOverrides(overrides: Map<string, string>): void {
+        this._pendingLabelOverrides = new Map(overrides);
         if (this.visualiser) {
             this.visualiser.applyLabelOverrides(overrides);
-        } else {
-            this._pendingLabelOverrides = new Map(overrides);
         }
     }
 
@@ -1247,15 +1259,13 @@ export class GraphOutputState {
             this.visualiser = new GraphVisualiser(graph, sigma, layout, this._styleService);
             // Replay any display-attribute responses that arrived before the
             // visualiser existed so the imminent build picks up correct labels.
-            if (this._pendingDisplayAttrs.length > 0) {
-                for (const p of this._pendingDisplayAttrs) {
+            if (this._displayAttributeResponses.length > 0) {
+                for (const p of this._displayAttributeResponses) {
                     this.visualiser.recordDisplayAttributes(p.res, p.ownerVar, p.attrVar);
                 }
-                this._pendingDisplayAttrs = [];
             }
             if (this._pendingLabelOverrides) {
                 this.visualiser.applyLabelOverrides(this._pendingLabelOverrides);
-                this._pendingLabelOverrides = null;
             }
         }
 
@@ -1282,6 +1292,7 @@ export class GraphOutputState {
                 // "Query completed. No answers were returned." overlay.
                 if (res.ok.answers.length > 0) this.status = "ok";
                 else if (this.visualiser.graph.order === 0) this.status = "noQueryAnswers";
+                queueMicrotask(() => { if (!this.destroyed) this.onGraphUpdated?.(); });
                 break;
             }
             case "conceptDocuments": {
@@ -1300,6 +1311,7 @@ export class GraphOutputState {
 
     detach(): void {
         if (this.visualiser) {
+            this._pendingLabelOverrides = new Map(this.visualiser.labelOverridesByType);
             this._preservedGraph = this.visualiser.graph;
             const cam = this.visualiser.sigma.getCamera().getState();
             this._preservedCamera = { x: cam.x, y: cam.y, ratio: cam.ratio, angle: cam.angle };
@@ -1315,6 +1327,10 @@ export class GraphOutputState {
             const sigma = createSigmaRenderer(canvasEl, defaultSigmaSettings as any, this._preservedGraph);
             const layout = Layouts.createD3ForceStatic(this._preservedGraph);
             this.visualiser = new GraphVisualiser(this._preservedGraph, sigma, layout, this._styleService);
+            for (const p of this._displayAttributeResponses) this.visualiser.recordDisplayAttributes(p.res, p.ownerVar, p.attrVar);
+            if (this._pendingLabelOverrides) this.visualiser.applyLabelOverrides(this._pendingLabelOverrides);
+            else this.visualiser.refreshLabels();
+            queueMicrotask(() => { if (!this.destroyed) this.onGraphUpdated?.(); });
             if (this._preservedCamera) {
                 this.visualiser.sigma.getCamera().setState(this._preservedCamera);
                 this._preservedCamera = null;
@@ -1323,6 +1339,10 @@ export class GraphOutputState {
     }
 
     destroy() {
+        this.destroyed = true;
+        this.onGraphUpdated = undefined;
+        this._displayAttributeResponses = [];
+        this._pendingLabelOverrides = null;
         this.visualiser?.destroy();
         this.visualiser = null;
         this._preservedGraph = null;

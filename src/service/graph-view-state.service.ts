@@ -308,7 +308,7 @@ export class GraphViewState {
             visualiser.unfreezeViewport();
             visualiser.graph.clear();
             visualiser.layout.forgetSettled();
-            visualiser.clearDisplayAttributes();
+            tab.run.graph.clearDisplayAttributes();
         }
         tab.initialNodeCount = 0;
         tab.loadedConnections.clear();

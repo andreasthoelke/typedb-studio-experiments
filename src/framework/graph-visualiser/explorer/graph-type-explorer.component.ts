@@ -11,6 +11,7 @@ import { MatSelectModule } from "@angular/material/select";
 import { MatTooltipModule } from "@angular/material/tooltip";
 import { GraphVisualiser } from "../engine";
 import { GraphViewState } from "../../../service/graph-view-state.service";
+import { GraphLabelService } from "../../../service/graph-label.service";
 import { AppData } from "../../../service/app-data.service";
 import { RunOutputState } from "../../../service/query-page-state.service";
 import { SchemaAttribute, SchemaConcept, SchemaRelation, SchemaRole, SchemaState } from "../../../service/schema-state.service";
@@ -80,6 +81,8 @@ export class GraphTypeExplorerComponent implements DoCheck {
     roleChips: RoleChipRow[] = [];
 
     private graphViewState = inject(GraphViewState);
+    private graphLabels = inject(GraphLabelService);
+    labelLoadError = "";
     private schemaState = inject(SchemaState);
     private appData = inject(AppData);
 
@@ -187,13 +190,20 @@ export class GraphTypeExplorerComponent implements DoCheck {
         return this.visualiser.labelOverridesByType.get(this.selectedType.label) ?? "";
     }
 
-    onLabelOverrideChange(value: string): void {
+    async onLabelOverrideChange(value: string): Promise<void> {
         if (!this.selectedType || !this.visualiser || !this.run) return;
+        const type = this.selectedType;
+        const run = this.run;
+        this.labelLoadError = "";
         const next = value === "" ? null : value;
         this.visualiser.setLabelOverride(this.selectedType.label, next);
         const database = this.run.graph.database;
         if (database) {
             this.appData.nodeLabelPrefs.set(database, this.selectedType.label, next);
+        }
+        const loaded = await this.graphLabels.load(run.graph, type.label);
+        if (!loaded && this.run === run && this.selectedType === type) {
+            this.labelLoadError = "Could not load label values. Check the connection and select the display attribute again to retry.";
         }
     }
 

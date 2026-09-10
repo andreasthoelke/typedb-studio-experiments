@@ -1,14 +1,13 @@
-import { Attributes } from "graphology-types";
-import { Settings } from "sigma/settings";
-import { NodeDisplayData, PartialButFor } from "sigma/types";
+import type { Attributes } from "graphology-types";
+import type { Settings } from "sigma/settings";
+import type { NodeDisplayData, PartialButFor } from "sigma/types";
 
 const MAX_LINES = 3;
 const LINE_HEIGHT = 1.3;
 const PADDING_X = 6;
 const LABEL_FONT_SIZE = 14;
 /** How far a node label may extend past the node's own width before it wraps
- *  or truncates (1.0 = stay inside the node). The shape label clips scale by
- *  the same factor so the overflowing text is actually visible. */
+ *  or truncates (1.0 = stay inside the node). */
 export const LABEL_OVERFLOW = 1.5;
 
 let _useBorderColorForLabels = true;
@@ -136,14 +135,9 @@ export function drawCenteredNodeLabel<
 }
 
 /**
- * Knock the label area out of the node fill, then draw the centered label.
- * A label that *overflows* the node is clipped to the node shape widened
- * horizontally by `LABEL_OVERFLOW`, so it can spill past the node's edges
- * (bounded) instead of being hard-clipped at the outline; `buildPath` traces
- * the node's base shape and we scale the canvas horizontally around the node
- * centre while building that clip. A label that fits inside the node needs no
- * clip at all and skips it — clipping is the dominant paint cost, so avoiding
- * it for the common (non-overflowing) case is the main perf lever here.
+ * Clear labels behind the node's body, then draw its own centered label.
+ * Wrapping and ellipsis bound the text; clipping it to the silhouette would
+ * cut off letters along the tapered edges of diamonds and hexagons.
  */
 export function drawClippedNodeLabel<
     N extends Attributes = Attributes,
@@ -168,35 +162,8 @@ export function drawClippedNodeLabel<
     context.fill();
     context.globalCompositeOperation = "source-over";
 
-    // The body-erase above is for occlusion (front nodes clear labels behind
-    // them) and must run for every node regardless of its own label. The label
-    // itself, and the clip that bounds it, are only needed when there's
-    // something readable to draw — bail before either otherwise.
     const layout = computeLabelLayout<N, E, G>(context, data, settings);
-    if (layout) {
-        // The clip is the single most expensive op here, and it only exists to
-        // bound an *overflowing* label's bleed past the node edge. A label that
-        // fits inside the node draws identically with or without it — so clip
-        // ONLY when the label actually overflowed. With paint-bound rendering
-        // (clip dominates the profile) this removes the clip for the common
-        // case while still showing every label, overflow ones included.
-        if (layout.truncated) {
-            // Clip the label text to a horizontally-widened shape so a slightly-
-            // too-long label can still spill past the node edges (bounded)
-            // instead of being hard-clipped at the outline.
-            context.translate(data.x, data.y);
-            context.scale(LABEL_OVERFLOW, 1);
-            context.translate(-data.x, -data.y);
-            buildPath(context, data);
-            context.clip();
-            // Undo just our horizontal scale (preserving any DPR transform sigma
-            // set) so the label text itself isn't stretched.
-            context.translate(data.x, data.y);
-            context.scale(1 / LABEL_OVERFLOW, 1);
-            context.translate(-data.x, -data.y);
-        }
-        paintLabelLines(context, data, layout);
-    }
+    if (layout) paintLabelLines(context, data, layout);
     context.restore();
 }
 
@@ -278,12 +245,17 @@ function wrapText(context: CanvasRenderingContext2D, text: string, maxWidth: num
         }
     }
 
-    // Truncate last line if it overflows
-    if (lines.length > 0) {
+    const omittedLines = truncated;
+    // Long identifiers can occur on any line, not only the last one.
+    for (let i = 0; i < lines.length; i++) {
+        const original = lines[i];
+        lines[i] = truncateLine(context, original, maxWidth);
+        if (lines[i] !== original) truncated = true;
+    }
+    // If whole lines were omitted, signal that even when the final line fits.
+    if (omittedLines && lines.length && !lines[lines.length - 1].endsWith("…")) {
         const last = lines.length - 1;
-        const original = lines[last];
-        lines[last] = truncateLine(context, original, maxWidth);
-        if (lines[last] !== original) truncated = true;
+        lines[last] = truncateLine(context, lines[last] + "…", maxWidth);
     }
 
     return { lines, truncated };
