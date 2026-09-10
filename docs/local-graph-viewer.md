@@ -122,9 +122,26 @@ existing attribute-name heuristic. Attribute chips and the instance Explorer's
 **Add to graph** buttons still add separate attribute nodes when you want them.
 Label values and choices survive docking and switching run tabs.
 
-Labels can extend past a node's outline; wrapping and ellipsis limit their width
-to 1.5 times the normal label area and their height to three lines. Tapered shapes
+All graph routes, including **/schema**, use the same label renderer. Labels use
+1.5 times the normal label area before wrapping, whether or not a narrower wrap
+would have fitted. Ellipsis limits long values to three lines. Tapered shapes
 such as diamonds and hexagons do not clip individual letters.
+
+On **/schema**, select a node to explore its type in the right-hand Explorer:
+
+- Supertypes/subtypes, attributes, played roles and relation types, and related
+  roles appear as clickable chips. Inherited schema connections are included.
+- Attribute types list their owners; role types list their relations and the
+  types that can play the role.
+- Clicking a chip reveals that type and opens its Explorer details. The **\***
+  chip reveals the whole group with the selected type, showing any hidden nodes.
+- **Hide / Show**, **Dim / Undim**, and **Reveal in graph** work on the selected
+  schema node. The panel footer restores all hidden or dimmed nodes.
+
+These are view controls over the loaded schema; they do not alter the database.
+Schema refresh rebuilds the graph and clears its temporary visibility changes.
+The same controls are available in fullscreen and with the Explorer docked below
+the graph.
 
 The **Themes** panel imports and exports custom presets as JSON. Importing keeps
 existing presets and adds a suffix to duplicate names; choose Apply to activate

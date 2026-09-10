@@ -29,6 +29,10 @@ test('long node labels stay readable outside the silhouette', () => {
         'the node body still hides labels behind it');
 });
 
+test('all labels use the wider wrapping area, even when a narrower wrap would fit', () => {
+    assert.deepEqual(render('alpha beta pi delta').lines, ['alpha beta pi', 'delta']);
+});
+
 test('long identifiers on every line have bounded width', () => {
     const { lines } = render('a-very-long-type-name-before-the-final-line\na-very-long-attribute-value-also-overflows');
     assert.equal(lines.length, 2);

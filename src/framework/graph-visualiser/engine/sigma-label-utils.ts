@@ -89,10 +89,8 @@ function computeLabelLayout<
     const font = `${weight} ${fontSize}px ${settings.labelFont}`;
     context.font = font;
 
-    // First try to wrap inside the node itself (up to MAX_LINES lines). Only
-    // fall back to the wider LABEL_OVERFLOW budget if even that wrap had to
-    // truncate — so labels that fit comfortably across two lines stay inside
-    // the node, while genuinely-too-long names still get the overflow room.
+    // Use the wider label area for every node, including schema types.
+    // The silhouette controls the body, not where the text may wrap.
     const nodeWidth = screenHalfW * 2 - PADDING_X;
     const { lines, truncated } = wrapTextCached(context, data.label, nodeWidth, font);
 
@@ -175,13 +173,7 @@ interface WrapResult {
 /**
  * Memoized wrap. Wrapping a label is pure for a given (text, width, font): a
  * force simulation only changes node x/y between frames, not the text, the node
- * width, or the font — yet the inline wrap re-ran `measureText` (slow, per word)
- * for every visible node on every tick, then a *second* full pass whenever the
- * inner wrap truncated (common now that labels carry attribute values). Keying a
- * cache on font+width+text collapses all of that to a single wrap per distinct
- * label per zoom level; subsequent frames are pure Map lookups. The
- * LABEL_OVERFLOW fallback is folded in so callers get identical results to the
- * old inline path.
+ * width, or the font. Cache each layout so moving nodes only repaint text.
  */
 const wrapCache = new Map<string, WrapResult>();
 const WRAP_CACHE_MAX = 4000;
@@ -198,11 +190,7 @@ function wrapTextCached(context: CanvasRenderingContext2D, text: string, nodeWid
     const key = `${fontKey}|${Math.round(nodeWidth / 4) * 4}|${text}`;
     const cached = wrapCache.get(key);
     if (cached) return cached;
-    let { lines, truncated } = wrapText(context, text, nodeWidth);
-    if (truncated) {
-        ({ lines, truncated } = wrapText(context, text, nodeWidth * LABEL_OVERFLOW));
-    }
-    const result: WrapResult = { lines, truncated };
+    const result = wrapText(context, text, nodeWidth * LABEL_OVERFLOW);
     // Cheap unbounded-growth guard: keys multiply with distinct labels × zoom
     // levels. At a fixed zoom (e.g. mid-simulation) the key set is stable and
     // tiny, so a hard clear on overflow costs at most one extra wrap per label.

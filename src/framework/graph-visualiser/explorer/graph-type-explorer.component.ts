@@ -14,7 +14,9 @@ import { GraphViewState } from "../../../service/graph-view-state.service";
 import { GraphLabelService } from "../../../service/graph-label.service";
 import { AppData } from "../../../service/app-data.service";
 import { RunOutputState } from "../../../service/query-page-state.service";
-import { SchemaAttribute, SchemaConcept, SchemaRelation, SchemaRole, SchemaState } from "../../../service/schema-state.service";
+import { Schema, SchemaAttribute, SchemaConcept, SchemaRelation, SchemaRole, SchemaState } from "../../../service/schema-state.service";
+
+import { schemaExplorerSections, SchemaExplorerSection, SchemaExplorerType } from "../../util/schema-explorer";
 
 interface AttributeChipRow {
     type: SchemaAttribute;
@@ -66,8 +68,7 @@ export class GraphTypeExplorerComponent implements DoCheck {
     @Input() run: RunOutputState | null = null;
     @Input() visualiser: GraphVisualiser | null = null;
     /** True when this explorer is showing the schema visualiser's graph (type
-     *  nodes only). Hides instance-oriented UI — the "N in graph" count and the
-     *  connection-loading chips — which are meaningless without data instances. */
+     *  nodes only). Shows schema navigation and visibility controls. */
     @Input() schemaMode = false;
 
     /** Live count of instances of `selectedType` currently in the graph. */
@@ -86,6 +87,11 @@ export class GraphTypeExplorerComponent implements DoCheck {
     private schemaState = inject(SchemaState);
     private appData = inject(AppData);
 
+    schemaSections: SchemaExplorerSection[] = [];
+    private schemaNodeKeys = new Map<string, string>();
+    private lastVisualiser: GraphVisualiser | null = null;
+    private lastSchema: Schema | null = null;
+    private lastSelectedType: SchemaExplorerType | null = null;
     private lastGraphOrder = -1;
     private lastSelectedTypeLabel: string | null = null;
 
@@ -130,11 +136,62 @@ export class GraphTypeExplorerComponent implements DoCheck {
         const label = this.selectedType?.label ?? null;
         const sameType = label === this.lastSelectedTypeLabel;
         const sameOrder = order === this.lastGraphOrder;
-        if (sameType && sameOrder) return;
+        const schema = this.schemaState.value$.value;
+        const sameSource = schema === this.lastSchema && this.selectedType === this.lastSelectedType;
+        const sameVisualiser = this.visualiser === this.lastVisualiser;
+        if (sameType && sameOrder && sameSource && sameVisualiser) return;
         this.lastGraphOrder = order;
         this.lastSelectedTypeLabel = label;
+        this.lastSelectedType = this.selectedType;
+        this.lastSchema = schema;
+        this.lastVisualiser = this.visualiser;
         this.instanceCount = this.computeInstanceCount();
-        if (!sameType) this.refreshChips();
+        if (!sameType || !sameSource) {
+            this.labelLoadError = "";
+            this.refreshChips();
+        }
+        if (this.schemaMode) {
+            this.schemaSections = schema && this.selectedType ? schemaExplorerSections(schema, this.selectedType) : [];
+            this.schemaNodeKeys.clear();
+            graph?.forEachNode((key, attrs) => {
+                const concept = attrs.metadata?.concept;
+                if (concept && "label" in concept) this.schemaNodeKeys.set(concept.label, key);
+            });
+        }
+    }
+
+    schemaNodeKey(type: SchemaExplorerType | null): string | undefined {
+        return type ? this.schemaNodeKeys.get(type.label) : undefined;
+    }
+
+    schemaAppearance(flag: "viewHidden" | "viewDimmed", type = this.selectedType): boolean {
+        const key = this.schemaNodeKey(type);
+        return key != null && !!this.visualiser?.graph.getNodeAttribute(key, flag);
+    }
+
+    toggleSchemaAppearance(flag: "viewHidden" | "viewDimmed"): void {
+        const key = this.schemaNodeKey(this.selectedType);
+        if (key != null) this.visualiser?.setNodeAppearance(key, flag, !this.schemaAppearance(flag));
+    }
+
+    revealSchemaTypes(types: SchemaExplorerType[]): void {
+        const keys = types.flatMap(type => {
+            const key = this.schemaNodeKey(type);
+            return key == null ? [] : [key];
+        });
+        for (const key of keys) this.visualiser?.setNodeAppearance(key, "viewHidden", false);
+        if (keys.length) this.visualiser?.revealNodes(keys);
+    }
+
+    revealSchemaGroup(section: SchemaExplorerSection): void {
+        this.revealSchemaTypes(this.selectedType ? [this.selectedType, ...section.types] : section.types);
+    }
+
+    exploreSchemaType(type: SchemaExplorerType): void {
+        const key = this.schemaNodeKey(type);
+        if (key == null) return;
+        this.revealSchemaTypes([type]);
+        this.visualiser?.interactionHandler.focusType(key);
     }
 
     private refreshChips(): void {

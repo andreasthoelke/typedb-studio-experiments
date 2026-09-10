@@ -31,9 +31,43 @@
           </div>
         </div>
 
-        <!-- The connection chips + display settings all load / restyle data
-             instances, which is meaningless in the schema visualiser — there we
-             show just the type + supertype row above. -->
+        @if (schemaMode) {
+          <div class="detail-section connection-chips">
+            <button class="open-details-button" (click)="revealSchemaTypes([selectedType!])"
+                    [disabled]="!schemaNodeKey(selectedType)">Reveal in graph</button>
+            <button class="open-details-button" (click)="toggleSchemaAppearance('viewHidden')"
+                    [disabled]="!schemaNodeKey(selectedType)"
+                    matTooltip="Hide this type and its edges in the view">
+              {{ schemaAppearance('viewHidden') ? 'Show' : 'Hide' }}
+            </button>
+            <button class="open-details-button" (click)="toggleSchemaAppearance('viewDimmed')"
+                    [disabled]="!schemaNodeKey(selectedType)" [attr.aria-pressed]="schemaAppearance('viewDimmed')">
+              {{ schemaAppearance('viewDimmed') ? 'Undim' : 'Dim' }}
+            </button>
+          </div>
+          @for (section of schemaSections; track section.title) {
+            <div class="detail-section schema-connections">
+              <h6 class="section-title">{{ section.title }}</h6>
+              <div class="connection-chips">
+                <button class="connection-chip all-chip" (click)="revealSchemaGroup(section)"
+                        [attr.aria-label]="'Reveal all ' + section.title.toLowerCase() + ' in graph'"
+                        matTooltip="Show hidden types and reveal this group in the graph">*</button>
+                @for (type of section.types; track type.label) {
+                  <button class="connection-chip" [class.attribute]="type.kind === 'attributeType'"
+                          [class.relation]="type.kind === 'relationType'" [class.role]="type.kind === 'roleType'"
+                          [disabled]="!schemaNodeKey(type)" (click)="exploreSchemaType(type)"
+                          matTooltip="Reveal in graph and explore this type">
+                    {{ type.label }}@if (schemaAppearance('viewHidden', type)) { <span>(hidden)</span> }
+                  </button>
+                }
+              </div>
+            </div>
+          } @empty {
+            <p class="text-muted">No connected types.</p>
+          }
+        }
+
+        <!-- Data-mode chips load instances; schema connections above navigate types. -->
         @if (supportsConnections && !schemaMode) {
           @if (selectedType!.kind === 'relationType' && roleChips.length > 0) {
             <div class="detail-section">
