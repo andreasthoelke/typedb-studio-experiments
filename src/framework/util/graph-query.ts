@@ -7,9 +7,10 @@ export interface GraphQueryOptions {
 
 export interface ContextType {
     kind: string;
-    playedRoles?: unknown[];
-    relatedRoles?: unknown[];
+    playedRoles?: { label: string }[];
+    relatedRoles?: { label: string }[];
     subtypes?: ContextType[];
+    supertype?: ContextType;
 }
 
 interface Token { text: string; from: number; depth: number; kind: "word" | "variable" | "symbol"; }
@@ -50,8 +51,53 @@ function tokens(text: string): Token[] {
     return result;
 }
 
-function hasRoles(type: ContextType, key: "playedRoles" | "relatedRoles"): boolean {
-    return !!type[key]?.length || !!type.subtypes?.some(child => hasRoles(child, key));
+export interface GraphContextSeed { variable: string; type: ContextType; exact: boolean; }
+
+/** Shared seed selection for query generation and the schema-aware relation chooser. */
+export function findGraphContextSeed(source: string, seedVariable: string | undefined,
+    typeByLabel: (label: string) => ContextType | undefined,
+): GraphContextSeed | undefined {
+    const top = tokens(source).filter(t => t.depth === 0);
+    const fetchIndex = top.findIndex(t => t.kind === "word" && t.text === "fetch");
+    const base = fetchIndex < 0 ? top : top.slice(0, fetchIndex);
+    if (base[0]?.text !== "match" || base.some(t => t.kind === "word" && t.text === "reduce")) return undefined;
+    const requestedSeed = seedVariable?.trim();
+    if (requestedSeed && !/^\$[\p{L}_][\p{L}\p{N}_-]*$/u.test(requestedSeed)) {
+        throw new Error("Use a seed variable such as $item, or leave it blank for automatic selection.");
+    }
+    const candidates: GraphContextSeed[] = [];
+    for (let i = 0; i < base.length - 2; i++) {
+        if (base[i].kind !== "variable" || base[i + 1].text !== "isa") continue;
+        const label = base[i + 2].text === "!" ? base[i + 3] : base[i + 2];
+        if (!label || label.kind !== "word") continue;
+        const type = typeByLabel(label.text);
+        if (type && (type.kind === "entityType" || type.kind === "relationType")) candidates.push({ variable: base[i].text, type, exact: base[i + 2].text === "!" });
+    }
+    // A preceding select can remove otherwise-bound variables from scope.
+    const selectIndex = base.map(t => t.kind === "word" ? t.text : "").lastIndexOf("select");
+    const selected = selectIndex < 0 ? null : base.slice(selectIndex + 1).slice(0,
+        base.slice(selectIndex + 1).findIndex(t => t.text === ";")).filter(t => t.kind === "variable").map(t => t.text);
+    return candidates.find(c => (!requestedSeed || c.variable === requestedSeed) && (!selected || selected.includes(c.variable)));
+}
+
+function roleLabels(type: ContextType, key: "playedRoles" | "relatedRoles", includeSubtypes: boolean): Set<string> {
+    const labels = new Set<string>();
+    const seen = new Set<ContextType>();
+    const visit = (node: ContextType, descendants: boolean) => {
+        if (seen.has(node)) return;
+        seen.add(node);
+        for (const role of node[key] ?? []) labels.add(role.label);
+        if (descendants) for (const child of node.subtypes ?? []) visit(child, true);
+        if (node.supertype) visit(node.supertype, false);
+    };
+    visit(type, includeSubtypes);
+    return labels;
+}
+
+export function isGraphContextRelationCompatible(seed: GraphContextSeed, relation: ContextType): boolean {
+    if (seed.type.kind !== "entityType" || relation.kind !== "relationType") return false;
+    const played = roleLabels(seed.type, "playedRoles", !seed.exact);
+    return [...roleLabels(relation, "relatedRoles", true)].some(label => played.has(label));
 }
 
 export function prepareGraphQuery(source: string, options: GraphQueryOptions,
@@ -75,25 +121,9 @@ export function prepareGraphQuery(source: string, options: GraphQueryOptions,
     if (base.some(t => t.text === "reduce" && t.kind === "word")) {
         return { query, note: `${note} Aggregate results are not expanded automatically.` };
     }
-    const requestedSeed = options.seedVariable?.trim();
-    if (requestedSeed && !/^\$[\p{L}_][\p{L}\p{N}_-]*$/u.test(requestedSeed)) {
-        throw new Error("Use a seed variable such as $item, or leave it blank for automatic selection.");
-    }
-    const candidates: { variable: string; type: ContextType }[] = [];
-    for (let i = 0; i < base.length - 2; i++) {
-        if (base[i].kind !== "variable" || base[i + 1].text !== "isa") continue;
-        const label = base[i + 2].text === "!" ? base[i + 3] : base[i + 2];
-        if (!label || label.kind !== "word") continue;
-        const type = typeByLabel(label.text);
-        if (type && (type.kind === "entityType" || type.kind === "relationType")) candidates.push({ variable: base[i].text, type });
-    }
-    // A preceding select can remove otherwise-bound variables from scope.
-    const selectIndex = base.map(t => t.kind === "word" ? t.text : "").lastIndexOf("select");
-    const selected = selectIndex < 0 ? null : base.slice(selectIndex + 1).slice(0,
-        base.slice(selectIndex + 1).findIndex(t => t.text === ";")).filter(t => t.kind === "variable").map(t => t.text);
-    const seed = candidates.find(c => (!requestedSeed || c.variable === requestedSeed) && (!selected || selected.includes(c.variable)));
+    const seed = findGraphContextSeed(query, options.seedVariable, typeByLabel);
     if (!seed) return { query, note: `${note} No eligible entity/relation seed found; choose a directly typed variable to expand.` };
-    const relationLabels = options.relationTypes ?? [];
+    let relationLabels = options.relationTypes ?? [];
     for (const label of relationLabels) {
         if (!/^[\p{L}_][\p{L}\p{N}_-]*$/u.test(label) || typeByLabel(label)?.kind !== "relationType") {
             throw new Error(`Unknown relation type: ${label}`);
@@ -108,15 +138,21 @@ export function prepareGraphQuery(source: string, options: GraphQueryOptions,
     };
     const player = fresh("player");
     if (seed.type.kind === "relationType") {
-        if (!hasRoles(seed.type, "relatedRoles")) return { query, note: `${note} The seed relation has no roles to expand.` };
+        if (!roleLabels(seed.type, "relatedRoles", !seed.exact).size) return { query, note: `${note} The seed relation has no roles to expand.` };
         query += `\n\n# Graph context: role players of ${seed.variable}\nmatch\ntry {\n  ${seed.variable} links (${player});\n};`;
         note = `Showing role players of ${seed.variable}. Relation filters apply to entity neighbours.`;
     } else {
-        if (!hasRoles(seed.type, "playedRoles")) return { query, note: `${note} The seed type plays no relation roles.` };
+        if (!roleLabels(seed.type, "playedRoles", !seed.exact).size) return { query, note: `${note} The seed type plays no relation roles.` };
+        const excluded = relationLabels.filter(label => !isGraphContextRelationCompatible(seed, typeByLabel(label)!));
+        relationLabels = relationLabels.filter(label => !excluded.includes(label));
+        if (excluded.length && !relationLabels.length) {
+            return { query, note: `No selected relation types are compatible with ${seed.variable}: ${excluded.join(", ")}. Showing seed instances only. Clear the relation filter to include all compatible relations.` };
+        }
         const relation = fresh("relation");
         const filter = relationLabels.length ? "\n  " + relationLabels.map(label => `{ ${relation} isa ${label}; }`).join(" or ") + ";" : "";
         query += `\n\n# Graph context: one relation hop from ${seed.variable}\nmatch\ntry {\n  ${relation} links (${seed.variable});${filter}\n  ${relation} links (${player});\n};`;
         note = `Showing one relation hop from ${seed.variable}${relationLabels.length ? ` through ${relationLabels.join(", ")}` : ""}.`;
+        if (excluded.length) note += ` Skipped incompatible relation types: ${excluded.join(", ")}.`;
     }
     return { query, note };
 }

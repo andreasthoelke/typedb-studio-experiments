@@ -9,6 +9,7 @@ import { MatTooltipModule } from "@angular/material/tooltip";
 import { MatSelectModule } from "@angular/material/select";
 import { SchemaState } from "../../service/schema-state.service";
 import { NvimQueryBridge } from "../../service/nvim-query-bridge.service";
+import { findGraphContextSeed, GraphContextSeed, isGraphContextRelationCompatible } from "../../framework/util/graph-query";
 
 @Component({
     selector: "ts-nvim-query-controls",
@@ -19,21 +20,28 @@ import { NvimQueryBridge } from "../../service/nvim-query-bridge.service";
       <mat-menu #settings="matMenu">
         <div class="settings" (click)="$event.stopPropagation()" (keydown)="onSettingsKeydown($event)">
           <p role="status">{{ bridge.message }}</p>
-          <mat-checkbox [(ngModel)]="bridge.neighbours">Include linked neighbours</mat-checkbox>
+          <mat-checkbox [(ngModel)]="bridge.neighbours" (ngModelChange)="bridge.scheduleReapply()">Include linked neighbours</mat-checkbox>
           <mat-form-field>
             <mat-label>Seed variable (blank = automatic)</mat-label>
-            <input matInput [(ngModel)]="bridge.seedVariable" placeholder="$item">
+            <input matInput [(ngModel)]="bridge.seedVariable" (ngModelChange)="bridge.scheduleReapply()" placeholder="$item">
           </mat-form-field>
-          <mat-form-field>
+          <mat-form-field subscriptSizing="dynamic">
             <mat-label>Relation types</mat-label>
             <mat-select multiple [ngModel]="selectedRelations" (ngModelChange)="selectRelations($event)" placeholder="All relation types">
-              @for (label of availableRelations; track label) { <mat-option [value]="label">{{ label }}</mat-option> }
+              @for (choice of availableRelations; track choice.label) {
+                <mat-option [value]="choice.label" [disabled]="!choice.compatible && !selectedRelations.includes(choice.label)">
+                  {{ choice.label }}{{ choice.compatible ? '' : ' (not compatible with seed)' }}
+                </mat-option>
+              }
             </mat-select>
-            <mat-hint>None selected includes all types.</mat-hint>
+            <mat-hint>No selection includes all compatible types. Filters apply to entity seeds.</mat-hint>
           </mat-form-field>
+          @if (selectedRelations.length) {
+            <button mat-stroked-button (click)="selectRelations([])">Clear relation filter</button>
+          }
           <p>{{ bridge.note }}</p>
           <p>One relation hop. Selected relations include their role players. Existing row limits are preserved.</p>
-          <button mat-stroked-button (click)="bridge.reapply()">Apply to latest Neovim query</button>
+          <p>Changes automatically update the latest Neovim query.</p>
         </div>
       </mat-menu>
     `,
@@ -48,8 +56,16 @@ export class NvimQueryControlsComponent {
     private relationText?: string;
     private relationSelection: string[] = [];
 
-    get availableRelations(): string[] {
-        return Object.keys(this.schema.value$.value?.relations ?? {}).sort();
+    get availableRelations(): { label: string; compatible: boolean }[] {
+        const schema = this.schema.value$.value;
+        let seed: GraphContextSeed | undefined;
+        try {
+            seed = findGraphContextSeed(this.bridge.lastRequest?.query ?? "", this.bridge.seedVariable,
+                label => schema?.entities[label] ?? schema?.relations[label] ?? schema?.attributes[label]);
+        } catch { /* The query runner reports invalid query text or seed settings. */ }
+        return Object.keys(schema?.relations ?? {}).sort().map(label => ({ label,
+            compatible: !seed || isGraphContextRelationCompatible(seed, schema!.relations[label]),
+        }));
     }
 
     get selectedRelations(): string[] {
@@ -63,6 +79,7 @@ export class NvimQueryControlsComponent {
 
     selectRelations(labels: string[]): void {
         this.bridge.relationTypes = labels.join(", ");
+        this.bridge.scheduleReapply();
     }
 
     onSettingsKeydown(event: KeyboardEvent): void {

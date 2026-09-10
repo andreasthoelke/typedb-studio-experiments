@@ -64,11 +64,18 @@ fullscreen graph. It provides:
   relation variable, such as `$item`. Set it explicitly for queries with several
   possible starting points.
 - **Relation types**: a multiple-choice list from the current database schema,
-  used as an allowlist for entity-neighbour expansion. No selection includes all relation types. These labels are checked against the live
-  schema. Selected relations still include their role players.
-- **Apply to latest Neovim query**: saves the options locally and regenerates the
-  query from the original received source. The resulting query is visible and
-  editable in Studio's query field.
+  used as an allowlist for entity-neighbour expansion. No selection includes all
+  compatible relation types. The chooser marks incompatible options using the
+  seed type’s played roles, including inherited roles and permitted subtypes.
+  Saved incompatible selections can be deselected or removed with **Clear relation
+  filter**. Query generation skips them; if none of the selected types apply, it
+  shows the seed instances without expansion and explains why. Selected relations
+  still include their own role players, independently of this filter.
+
+Changes save locally and automatically regenerate the latest query from the
+original received source, after a 250 ms pause to combine quick edits. There is
+no Apply step. The resulting query is visible and editable in Studio’s query
+field. If a query is already running, the latest options wait for it to finish.
 
 Expansion uses an optional pattern so isolated seed instances remain in the
 result. Schema-panel queries use this same preparation function and configuration.

@@ -28,6 +28,7 @@ export class NvimQueryBridge {
     private databaseNames: string[] = [];
     private driverConnected = false;
     private busy = false;
+    private reapplyTimer?: ReturnType<typeof setTimeout>;
 
     constructor(private driver: DriverState, private state: QueryPageState, private tabs: QueryTabsState,
         private schema: SchemaState, private zone: NgZone, private snackbar: SnackbarService) {
@@ -69,16 +70,34 @@ export class NvimQueryBridge {
         }));
     }
 
-    reapply(): void {
+    private saveOptions(): void {
         try {
             localStorage.setItem(OPTIONS_KEY, JSON.stringify({ neighbours: this.neighbours,
                 seedVariable: this.seedVariable, relationTypes: this.relationTypes }));
         } catch { /* Optional. */ }
+    }
+
+    scheduleReapply(): void {
+        this.saveOptions();
+        clearTimeout(this.reapplyTimer);
+        // Combine a quick sequence of checkbox/seed edits into one graph query.
+        this.reapplyTimer = setTimeout(() => {
+            this.reapplyTimer = undefined;
+            this.reapply();
+        }, 250);
+    }
+
+    reapply(): void {
+        clearTimeout(this.reapplyTimer);
+        this.reapplyTimer = undefined;
+        this.saveOptions();
         this.pending = !!this.lastRequest;
         this.schedule();
     }
 
     detach(): void {
+        clearTimeout(this.reapplyTimer);
+        this.reapplyTimer = undefined;
         this.events?.close();
         this.events = undefined;
         this.connected = false;

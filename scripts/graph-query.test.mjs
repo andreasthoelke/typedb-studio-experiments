@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { prepareGraphQuery } from '../src/framework/util/graph-query.ts';
+import { prepareGraphQuery, findGraphContextSeed, isGraphContextRelationCompatible } from '../src/framework/util/graph-query.ts';
 
 const types = {
-    person: { kind: 'entityType', playedRoles: [{}] },
+    person: { kind: 'entityType', playedRoles: [{ label: 'friendship:friend' }] },
     isolated: { kind: 'entityType', playedRoles: [] },
-    friendship: { kind: 'relationType', relatedRoles: [{}] },
+    friendship: { kind: 'relationType', relatedRoles: [{ label: 'friendship:friend' }] },
     name: { kind: 'attributeType' },
 };
 const prepare = (source, options = {}) => prepareGraphQuery(source,
@@ -52,4 +52,50 @@ test('rejects automatic replay of mutations, batches, preambles and malformed bo
         'match $x isa person, has name "unclosed;', 'match { $x isa person;']) {
         assert.throws(() => prepare(source));
     }
+});
+
+test('incompatible saved relation filters preserve seed rows instead of generating INF11', () => {
+    const schema = {
+        'mental-state': { kind: 'entityType', playedRoles: [{ label: 'motivation:driver' }] },
+        motivation: { kind: 'relationType', relatedRoles: [{ label: 'motivation:driver' }, { label: 'motivation:target' }] },
+        'depiction-slot': { kind: 'relationType', relatedRoles: [{ label: 'depiction-slot:host' }] },
+    };
+    const lookup = label => schema[label];
+    const source = 'match $item isa mental-state; $item isa! $concrete;';
+    const filtered = labels => prepareGraphQuery(source, { neighbours: true, relationTypes: labels }, lookup);
+    const incompatible = filtered(['depiction-slot']);
+    assert.equal(incompatible.query, source);
+    assert.match(incompatible.note, /No selected relation types are compatible/);
+    const mixed = filtered(['depiction-slot', 'motivation']);
+    assert.match(mixed.query, /isa motivation/);
+    assert.doesNotMatch(mixed.query, /depiction-slot/);
+    assert.match(mixed.note, /Skipped incompatible relation types: depiction-slot/);
+    assert.match(filtered([]).query, /\$nvim_relation links \(\$item\)/);
+    assert.match(prepareGraphQuery('match $item isa motivation;', {
+        neighbours: true, relationTypes: ['depiction-slot'],
+    }, lookup).query, /\$item links \(\$nvim_player\)/);
+});
+
+test('compatibility respects scoped roles, inherited roles, subtype seeds and exact isa', () => {
+    const base = { kind: 'entityType', playedRoles: [{ label: 'base-relation:member' }], subtypes: [] };
+    const child = { kind: 'entityType', playedRoles: [{ label: 'child-relation:member' }], supertype: base };
+    base.subtypes.push(child);
+    const baseRelation = { kind: 'relationType', relatedRoles: [{ label: 'base-relation:member' }] };
+    const subRelation = { kind: 'relationType', relatedRoles: [], supertype: baseRelation };
+    const childRelation = { kind: 'relationType', relatedRoles: [{ label: 'child-relation:member' }] };
+    const abstractRelation = { kind: 'relationType', relatedRoles: [], subtypes: [childRelation] };
+    const otherRelation = { kind: 'relationType', relatedRoles: [{ label: 'unrelated:member' }] };
+    const schema = { base, child, childRelation };
+    const lookup = label => schema[label];
+    const seed = text => findGraphContextSeed(text, undefined, lookup);
+    assert.equal(isGraphContextRelationCompatible(seed('match $x isa base;'), childRelation), true);
+    assert.equal(isGraphContextRelationCompatible(seed('match $x isa! base;'), childRelation), false);
+    assert.equal(isGraphContextRelationCompatible(seed('match $x isa! child;'), subRelation), true);
+    assert.equal(isGraphContextRelationCompatible(seed('match $x isa base;'), abstractRelation), true);
+    assert.equal(isGraphContextRelationCompatible(seed('match $x isa base;'), otherRelation), false);
+    assert.equal(findGraphContextSeed('match $x isa base; select $y;', undefined, lookup), undefined);
+    assert.equal(findGraphContextSeed('match $x isa base; reduce $n = count;', undefined, lookup), undefined);
+    const exactBase = { kind: 'entityType', subtypes: [child] };
+    assert.equal(prepareGraphQuery('match $x isa! exactBase;', { neighbours: true }, () => exactBase).query,
+        'match $x isa! exactBase;');
 });
