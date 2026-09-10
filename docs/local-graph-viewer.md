@@ -52,7 +52,12 @@ Changing the address does not migrate old browser storage.
 The browser prepares a separate graph query; the query executed for Neovim's
 text results is unchanged. A terminal `fetch` is removed so TypeDB returns
 concept rows. No explicit `select` is needed for that conversion. Existing
-`select`, sorting, filtering, and limit stages retain their ordering.
+`select`, sorting, filtering, and limit stages retain their ordering. For the
+schema inspector’s simple instance-and-concrete-type query, the graph copy adds
+`select $item;` before context expansion. This keeps the auxiliary `$concrete`
+type column from becoming a schema node with an `isa` edge; Neovim’s text result
+still includes that type information. Explicit selections in other queries are
+preserved.
 
 The **Neovim** menu is available beside the output controls and inside the
 fullscreen graph. It provides:

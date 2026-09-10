@@ -64,7 +64,7 @@ test('incompatible saved relation filters preserve seed rows instead of generati
     const source = 'match $item isa mental-state; $item isa! $concrete;';
     const filtered = labels => prepareGraphQuery(source, { neighbours: true, relationTypes: labels }, lookup);
     const incompatible = filtered(['depiction-slot']);
-    assert.equal(incompatible.query, source);
+    assert.equal(incompatible.query, `${source}\nselect $item;`);
     assert.match(incompatible.note, /No selected relation types are compatible/);
     const mixed = filtered(['depiction-slot', 'motivation']);
     assert.match(mixed.query, /isa motivation/);
@@ -98,4 +98,28 @@ test('compatibility respects scoped roles, inherited roles, subtype seeds and ex
     const exactBase = { kind: 'entityType', subtypes: [child] };
     assert.equal(prepareGraphQuery('match $x isa! exactBase;', { neighbours: true }, () => exactBase).query,
         'match $x isa! exactBase;');
+});
+
+
+test('schema inspection projects the instance without its auxiliary type node', () => {
+    const base = 'match\n $item isa person;\n $item isa! $concrete;';
+    const projected = `${base}\nselect $item;`;
+    assert.equal(prepare(base).query, projected);
+    assert.equal(prepare(`${base}\nfetch { "type": $concrete, "attributes": { $item.* } };`).query, projected);
+    const expanded = prepare(base, { neighbours: true });
+    assert.ok(expanded.query.startsWith(projected));
+    assert.match(expanded.query, /links \(\$nvim_player\)/);
+    assert.ok(expanded.query.indexOf('select $item;') < expanded.query.indexOf('# Graph context:'));
+    const relation = prepare('match $r isa friendship; $r isa! $type;', { neighbours: true });
+    assert.match(relation.query, /select \$r;/);
+    assert.match(relation.query, /\$r links \(\$nvim_player\)/);
+});
+
+test('explicit type selections and other query shapes retain their intended columns', () => {
+    for (const query of [
+        'match $x isa person; $x isa! $t; select $x, $t;',
+        'match $x isa person; $x isa! $t; $x has name $name;',
+        'match $x isa person; $other isa! $t;',
+        'match $x isa person; # $x isa! $t;',
+    ]) assert.equal(prepare(query).query, query);
 });

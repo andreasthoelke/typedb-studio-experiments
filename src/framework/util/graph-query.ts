@@ -100,6 +100,22 @@ export function isGraphContextRelationCompatible(seed: GraphContextSeed, relatio
     return [...roleLabels(relation, "relatedRoles", true)].some(label => played.has(label));
 }
 
+/** The schema inspector binds a concrete type for its text result. Return only
+ *  the instance in the graph copy; otherwise that type becomes an extra node
+ *  joined by an isa edge. Recognise the inspector's simple two-statement shape
+ *  without changing explicit selections or interpreting arbitrary pipelines. */
+function projectInspectorInstance(query: string): string {
+    const t = tokens(query);
+    if (t.length === 10 && t.every(token => token.depth === 0)
+        && t[0].text === "match" && t[1].kind === "variable"
+        && t[2].text === "isa" && t[3].kind === "word" && t[4].text === ";"
+        && t[5].text === t[1].text && t[6].text === "isa" && t[7].text === "!"
+        && t[8].kind === "variable" && t[8].text !== t[1].text && t[9].text === ";") {
+        return `${query}\nselect ${t[1].text};`;
+    }
+    return query;
+}
+
 export function prepareGraphQuery(source: string, options: GraphQueryOptions,
     typeByLabel: (label: string) => ContextType | undefined = () => undefined,
 ): { query: string; note: string } {
@@ -116,6 +132,9 @@ export function prepareGraphQuery(source: string, options: GraphQueryOptions,
     // Existing select/limit/sort stages are preserved, including their ordering.
     let query = (fetch ? source.slice(0, fetch.from) : source).trimEnd();
     let note = fetch ? "Fetch removed; returning the pipeline's concept rows." : "Using the supplied concept-row query.";
+    const projected = projectInspectorInstance(query);
+    if (projected !== query) note += " The inspector's auxiliary type column is excluded from the graph.";
+    query = projected;
     if (!options.neighbours) return { query, note };
     const base = tokens(query).filter(t => t.depth === 0);
     if (base.some(t => t.text === "reduce" && t.kind === "word")) {
