@@ -7,7 +7,7 @@
     &.floating {
         position: absolute;
         left: 16px;
-        top: 58px;
+        top: 96px;
         z-index: 10;
         background: var(--theme-deep-purple);
     }
@@ -22,5 +22,6 @@
     gap: 8px;
 
     p { margin: 0; }
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 180px; overflow-y: auto; }
     mat-form-field { width: 100%; }
 }

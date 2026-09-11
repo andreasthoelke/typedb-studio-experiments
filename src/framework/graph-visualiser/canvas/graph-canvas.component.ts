@@ -20,6 +20,8 @@ import { GraphStyleService, buildBackgroundCSS } from "../../../service/graph-st
 import { RunOutputState } from "../../../service/query-page-state.service";
 import { SelectionMode } from "../../../service/graph-view-state.service";
 
+import { fuzzyGraphMatches, GraphFinderEntry } from "../../util/graph-finder";
+
 export type GraphCanvasStatus = "ok" | "running" | "noQueryAnswers" | "noInstancesFound" | "error" | "graphlessQueryType" | "answerOutputDisabled" | "multiQuery" | "emptySchema" | "needsTransaction";
 export type GraphCanvasStatusAction = "viewLog" | "openTransaction" | "switchToAuto";
 
@@ -96,7 +98,55 @@ export class GraphCanvasComponent implements OnChanges, AfterViewInit, AfterView
      *  node here and move the renderer onto it (preserving graph + camera). */
     private attachedCanvasEl: HTMLElement | null = null;
 
+    finderText = "";
+    finderOpen = false;
+    finderResults: GraphFinderEntry[] = [];
+    finderSelected = new Map<string, GraphFinderEntry>();
+    private finderVisualiser: GraphVisualiser | null = null;
+
+    updateFinder(text: string): void {
+        this.finderText = text;
+        this.finderOpen = true;
+        this.finderResults = fuzzyGraphMatches(this.visualiser?.finderEntries() ?? [], text).slice(0, 60);
+        this.applyFinder();
+    }
+
+    toggleFinder(entry: GraphFinderEntry): void {
+        if (this.finderSelected.has(entry.id)) this.finderSelected.delete(entry.id);
+        else this.finderSelected.set(entry.id, entry);
+        this.applyFinder();
+    }
+
+    private applyFinder(): void {
+        if (!this.visualiser) return;
+        const entries = this.finderSelected.size ? [...this.finderSelected.values()] : this.finderResults;
+        this.visualiser.finderMatches = this.finderText || this.finderSelected.size
+            ? new Set(entries.flatMap(entry => entry.nodes)) : null;
+        this.visualiser.sigma.refresh();
+    }
+
+    clearFinder(): void {
+        this.finderText = ""; this.finderSelected.clear(); this.finderResults = []; this.finderOpen = false;
+        if (this.visualiser) { this.visualiser.finderMatches = null; this.visualiser.sigma.refresh(); }
+    }
+
+    focusFinder(): void {
+        this.applyFinder();
+        const keys = [...(this.visualiser?.finderMatches ?? [])];
+        for (const key of keys) if (this.visualiser?.graph.hasNode(key)) this.visualiser.setNodeAppearance(key, "viewHidden", false);
+        this.visualiser?.focusNodesSmoothly(keys);
+        this.finderOpen = false;
+    }
+
+    updateSearch(text: string): void {
+        this.clearFinder();
+        this.visualiser?.searchGraph(text.toLowerCase());
+    }
+
     ngOnChanges() {
+        if (this.finderVisualiser !== this.visualiser) {
+            this.clearFinder(); this.finderVisualiser = this.visualiser;
+        }
         if (this.selectionMode) this.visualiser?.interactionHandler.setSelectionMode(this.selectionMode);
     }
 

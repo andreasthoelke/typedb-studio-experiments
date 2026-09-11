@@ -13,10 +13,10 @@ export interface ContextType {
     supertype?: ContextType;
 }
 
-interface Token { text: string; from: number; depth: number; kind: "word" | "variable" | "symbol"; }
+export interface Token { text: string; from: number; depth: number; kind: "word" | "variable" | "symbol" | "literal"; }
 
 /** Lex only the boundaries we need; never rewrite comments, strings, or nested fetches. */
-function tokens(text: string): Token[] {
+export function tokens(text: string, tolerant = false, literals = false): Token[] {
     const result: Token[] = [];
     const brackets: string[] = [];
     for (let i = 0; i < text.length;) {
@@ -24,6 +24,7 @@ function tokens(text: string): Token[] {
         if (/\s/.test(c)) { i++; continue; }
         if (c === "#") { while (i < text.length && text[i] !== "\n") i++; continue; }
         if (c === '"' || c === "'" || c === "`") {
+            const from = i;
             const quote = c;
             i++;
             let closed = false;
@@ -31,7 +32,8 @@ function tokens(text: string): Token[] {
                 if (text[i] === "\\") { i += 2; continue; }
                 if (text[i++] === quote) { closed = true; break; }
             }
-            if (!closed) throw new Error("Unclosed quote in the query.");
+            if (!closed && !tolerant) throw new Error("Unclosed quote in the query.");
+            if (closed && literals) result.push({ text: text.slice(from, i), from, depth: brackets.length, kind: "literal" });
             continue;
         }
         const variable = c === "$" ? /^\$[\p{L}_][\p{L}\p{N}_-]*/u.exec(text.slice(i)) : null;
@@ -39,7 +41,7 @@ function tokens(text: string): Token[] {
         const token = variable?.[0] ?? word?.[0] ?? c;
         if ("})]".includes(c)) {
             if (brackets.pop() !== ({ "}": "{", ")": "(", "]": "[" } as Record<string, string>)[c]) {
-                throw new Error("Unbalanced brackets in the query.");
+                if (!tolerant) throw new Error("Unbalanced brackets in the query.");
             }
         }
         result.push({ text: token, from: i, depth: brackets.length,
@@ -47,7 +49,7 @@ function tokens(text: string): Token[] {
         if ("{([".includes(c)) brackets.push(c);
         i += token.length;
     }
-    if (brackets.length) throw new Error("Unclosed brackets in the query.");
+    if (brackets.length && !tolerant) throw new Error("Unclosed brackets in the query.");
     return result;
 }
 

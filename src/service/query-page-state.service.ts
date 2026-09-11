@@ -420,7 +420,7 @@ export class QueryPageState {
         this.runQuery(currentTab.query);
     }
 
-    runQuery(query: string, externalRead?: { limit: number }): Observable<RunResult> {
+    runQuery(query: string, externalRead?: { limit: number; schemaMode?: boolean }): Observable<RunResult> {
         if (externalRead && splitTypeQLQueries(query).length > 1) {
             throw new Error("Editor graph requests must contain one query.");
         }
@@ -453,6 +453,7 @@ export class QueryPageState {
         }
 
         newRun.graph.independentRead = !!externalRead;
+        newRun.graph.schemaMode = externalRead?.schemaMode ?? (!!oldRun?.graph.schemaMode && oldRun.graph.query === query);
         newRun.graph.database = this.driver.requireDatabase().name;
         newRun.graph.applyLabelOverrides(this.appData.nodeLabelPrefs.getAll(newRun.graph.database!));
         newRun.graph.onGraphUpdated = () => { void this.graphLabels.load(newRun.graph); };
@@ -1173,6 +1174,7 @@ function compareCells(a: string | undefined, b: string | undefined): number {
 export type GraphOutputStatus = "ok" | "running" | "graphlessQueryType" | "answerOutputDisabled" | "noQueryAnswers" | "noInstancesFound" | "error" | "multiQuery" | "needsTransaction";
 
 export class GraphOutputState {
+    schemaMode = false;
     independentRead = false;
     destroyed = false;
     onGraphUpdated?: () => void;

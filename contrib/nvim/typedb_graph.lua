@@ -93,9 +93,9 @@ function M.stop_server()
   end
 end
 
-function M.mirror(query, database)
+function M.mirror(query, database, execution)
   if vim.g.typedb_graph_auto == false or vim.g.typedb_graph_auto == 0 then return end
-  M.send(query, database, { quiet = true })
+  M.send(query, database, { quiet = true, execution = execution })
 end
 
 function M.send(query, database, options)
@@ -105,7 +105,7 @@ function M.send(query, database, options)
     return
   end
   database = database or vim.b.typedb_database or vim.g.typedb_database or vim.g.typedb_active_schema
-  local body = { query = query, limit = config.limit }
+  local body = { query = query, limit = config.limit, execution = options.execution }
   if database and database ~= '' then body.database = database end
   sequence = sequence + 1
   local requestSequence = sequence
@@ -123,6 +123,10 @@ function M.send(query, database, options)
           local ok, response = pcall(vim.json.decode, result.stdout)
           if not ok or type(response) ~= 'table' or not response.id then
             vim.notify('TypeDB graph: unexpected bridge response', vim.log.levels.ERROR)
+            return
+          end
+          if options.execution and response.executionContext ~= true then
+            notifyError("Restart the Studio bridge to enable operation context (:TypeDBGraphStop, then :TypeDBGraphStart).")
             return
           end
           if options.quiet then return end

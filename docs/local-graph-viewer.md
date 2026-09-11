@@ -20,8 +20,9 @@ session.
 - `<c-t>l` starts TypeDB and ensures the Studio bridge is running.
 - `:TypeDBGraphOpen` starts the bridge if necessary and opens the browser. Keep
   that browser tab open for subsequent queries.
-- Your `gep` and `geq...` read-query commands continue showing their normal
-  floating text results and also send the same query to Studio.
+- Your `gep` and `geq...` commands continue showing their normal floating text
+  results. Reads are mirrored; completed schema/data statements send their
+  outcome so Studio can show a separate context view.
 - The `temp/schema_...` inspector also mirrors its generated query and database.
 - `<c-t>L` stops TypeDB and the Studio job owned by this Neovim session.
 - `:TypeDBGraphStart`, `:TypeDBGraphStop`, and `:TypeDBGraphLog` manage or show the
@@ -101,6 +102,61 @@ The default total answer limit is 1000, independently of any limit already in th
 query. Preserving an existing limit before the added context bounds the seed
 results; the overall answer limit can still truncate a large neighbourhood.
 
+## Context after schema changes, writes, and errors
+
+The paragraph runner sends its statement **after the console finishes**, together
+with its operation kind and success/error outcome. Studio refreshes its schema
+and generates a separate read query in the latest unpinned Query tab. Fullscreen
+stays open. The original statement is never executed by the browser.
+
+- **Schema changes:** focus the declared types, with optional attributes, roles,
+  related types and hierarchy. This Query result uses the schema Explorer.
+- **Data changes:** show existing instances of the referenced types, using
+  literal attribute filters where available. Identifier-like attributes (such
+  as `scene-id`) take precedence over other literal attributes, so a duplicate
+  identifier can still show the existing instance when the attempted title differs.
+  Unnamed relations are selected by type; this may include other instances of
+  that relation type. This is contextual lookup, not an audit of inserted IIDs.
+- **Errors:** use the same context lookup over existing data. If it is empty or
+  cannot run, show the surviving referenced schema types. Unknown types cannot
+  appear in the graph; when none of the references exist, keep the previous view
+  and explain why. Malformed text is scanned only for known types and literal
+  values; it is not repaired and re-executed.
+
+The Neovim button marks failed statements. Its menu retains the original
+statement and error, and explains which context is being shown. Neighbour and
+relation-filter changes regenerate only the read query. A source seed variable
+can narrow data context; leave it blank to include all discovered seeds. Schema
+context ignores that field. An open Studio transaction must be closed before
+loading this current context, including when it uses the same database.
+
+After updating this feature, restart the bridge process and source both
+`~/.config/nvim/plugin/ftype/typedb.vim` and
+`~/.config/nvim/plugin/ftype/typedb_graph.lua`. A bridge started before this update
+cannot forward execution outcomes; the helper reports that it needs a restart.
+
+## Finding and framing nodes
+
+The original **Search** field still dims nonmatches. It also searches the visible
+node label, and **Enter** smoothly frames the matches (as does its target icon).
+
+The second field, **Find types or labels**, provides fuzzy matching and multiple
+selections. It searches type names, node labels, IIDs, and already-loaded
+attribute values—including title/name/ID values loaded for labels.
+
+1. Type a few letters, such as `mtvn` for `motivation`.
+2. Check a type to select its nodes, or check individual node results.
+3. Change the search text to add more selections; checked selections persist.
+4. Press **Enter** or the target icon to frame the combined selection. With no
+   boxes checked, it frames the displayed matches (up to 60). Hidden matches are
+   shown when focused. Click the field to reopen the list; Escape closes it.
+5. Use **×** to clear the finder. Typing in the original Search also clears it.
+
+The finder works on the graph already displayed; it does not query additional
+data. Selections reset with a new result. Reduced-motion preferences disable
+camera animation. Focusing pauses the force layout so the chosen nodes stay in
+view; the redraw control can start a new layout.
+
 ## Exploring and styling a result
 
 Use Explorer's **here** mode to inspect an individual node and add its actual
@@ -166,8 +222,9 @@ manual edits in the reused tab.
 
 Incoming queries run in fresh **read transactions** through Studio's existing
 execution and graph pipeline. They do not reuse or commit a manual transaction.
-Schema changes, writes, batches, and function preambles are not automatically
-mirrored; the initial scope is a single `match` pipeline. Pressing Studio's own
+Incoming statements without a completion outcome must be a single read `match`
+pipeline. Schema changes and writes are never replayed: completed-operation
+events generate separate context reads instead. Pressing Studio's own
 Run button still uses its normal transaction settings.
 
 A running Studio query finishes before the next incoming query starts. While
@@ -225,6 +282,12 @@ at `/api/viewer/events`. No Vite/Angular hot-reload protocol is involved.
 ```json
 { "query": "your TypeQL query", "database": "my_database", "limit": 1000 }
 ```
+
+An optional `execution` object reports a completed console statement:
+`{ "kind": "read" | "write" | "schema", "status": "success" | "error", "error": "optional error text" }`.
+Error text is limited to 8000 characters. Without an outcome, incoming mutations
+remain rejected. A successful acknowledgement includes `executionContext: true`
+when the running bridge supports these events.
 
 `database` is optional. `limit` defaults to 1000 and must be an integer from 1 to
 100000. The body may be up to 1 MiB. HTTP 202 with `{ "id": "...", "viewers": 1 }`

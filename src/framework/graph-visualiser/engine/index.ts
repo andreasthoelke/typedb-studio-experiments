@@ -3,6 +3,7 @@ import {
     isApiErrorResponse,
     QueryResponse,
 } from "@typedb/driver-http";
+import type { GraphFinderEntry } from "../../util/graph-finder";
 import chroma from "chroma-js";
 import Sigma from "sigma";
 import { Subscription } from "rxjs";
@@ -38,6 +39,7 @@ const AUTO_FIT_MIN_RATIO_CHANGE = 0.04;
 export class GraphVisualiser {
     interactionHandler: InteractionHandler;
     state: StudioState;
+    finderMatches: Set<string> | null = null;
     searchTerm = "";
     searchMatches: Set<string> | null = null;
     private styleParams: GraphStyles;
@@ -217,8 +219,9 @@ export class GraphVisualiser {
             let isPreviewFade = false;
 
             // Search takes priority over everything
-            if (this.searchMatches != null) {
-                shouldFade = !this.searchMatches.has(node);
+            const matches = this.finderMatches ?? this.searchMatches;
+            if (matches != null) {
+                shouldFade = !matches.has(node);
             } else {
                 // Selection-based fading
                 const isSelectedOrNeighbor = state.selectedNode != null
@@ -277,10 +280,11 @@ export class GraphVisualiser {
             let isPreviewFade = false;
 
             // Search takes priority over everything
-            if (this.searchMatches != null) {
+            const matches = this.finderMatches ?? this.searchMatches;
+            if (matches != null) {
                 const source = this.graph.source(edge);
                 const target = this.graph.target(edge);
-                shouldFade = !this.searchMatches.has(source) || !this.searchMatches.has(target);
+                shouldFade = !matches.has(source) || !matches.has(target);
             } else {
                 // Selection-based fading: keep edges where both endpoints are highlighted
                 let edgeInSelection = false;
@@ -725,15 +729,15 @@ export class GraphVisualiser {
             return;
         }
 
-        const safeString = (str: string | undefined): string =>
-            str == undefined ? "" : str.toLowerCase();
+        const safeString = (str: unknown): string =>
+            str == null ? "" : String(str).toLowerCase();
 
         const matches = new Set<string>();
         this.graph.nodes().forEach(node => {
             const attributes = this.graph.getNodeAttributes(node);
             if ("concept" in attributes["metadata"]) {
                 const concept = attributes["metadata"].concept;
-                if (("iid" in concept && safeString(concept.iid).indexOf(term) !== -1)
+                if (safeString(attributes.label).includes(term) || ("iid" in concept && safeString(concept.iid).indexOf(term) !== -1)
                     || ("value" in concept && safeString(concept.value).indexOf(term) !== -1)
                     || ("type" in concept && safeString(concept.type.label).indexOf(term) !== -1)
                     || ("label" in concept && safeString(concept.label).indexOf(term) !== -1)) {
@@ -1080,41 +1084,57 @@ export class GraphVisualiser {
         return found;
     }
 
-    focusSearchMatches(): void {
-        const matches = this.searchMatches;
-        if (!matches || matches.size === 0) return;
-
-        const { width, height } = this.sigma.getDimensions();
-        if (width === 0 || height === 0) return;
-
-        // Compute bounding box of matched nodes in graph coordinates
-        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        matches.forEach(node => {
-            const attrs = this.graph.getNodeAttributes(node);
-            minX = Math.min(minX, attrs.x);
-            maxX = Math.max(maxX, attrs.x);
-            minY = Math.min(minY, attrs.y);
-            maxY = Math.max(maxY, attrs.y);
+    finderEntries(): GraphFinderEntry[] {
+        const entries: GraphFinderEntry[] = [];
+        const groups = new Map<string, string[]>();
+        this.graph.forEachNode((key, attrs) => {
+            const concept = attrs.metadata?.concept;
+            if (!concept) return;
+            const typeLabel = "type" in concept ? concept.type.label : "label" in concept ? concept.label : "";
+            const group = groups.get(typeLabel) ?? [];
+            group.push(key); groups.set(typeLabel, group);
+            const iid = "iid" in concept ? concept.iid : "";
+            const attributes = iid ? [...(this.displayAttributes.get(iid)?.entries() ?? [])] : [];
+            const values = attributes.flatMap(([label, values]) => [label, ...values.map(String)]).join(" ");
+            const identity = attributes.filter(([label]) => /(?:id|name|title)$/i.test(label))
+                .slice(0, 2).map(([label, values]) => `${label}: ${values.map(String).join(", ")}`).join(" · ") || iid;
+            entries.push({ id: `node:${key}`, label: attrs.label, detail: `${concept.kind}${identity ? ` · ${identity}` : ""}${attrs.viewHidden ? " · hidden" : ""}`,
+                nodes: [key], text: `${attrs.label} ${typeLabel} ${iid} ${values}` });
         });
+        return [...groups].map(([label, nodes]) => ({ id: `type:${label}`, label,
+            detail: `type · ${nodes.length} node${nodes.length === 1 ? "" : "s"}`, nodes, text: label })).concat(entries);
+    }
 
-        // Compute needed ratio to fit matched nodes, capped at 1 (100% zoom)
-        const graphWidth = maxX - minX || 1;
-        const graphHeight = maxY - minY || 1;
-        const padding = 1.3;
-        const rawRatio = Math.max(graphWidth / width, graphHeight / height) * padding;
-        const ratio = Math.max(Math.min(rawRatio, 20), 1);
+    focusSearchMatches(): void {
+        this.focusNodesSmoothly([...(this.searchMatches ?? [])]);
+    }
 
-        // Convert graph-coordinate center to sigma's normalized camera coordinates
-        const centerX = (minX + maxX) / 2;
-        const centerY = (minY + maxY) / 2;
-        const bbox = this.sigma.getCustomBBox() || this.sigma.getBBox();
-        const x = (centerX - bbox.x[0]) / (bbox.x[1] - bbox.x[0]) || 0.5;
-        const y = (centerY - bbox.y[0]) / (bbox.y[1] - bbox.y[0]) || 0.5;
-
+    /** Fit normalized Sigma coordinates, including non-square graph bounds. */
+    focusNodesSmoothly(keys: string[]): void {
+        if (!keys.length) return;
+        // Freeze the layout and normalization while framing: moving bounds during
+        // camera animation otherwise shift the selected nodes out of the viewport.
+        this.layout.stop();
+        this.freezeViewport();
+        this.sigma.refresh();
+        const points = keys.filter(key => this.graph.hasNode(key) && !this.graph.getNodeAttribute(key, "viewHidden"))
+            .map(key => this.sigma.getNodeDisplayData(key)).filter(point => !!point);
+        if (!points.length) return;
+        const { width, height } = this.sigma.getDimensions();
+        if (!width || !height) return;
+        const minX = Math.min(...points.map(p => p.x)), maxX = Math.max(...points.map(p => p.x));
+        const minY = Math.min(...points.map(p => p.y)), maxY = Math.max(...points.map(p => p.y));
+        const x = (minX + maxX) / 2, y = (minY + maxY) / 2;
+        const cameraState = { x, y, ratio: 1, angle: 0 };
+        const start = this.sigma.framedGraphToViewport({ x: minX, y: minY }, { cameraState });
+        const end = this.sigma.framedGraphToViewport({ x: maxX, y: maxY }, { cameraState });
+        const ratio = Math.max(1, Math.abs(end.x - start.x) / Math.max(1, width - 140),
+            Math.abs(end.y - start.y) / Math.max(1, height - 140));
         this.autoZoomEnabled = false;
-        this.settingCameraProgrammatically = true;
-        this.sigma.getCamera().setState({ x, y, ratio, angle: 0 });
-        this.settingCameraProgrammatically = false;
+        this.pinnedCameraWorld = null;
+        this.sigma.getCamera().animate({ x, y, ratio, angle: 0 }, {
+            duration: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 300,
+        });
     }
 
     applyStructureMode(): void {

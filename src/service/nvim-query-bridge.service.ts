@@ -5,9 +5,10 @@ import { QueryPageState } from "./query-page-state.service";
 import { QueryTabsState } from "./query-tabs-state.service";
 import { SchemaState } from "./schema-state.service";
 import { SnackbarService } from "./snackbar.service";
+import { prepareOperationContext, prepareSchemaContext, EditorExecution, OperationContext } from "../framework/util/operation-context";
 import { prepareGraphQuery } from "../framework/util/graph-query";
 
-interface EditorRequest { id: string; query: string; database?: string; limit: number; }
+interface EditorRequest { id: string; query: string; database?: string; limit: number; execution?: EditorExecution; }
 const OPTIONS_KEY = "typedb-studio-nvim-options";
 const ENABLED_KEY = "typedb-studio-nvim-enabled";
 
@@ -22,6 +23,15 @@ export class NvimQueryBridge {
     relationTypes = "";
     lastRequest: EditorRequest | null = null;
     private pending = false;
+    private refreshedRequest?: string;
+    get operationContext(): boolean {
+        return !!this.lastRequest?.execution && (this.lastRequest.execution.kind !== "read" || this.lastRequest.execution.status === "error");
+    }
+    get outcome(): string {
+        const execution = this.lastRequest?.execution;
+        return !execution ? "" : execution.status === "error" ? "Neovim statement failed. Showing context from existing data/schema."
+            : execution.kind === "read" ? "" : "Neovim committed the statement. Showing current context.";
+    }
     private events?: EventSource;
     private subscriptions?: Subscription;
     private scheduled = false;
@@ -136,17 +146,32 @@ export class NvimQueryBridge {
             this.schedule();
             return;
         }
-        if (this.neighbours && this.schema.isRefreshing) {
+        if (this.operationContext && this.driver.transactionOpen) {
+            this.message = "Close the Studio transaction to load current context for the completed Neovim statement.";
+            return;
+        }
+        if (this.operationContext && this.refreshedRequest !== request.id) {
+            if (this.schema.isRefreshing) { setTimeout(() => this.schedule(), 100); return; }
+            this.refreshedRequest = request.id;
+            this.schema.refresh();
+        }
+        if ((this.neighbours || this.operationContext) && this.schema.isRefreshing) {
             this.message = "Loading the schema for graph context…";
+            setTimeout(() => this.schedule(), 100);
             return;
         }
         this.pending = false;
         try {
             const schema = this.schema.value$.value;
-            const prepared = prepareGraphQuery(request.query, {
+            const options = {
                 neighbours: this.neighbours, seedVariable: this.seedVariable,
                 relationTypes: this.relationTypes.split(",").map(label => label.trim()).filter(Boolean),
-            }, label => schema?.entities[label] ?? schema?.relations[label] ?? schema?.attributes[label]);
+            };
+            if (this.operationContext && !schema) throw new Error("Could not load the current schema for operation context.");
+            const prepared = this.operationContext
+                ? prepareOperationContext(request.query, request.execution!, options, schema!)
+                : { ...prepareGraphQuery(request.query, options,
+                    label => schema?.entities[label] ?? schema?.relations[label] ?? schema?.attributes[label]), schemaMode: false };
             this.note = prepared.note;
             // Reuse the latest unpinned tab; pinned queries are kept as saved references.
             const tabs = this.tabs.openTabs$.value;
@@ -154,12 +179,30 @@ export class NvimQueryBridge {
             while (index >= 0 && tabs[index].pinned) index--;
             if (index < 0) this.tabs.newTab();
             else this.tabs.selectTab(index);
-            this.tabs.getTabControl(this.tabs.currentTab!).setValue(prepared.query);
-            this.state.outputTypeControl.setValue("graph");
-            this.message = `Running Neovim query in ${database}…`;
-            this.state.runQuery(prepared.query, { limit: request.limit }).subscribe(result => {
-                this.message = result.success ? `Updated ${database} from Neovim.` : "Query failed; see Studio's log.";
-            });
+            const show = (context: OperationContext, fallback = false) => {
+                this.tabs.getTabControl(this.tabs.currentTab!).setValue(context.query);
+                this.state.outputTypeControl.setValue("graph");
+                this.note = context.note;
+                this.message = `Running Neovim context in ${database}…`;
+                this.state.runQuery(context.query, { limit: request.limit, schemaMode: context.schemaMode }).subscribe(result => {
+                    if (this.lastRequest !== request) return;
+                    const empty = ["noQueryAnswers", "noInstancesFound"].includes(this.state.graphOutput.status);
+                    if (this.operationContext && !context.schemaMode && !fallback && (!result.success || empty) && !this.pending) {
+                        try {
+                            const schemaContext = prepareSchemaContext(request.query, options, schema!);
+                            queueMicrotask(() => {
+                                if (this.lastRequest === request && !this.pending) show({ ...schemaContext,
+                                    note: `No matching data context was available. ${schemaContext.note}` }, true);
+                            });
+                            return;
+                        } catch { /* No surviving type: keep the empty/error result and explanation. */ }
+                    }
+                    this.message = result.success ? `Updated ${database} from Neovim. ${this.outcome}`.trim()
+                        : `Context query failed; see Studio's log. ${this.outcome}`.trim();
+                });
+            };
+            show(prepared);
+
         } catch (error) {
             this.message = error instanceof Error ? error.message : String(error);
             this.snackbar.warnPersistent(this.message);

@@ -316,7 +316,9 @@ export class GraphBuilder extends AbstractGraphBuilder {
 
     iid(_answerIndex: number, _constraint: DataConstraintIid): void {}
 
-    label(_answerIndex: number, _constraint: DataConstraintLabel): void {}
+    label(answerIndex: number, constraint: DataConstraintLabel): void {
+        this.vertex(answerIndex, constraint.type, constraint.queryConstraint.type);
+    }
 
     value(_answerIndex: number, _constraint: DataConstraintValue): void {}
 }

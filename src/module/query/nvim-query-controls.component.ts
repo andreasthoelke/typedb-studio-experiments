@@ -9,22 +9,25 @@ import { MatTooltipModule } from "@angular/material/tooltip";
 import { MatSelectModule } from "@angular/material/select";
 import { SchemaState } from "../../service/schema-state.service";
 import { NvimQueryBridge } from "../../service/nvim-query-bridge.service";
+import { operationTypes } from "../../framework/util/operation-context";
 import { findGraphContextSeed, GraphContextSeed, isGraphContextRelationCompatible } from "../../framework/util/graph-query";
 
 @Component({
     selector: "ts-nvim-query-controls",
     template: `
       <button mat-stroked-button [matMenuTriggerFor]="settings" [matTooltip]="bridge.message">
-        Neovim{{ bridge.connected ? '' : ' · disconnected' }}
+        Neovim{{ bridge.lastRequest?.execution?.status === 'error' ? ' · failed statement' : '' }}{{ bridge.connected ? '' : ' · disconnected' }}
       </button>
       <mat-menu #settings="matMenu">
         <div class="settings" (click)="$event.stopPropagation()" (keydown)="onSettingsKeydown($event)">
           <p role="status">{{ bridge.message }}</p>
           <mat-checkbox [(ngModel)]="bridge.neighbours" (ngModelChange)="bridge.scheduleReapply()">Include linked neighbours</mat-checkbox>
+          @if (bridge.lastRequest?.execution?.kind !== 'schema') {
           <mat-form-field>
             <mat-label>Seed variable (blank = automatic)</mat-label>
             <input matInput [(ngModel)]="bridge.seedVariable" (ngModelChange)="bridge.scheduleReapply()" placeholder="$item">
           </mat-form-field>
+          }
           <mat-form-field subscriptSizing="dynamic">
             <mat-label>Relation types</mat-label>
             <mat-select multiple [ngModel]="selectedRelations" (ngModelChange)="selectRelations($event)" placeholder="All relation types">
@@ -40,6 +43,14 @@ import { findGraphContextSeed, GraphContextSeed, isGraphContextRelationCompatibl
             <button mat-stroked-button (click)="selectRelations([])">Clear relation filter</button>
           }
           <p>{{ bridge.note }}</p>
+          @if (bridge.lastRequest?.execution) {
+            <p>{{ bridge.outcome }}</p>
+            <details>
+              <summary>Original Neovim statement and result</summary>
+              <pre>{{ bridge.lastRequest?.query }}</pre>
+              @if (bridge.lastRequest?.execution?.error) { <pre>{{ bridge.lastRequest?.execution?.error }}</pre> }
+            </details>
+          }
           <p>One relation hop. Selected relations include their role players. Existing row limits are preserved.</p>
           <p>Changes automatically update the latest Neovim query.</p>
         </div>
@@ -58,6 +69,13 @@ export class NvimQueryControlsComponent {
 
     get availableRelations(): { label: string; compatible: boolean }[] {
         const schema = this.schema.value$.value;
+        if (this.bridge.operationContext && schema) {
+            const types = operationTypes(this.bridge.lastRequest!.query, schema);
+            return Object.keys(schema.relations).sort().map(label => ({ label,
+                compatible: this.bridge.lastRequest?.execution?.kind === "schema" || types.some(type =>
+                    type.kind !== "attributeType" && isGraphContextRelationCompatible({ variable: "$item", type: { ...type, kind: "entityType" }, exact: false }, schema.relations[label])),
+            }));
+        }
         let seed: GraphContextSeed | undefined;
         try {
             seed = findGraphContextSeed(this.bridge.lastRequest?.query ?? "", this.bridge.seedVariable,

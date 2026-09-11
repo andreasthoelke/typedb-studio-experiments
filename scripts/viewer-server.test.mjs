@@ -118,3 +118,17 @@ test('development proxy serves Angular while keeping query events local', async 
     assert.equal(await (await fetch(`${origin}/query?nvim=1`)).text(), 'Angular /query?nvim=1');
     assert.equal((await post({ query: 'q' })).status, 202);
 });
+
+
+test('completed operation outcomes survive event delivery and invalid outcomes are rejected', async t => {
+    const { post, subscribe } = await start(t);
+    const execution = { kind: 'write', status: 'error', error: 'Duplicate key S1' };
+    const query = 'insert $s isa scene;';
+    assert.equal((await post({ query, execution })).status, 202);
+    const event = await (await subscribe())();
+    assert.deepEqual(event.execution, execution);
+    assert.equal(event.query, query);
+    for (const bad of [null, {}, { kind: 'write', status: 'pending' }, { kind: 'schema', status: 'error', error: 7 }]) {
+        assert.equal((await post({ query, execution: bad })).status, 400);
+    }
+});

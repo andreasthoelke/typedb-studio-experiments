@@ -81,9 +81,16 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                     || (body.limit !== undefined && (!Number.isInteger(body.limit) || body.limit < 1 || body.limit > 100000))) {
                     return json(response, 400, { error: 'Expected query text, optional database, and optional integer limit (1–100000).' });
                 }
-                latest = { id: randomUUID(), query: body.query, database: body.database, limit: body.limit ?? 1000 };
+                const execution = body.execution;
+                if (execution !== undefined && (!execution || !['read', 'write', 'schema'].includes(execution.kind)
+                    || !['success', 'error'].includes(execution.status)
+                    || (execution.error !== undefined && (typeof execution.error !== 'string' || execution.error.length > 8000)))) {
+                    return json(response, 400, { error: 'Invalid execution outcome.' });
+                }
+                latest = { id: randomUUID(), query: body.query, database: body.database, limit: body.limit ?? 1000,
+                    ...(execution ? { execution: { kind: execution.kind, status: execution.status, error: execution.error } } : {}) };
                 for (const client of clients) send(client, latest);
-                return json(response, 202, { id: latest.id, viewers: clients.size });
+                return json(response, 202, { id: latest.id, viewers: clients.size, executionContext: true });
             }
             if (url.pathname.startsWith('/api/viewer/')) return json(response, 404, { error: 'Unknown viewer endpoint or method.' });
             if (url.pathname === '/viewer') {
