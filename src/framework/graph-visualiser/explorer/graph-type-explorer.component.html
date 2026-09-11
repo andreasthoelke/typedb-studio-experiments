@@ -40,9 +40,9 @@
                     matTooltip="Hide this type and its edges in the view">
               {{ schemaAppearance('viewHidden') ? 'Show' : 'Hide' }}
             </button>
-            <button class="open-details-button" (click)="toggleSchemaAppearance('viewDimmed')"
-                    [disabled]="!schemaNodeKey(selectedType)" [attr.aria-pressed]="schemaAppearance('viewDimmed')">
-              {{ schemaAppearance('viewDimmed') ? 'Undim' : 'Dim' }}
+            <button class="open-details-button" (click)="toggleGraphSelection()"
+                    [disabled]="!schemaNodeKey(selectedType)" [attr.aria-pressed]="isInGraphSelection">
+              {{ isInGraphSelection ? 'Remove from selection' : 'Add to selection' }}
             </button>
           </div>
           @for (section of schemaSections; track section.title) {

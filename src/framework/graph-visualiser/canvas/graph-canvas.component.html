@@ -41,18 +41,18 @@
       <input type="text" aria-label="Find types or labels" placeholder="Find types or labels"
              [value]="finderText" (input)="updateFinder($any($event.target).value)" (focus)="updateFinder(finderText)" (click)="updateFinder(finderText)">
       <button class="graph-search-focus" aria-label="Focus finder matches" (click)="focusFinder()"><i class="fa-light fa-crosshairs"></i></button>
-      @if (finderText || finderSelected.size) {
+      @if (finderText || visualiser?.elementSelection?.active) {
         <button class="graph-search-focus" aria-label="Clear finder selection" (click)="clearFinder()"><i class="fa-light fa-xmark"></i></button>
       }
       @if (finderOpen) {
         <div class="finder-results">
-          <p>{{ finderSelected.size }} selected · Enter to focus · Esc to close</p>
-          @for (entry of finderSelected.values(); track entry.id) {
-            <button class="finder-selected" (click)="toggleFinder(entry)" [attr.aria-label]="'Remove selection ' + entry.label">{{ entry.label }} ×</button>
+          <p>{{ visualiser?.elementSelection?.nodes?.size ?? 0 }} nodes selected · Enter to focus · Esc to close</p>
+          @for (entry of finderSelected; track entry.id) {
+            <button class="finder-selected" (click)="removeFinderSelection(entry)" [attr.aria-label]="'Remove selection ' + entry.label">{{ entry.label }} ×</button>
           }
           <div class="finder-options" role="group" aria-label="Finder matches">
             @for (entry of finderResults; track entry.id) {
-              <label><input type="checkbox" [checked]="finderSelected.has(entry.id)" (change)="toggleFinder(entry)">
+              <label><input type="checkbox" [checked]="finderStatus(entry) === 'all'" [indeterminate]="finderStatus(entry) === 'partial'" (change)="toggleFinder(entry)">
                 <span>{{ entry.label }}<small>{{ entry.detail }}</small></span>
               </label>
             } @empty { <p>No matches in this graph.</p> }

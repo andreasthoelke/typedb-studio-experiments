@@ -1,5 +1,12 @@
-<div class="panel-section highlights-section">
-  <div class="highlight-group">
+<div class="panel-section highlights-section" (keydown.enter)="focusSelection($event)">
+  <div class="highlight-group-header">
+    <span class="highlight-group-label">Shared selection</span>
+    <div class="highlight-group-actions">
+      <button class="highlight-action-button" (click)="focusSelection()" title="Frame highlighted nodes (Enter)">Focus</button>
+      <button class="highlight-action-button" (click)="clearSelection()" title="Clear the selection and restore normal highlighting">Clear</button>
+    </div>
+  </div>
+  <div class="highlight-group" role="group" aria-label="Kinds">
     <div class="highlight-group-header">
       <span class="highlight-group-label">Kinds</span>
       <div class="highlight-group-actions">
@@ -12,6 +19,8 @@
         @if (getKindCount(row.kind) > 0) {
           <button class="highlight-chip"
                   [class.active]="isKindHighlighted(row.kind)"
+                  [class.partial]="isKindPartial(row.kind)"
+                  [attr.aria-pressed]="isKindPartial(row.kind) ? 'mixed' : isKindHighlighted(row.kind)"
                   [style.--chip-color]="getKindColor(row.kind)"
                   (click)="toggleHighlightKind(row.kind)"
                   (dblclick)="soloHighlightKind(row.kind)"
@@ -25,7 +34,7 @@
     </div>
   </div>
   @if (discoveredTypes.length > 0) {
-    <div class="highlight-group">
+    <div class="highlight-group" role="group" aria-label="Types">
       <div class="highlight-group-header">
         <span class="highlight-group-label">Types</span>
         <div class="highlight-group-actions">
@@ -33,13 +42,13 @@
           <button class="highlight-action-button" (click)="unselectAllTypes()">None</button>
         </div>
       </div>
-      @if (discoveredTypes.length > 20) {
+      @if (discoveredTypes.length > 0) {
         <div class="highlight-filter">
           <i class="fa-light fa-magnifying-glass"></i>
-          <input type="text" placeholder="Filter types"
+          <input type="text" placeholder="Filter types" aria-label="Filter types" title="Filter the tag list; Enter frames the graph selection"
                  [value]="typeFilter" (input)="onTypeFilterInput($event)">
           @if (typeFilter) {
-            <button class="highlight-filter-clear" (click)="clearTypeFilter()">
+            <button class="highlight-filter-clear" (click)="clearTypeFilter()" aria-label="Clear type filter">
               <i class="fa-light fa-xmark"></i>
             </button>
           }
@@ -49,6 +58,8 @@
         @for (row of displayedTypes; track row.typeLabel) {
           <button class="highlight-chip"
                   [class.active]="isTypeHighlighted(row.typeLabel)"
+                  [class.partial]="isTypePartial(row.typeLabel)"
+                  [attr.aria-pressed]="isTypePartial(row.typeLabel) ? 'mixed' : isTypeHighlighted(row.typeLabel)"
                   [style.--chip-color]="getTypeColor(row.typeLabel, row.kind)"
                   (click)="toggleHighlightType(row.typeLabel)"
                   (dblclick)="soloHighlightType(row.typeLabel)"
@@ -56,7 +67,7 @@
                   (mouseenter)="onChipHoverType(row.typeLabel)"
                   (mouseleave)="onChipHoverEnd()">
             {{ row.typeLabel }}
-            <span class="highlight-chip-count">{{ getTypeCount(row.typeLabel) }}</span>
+            <span class="highlight-chip-count">@if (isTypePartial(row.typeLabel)) { {{ selectedTypeCount(row.typeLabel) }}/}{{ getTypeCount(row.typeLabel) }}</span>
           </button>
         }
       </div>

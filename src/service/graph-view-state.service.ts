@@ -307,6 +307,7 @@ export class GraphViewState {
             visualiser.interactionHandler.setSecondaryAnchors(new Set());
             visualiser.unfreezeViewport();
             visualiser.graph.clear();
+            visualiser.elementSelection.clear();
             visualiser.layout.forgetSettled();
             tab.run.graph.clearDisplayAttributes();
         }

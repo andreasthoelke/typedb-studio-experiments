@@ -147,13 +147,30 @@ attribute values—including title/name/ID values loaded for labels.
 1. Type a few letters, such as `mtvn` for `motivation`.
 2. Check a type to select its nodes, or check individual node results.
 3. Change the search text to add more selections; checked selections persist.
-4. Press **Enter** or the target icon to frame the combined selection. With no
-   boxes checked, it frames the displayed matches (up to 60). Hidden matches are
-   shown when focused. Click the field to reopen the list; Escape closes it.
+4. Press **Enter** or the target icon to frame the combined selection. Before
+   starting a selection, Enter selects and frames the displayed matches (up to
+   60). Hidden selected nodes are shown when focused. Click the field to reopen
+   the list; Escape closes it.
 5. Use **×** to clear the finder. Typing in the original Search also clears it.
 
+The finder, **Elements → Types / Kinds**, and Explorer's **Add to selection /
+Remove from selection** share one selection of nodes in the current graph:
+
+- Type and kind tags select their current nodes, just like finder type checkboxes.
+  A dashed tag and a mixed checkbox indicate a partial selection. Type counts
+  show selected/total when partial. Clicking a partial group selects the rest.
+- **All** selects every node, allowing you to exclude types by toggling them off.
+  **None** explicitly selects nothing, allowing you to build a selection from
+  scratch. **Clear** (or the finder's ×) restores normal graph highlighting.
+- **Filter types** only narrows the tag list; it does not alter the selection.
+  **Enter** anywhere in Elements, or its **Focus** button, frames highlighted
+  nodes. Space still toggles a focused tag; double-click selects only that group.
+- Edge tags retain their independent edge-highlighting controls.
+
 The finder works on the graph already displayed; it does not query additional
-data. Selections reset with a new result. Reduced-motion preferences disable
+data. Newly loaded nodes are initially unselected; a type can become partially
+selected as more instances are loaded. Selections survive docking and switching
+run tabs, and reset with a new result. Reduced-motion preferences disable
 camera animation. Focusing pauses the force layout so the chosen nodes stay in
 view; the redraw control can start a new layout.
 
@@ -165,7 +182,8 @@ rewriting the query. The Neovim menu controls the initial automatic expansion;
 Explorer is the more direct way to explore further.
 
 Beside **Reveal in graph**, **Hide / Show** hides the selected node and its incident
-edges, and **Dim / Undim** fades them. Hidden nodes remain in the result, including
+edges. **Add to selection / Remove from selection** changes the same selection
+as the finder and Elements tags. Hidden nodes remain in the result, including
 its counts and layout; they are not deleted from TypeDB. **Restore hidden / dimmed
 nodes** in the panel footer clears these view overrides. Reveal also unhides the
 inspected node. Overrides survive docking and switching run tabs, but a new query
@@ -191,8 +209,9 @@ On **/schema**, select a node to explore its type in the right-hand Explorer:
   types that can play the role.
 - Clicking a chip reveals that type and opens its Explorer details. The **\***
   chip reveals the whole group with the selected type, showing any hidden nodes.
-- **Hide / Show**, **Dim / Undim**, and **Reveal in graph** work on the selected
-  schema node. The panel footer restores all hidden or dimmed nodes.
+- **Hide / Show**, **Add to selection / Remove from selection**, and **Reveal in
+  graph** work on the selected schema node. Selection is shared with the finder
+  and Elements tags. The panel footer restores all hidden or dimmed nodes.
 
 These are view controls over the loaded schema; they do not alter the database.
 Schema refresh rebuilds the graph and clears its temporary visibility changes.

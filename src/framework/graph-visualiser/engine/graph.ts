@@ -1,6 +1,7 @@
 import { EdgeKind } from "@typedb/driver-http";
 import { MultiGraph } from "graphology";
 import { DataConstraintAny } from "@typedb/graph-utils";
+import type { GraphSelectionSnapshot } from "../../util/graph-element-selection";
 import type { StudioDataVertex } from "./types";
 
 export interface VertexMetadata {
@@ -43,6 +44,7 @@ export interface EdgeAttributes {
 }
 
 export interface GraphAttributes {
+    elementSelection?: GraphSelectionSnapshot;
 }
 
 export type Graph = MultiGraph<VertexAttributes, EdgeAttributes, GraphAttributes>;

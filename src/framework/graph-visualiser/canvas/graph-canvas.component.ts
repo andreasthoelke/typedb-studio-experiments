@@ -4,7 +4,7 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { Component, ElementRef, EventEmitter, HostBinding, Input, OnChanges, OnDestroy, Output, ViewChild, AfterViewInit, AfterViewChecked } from "@angular/core";
+import { Component, ElementRef, EventEmitter, HostBinding, Input, DoCheck, OnChanges, OnDestroy, Output, ViewChild, AfterViewInit, AfterViewChecked } from "@angular/core";
 import { NgTemplateOutlet } from "@angular/common";
 import { MatTooltipModule } from "@angular/material/tooltip";
 import { MatMenuModule } from "@angular/material/menu";
@@ -31,7 +31,7 @@ export type GraphCanvasStatusAction = "viewLog" | "openTransaction" | "switchToA
     styleUrls: ["graph-canvas.component.scss"],
     imports: [NgTemplateOutlet, MatTooltipModule, MatMenuModule, MatButtonModule, ResizableDirective, GraphControlsComponent, GraphSidePanelComponent, GraphContextMenuComponent],
 })
-export class GraphCanvasComponent implements OnChanges, AfterViewInit, AfterViewChecked, OnDestroy {
+export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, AfterViewChecked, OnDestroy {
     @Input() visualiser: GraphVisualiser | null = null;
     @Input() status: GraphCanvasStatus = "ok";
     @Input() graphPercent = 75;
@@ -101,10 +101,34 @@ export class GraphCanvasComponent implements OnChanges, AfterViewInit, AfterView
     finderText = "";
     finderOpen = false;
     finderResults: GraphFinderEntry[] = [];
-    finderSelected = new Map<string, GraphFinderEntry>();
     private finderVisualiser: GraphVisualiser | null = null;
+    private selectedEntries: GraphFinderEntry[] = [];
+    private selectionRevision = -1;
+    private selectionGraphOrder = -1;
+    private finderGraphOrder = -1;
+
+    get finderSelected(): GraphFinderEntry[] {
+        const v = this.visualiser;
+        if (!v) return [];
+        if (this.selectionRevision !== v.elementSelection.revision || this.selectionGraphOrder !== v.graph.order) {
+            const entries = v.finderEntries();
+            const wholeTypes = entries.filter(entry => entry.id.startsWith("type:") && v.elementSelection.status(entry.nodes) === "all");
+            const covered = new Set(wholeTypes.flatMap(entry => entry.nodes));
+            this.selectedEntries = [...wholeTypes, ...entries.filter(entry => entry.id.startsWith("node:")
+                && v.elementSelection.nodes.has(entry.nodes[0]) && !covered.has(entry.nodes[0]))];
+            this.selectionRevision = v.elementSelection.revision;
+            this.selectionGraphOrder = v.graph.order;
+        }
+        return this.selectedEntries;
+    }
+
+    finderStatus(entry: GraphFinderEntry): "none" | "partial" | "all" {
+        return this.visualiser?.elementSelection.status(entry.nodes) ?? "none";
+    }
 
     updateFinder(text: string): void {
+        this.finderGraphOrder = this.visualiser?.graph.order ?? -1;
+        this.selectionRevision = -1;
         this.finderText = text;
         this.finderOpen = true;
         this.finderResults = fuzzyGraphMatches(this.visualiser?.finderEntries() ?? [], text).slice(0, 60);
@@ -112,29 +136,31 @@ export class GraphCanvasComponent implements OnChanges, AfterViewInit, AfterView
     }
 
     toggleFinder(entry: GraphFinderEntry): void {
-        if (this.finderSelected.has(entry.id)) this.finderSelected.delete(entry.id);
-        else this.finderSelected.set(entry.id, entry);
-        this.applyFinder();
+        this.visualiser?.elementSelection.toggle(entry.nodes);
+    }
+
+    removeFinderSelection(entry: GraphFinderEntry): void {
+        this.visualiser?.elementSelection.set(entry.nodes, false);
     }
 
     private applyFinder(): void {
         if (!this.visualiser) return;
-        const entries = this.finderSelected.size ? [...this.finderSelected.values()] : this.finderResults;
-        this.visualiser.finderMatches = this.finderText || this.finderSelected.size
-            ? new Set(entries.flatMap(entry => entry.nodes)) : null;
+        this.visualiser.finderMatches = !this.visualiser.elementSelection.active && this.finderText
+            ? new Set(this.finderResults.flatMap(entry => entry.nodes)) : null;
         this.visualiser.sigma.refresh();
     }
 
     clearFinder(): void {
-        this.finderText = ""; this.finderSelected.clear(); this.finderResults = []; this.finderOpen = false;
-        if (this.visualiser) { this.visualiser.finderMatches = null; this.visualiser.sigma.refresh(); }
+        this.finderText = ""; this.finderResults = []; this.finderOpen = false;
+        if (this.visualiser) { this.visualiser.finderMatches = null; this.visualiser.elementSelection.clear(); }
     }
 
     focusFinder(): void {
         this.applyFinder();
-        const keys = [...(this.visualiser?.finderMatches ?? [])];
-        for (const key of keys) if (this.visualiser?.graph.hasNode(key)) this.visualiser.setNodeAppearance(key, "viewHidden", false);
-        this.visualiser?.focusNodesSmoothly(keys);
+        if (!this.visualiser?.elementSelection.active && this.visualiser?.finderMatches) {
+            this.visualiser.elementSelection.replace([...this.visualiser.finderMatches]);
+        }
+        this.visualiser?.focusHighlightedNodes();
         this.finderOpen = false;
     }
 
@@ -143,9 +169,15 @@ export class GraphCanvasComponent implements OnChanges, AfterViewInit, AfterView
         this.visualiser?.searchGraph(text.toLowerCase());
     }
 
+    ngDoCheck(): void {
+        if (this.finderOpen && this.finderGraphOrder !== this.visualiser?.graph.order) this.updateFinder(this.finderText);
+    }
+
     ngOnChanges() {
         if (this.finderVisualiser !== this.visualiser) {
-            this.clearFinder(); this.finderVisualiser = this.visualiser;
+            this.finderText = ""; this.finderResults = []; this.finderOpen = false;
+            this.selectionRevision = -1; this.selectionGraphOrder = -1;
+            this.finderVisualiser = this.visualiser;
         }
         if (this.selectionMode) this.visualiser?.interactionHandler.setSelectionMode(this.selectionMode);
     }

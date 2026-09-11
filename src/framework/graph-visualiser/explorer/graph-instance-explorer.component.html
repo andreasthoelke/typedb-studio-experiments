@@ -54,9 +54,9 @@
                       matTooltip="Hide this node and its edges in this result. The query and database are unchanged.">
                 {{ appearanceEnabled('viewHidden') ? 'Show' : 'Hide' }}
               </button>
-              <button class="open-details-button" (click)="toggleAppearance('viewDimmed')" [disabled]="!selfNodeKey"
-                      [attr.aria-pressed]="appearanceEnabled('viewDimmed')">
-                {{ appearanceEnabled('viewDimmed') ? 'Undim' : 'Dim' }}
+              <button class="open-details-button" (click)="toggleGraphSelection()" [disabled]="!selfNodeKey"
+                      [attr.aria-pressed]="isInGraphSelection">
+                {{ isInGraphSelection ? 'Remove from selection' : 'Add to selection' }}
               </button>
             </div>
           </div>

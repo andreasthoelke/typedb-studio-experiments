@@ -3,6 +3,7 @@ import {
     isApiErrorResponse,
     QueryResponse,
 } from "@typedb/driver-http";
+import { GraphElementSelection } from "../../util/graph-element-selection";
 import type { GraphFinderEntry } from "../../util/graph-finder";
 import chroma from "chroma-js";
 import Sigma from "sigma";
@@ -39,6 +40,7 @@ const AUTO_FIT_MIN_RATIO_CHANGE = 0.04;
 export class GraphVisualiser {
     interactionHandler: InteractionHandler;
     state: StudioState;
+    readonly elementSelection: GraphElementSelection;
     finderMatches: Set<string> | null = null;
     searchTerm = "";
     searchMatches: Set<string> | null = null;
@@ -73,6 +75,17 @@ export class GraphVisualiser {
     labelOverridesByType: Map<string, string> = new Map();
 
     constructor(public graph: Graph, public sigma: Sigma, public layout: LayoutWrapper, public styleService: GraphStyleService) {
+        this.elementSelection = new GraphElementSelection(graph.getAttribute("elementSelection"), snapshot => {
+            graph.setAttribute("elementSelection", snapshot);
+            this.styleService.clearPreview();
+            for (const key of snapshot.nodes) {
+                if (graph.hasNode(key) && graph.getNodeAttribute(key, "viewDimmed")) graph.setNodeAttribute(key, "viewDimmed", false);
+            }
+            this.finderMatches = null;
+            this.searchMatches = null;
+            this.searchTerm = "";
+            this.sigma.refresh();
+        });
         this.state = { activeQueryDatabase: null };
         this.styleParams = this.syncStyles();
         this.interactionHandler = new InteractionHandler(graph, sigma, this.state, this.styleParams, this.styleService);
@@ -218,8 +231,8 @@ export class GraphVisualiser {
             let shouldFade = false;
             let isPreviewFade = false;
 
-            // Search takes priority over everything
-            const matches = this.finderMatches ?? this.searchMatches;
+            // Explicit shared selection takes priority, followed by search previews.
+            const matches = this.elementSelection.active ? this.elementSelection.nodes : (this.finderMatches ?? this.searchMatches);
             if (matches != null) {
                 shouldFade = !matches.has(node);
             } else {
@@ -279,12 +292,14 @@ export class GraphVisualiser {
             let shouldFade = false;
             let isPreviewFade = false;
 
-            // Search takes priority over everything
-            const matches = this.finderMatches ?? this.searchMatches;
+            // Explicit shared selection takes priority, followed by search previews.
+            const matches = this.elementSelection.active ? this.elementSelection.nodes : (this.finderMatches ?? this.searchMatches);
             if (matches != null) {
                 const source = this.graph.source(edge);
                 const target = this.graph.target(edge);
                 shouldFade = !matches.has(source) || !matches.has(target);
+                const tag = data["metadata"]?.dataEdge?.tag;
+                if (tag && !this.styleService.shouldHighlightEdge(tag)) shouldFade = true;
             } else {
                 // Selection-based fading: keep edges where both endpoints are highlighted
                 let edgeInSelection = false;
@@ -999,7 +1014,11 @@ export class GraphVisualiser {
         for (const key of nodeKeys) {
             if (this.graph.hasNode(key)) { this.graph.dropNode(key); dropped++; }
         }
-        if (dropped > 0) this.interactionHandler.recomputeHighlightSet();
+        if (dropped > 0) {
+            const removed = [...this.elementSelection.nodes].filter(key => !this.graph.hasNode(key));
+            if (removed.length) this.elementSelection.set(removed, false);
+            this.interactionHandler.recomputeHighlightSet();
+        }
     }
 
     /** The source node set for an unload: every in-graph instance of the type
@@ -1103,6 +1122,21 @@ export class GraphVisualiser {
         });
         return [...groups].map(([label, nodes]) => ({ id: `type:${label}`, label,
             detail: `type · ${nodes.length} node${nodes.length === 1 ? "" : "s"}`, nodes, text: label })).concat(entries);
+    }
+
+    focusHighlightedNodes(): void {
+        if (this.elementSelection.active) {
+            const keys = [...this.elementSelection.nodes].filter(key => this.graph.hasNode(key));
+            for (const key of keys) this.setNodeAppearance(key, "viewHidden", false);
+            this.focusNodesSmoothly(keys);
+            return;
+        }
+        const reducer = this.sigma.getSetting("nodeReducer")!;
+        const keys = this.graph.nodes().filter(key => {
+            const data = reducer(key, this.graph.getNodeAttributes(key));
+            return !data.hidden && (data.zIndex ?? 0) > 0;
+        });
+        this.focusNodesSmoothly(keys);
     }
 
     focusSearchMatches(): void {

@@ -151,7 +151,7 @@ export class GraphSidePanelComponent implements OnChanges, OnDestroy {
     topTab: "elements" | "presets" | "customise" = "elements";
 
     get isHighlightActive(): boolean {
-        return this.styleService.isHighlightActive();
+        return !!this.visualiser?.elementSelection.active || this.styleService.isHighlightActive();
     }
 
     /** Whether the active mode currently has a node selected — drives whether

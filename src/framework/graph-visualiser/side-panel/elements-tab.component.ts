@@ -76,6 +76,8 @@ export class ElementsTabComponent implements OnChanges, DoCheck {
     kindCounts = new Map<VertexKind, number>();
     typeCounts = new Map<string, number>();
     edgeCounts = new Map<string, number>();
+    private kindNodes = new Map<VertexKind, string[]>();
+    private typeNodes = new Map<string, string[]>();
 
     /** Filter input for the Types chip section. Live-narrows the rendered chip list — necessary
      *  at scale (some schemas have 10k+ types and rendering a chip per type cripples the UI). */
@@ -116,6 +118,8 @@ export class ElementsTabComponent implements OnChanges, DoCheck {
         this.kindCounts.clear();
         this.typeCounts.clear();
         this.edgeCounts.clear();
+        this.kindNodes.clear();
+        this.typeNodes.clear();
         if (!this.visualiser) return;
 
         const typeKinds = new Map<string, VertexKind>();
@@ -124,6 +128,8 @@ export class ElementsTabComponent implements OnChanges, DoCheck {
             const concept = attrs.metadata.concept;
             const kind = concept.kind as VertexKind;
             this.kindCounts.set(kind, (this.kindCounts.get(kind) ?? 0) + 1);
+            if (!this.kindNodes.has(kind)) this.kindNodes.set(kind, []);
+            this.kindNodes.get(kind)!.push(nodeKey);
 
             let typeLabel: string | undefined;
             if ("type" in concept && concept.type && "label" in concept.type) {
@@ -134,6 +140,8 @@ export class ElementsTabComponent implements OnChanges, DoCheck {
             if (typeLabel) {
                 typeKinds.set(typeLabel, kind);
                 this.typeCounts.set(typeLabel, (this.typeCounts.get(typeLabel) ?? 0) + 1);
+                if (!this.typeNodes.has(typeLabel)) this.typeNodes.set(typeLabel, []);
+                this.typeNodes.get(typeLabel)!.push(nodeKey);
             }
         }
         for (const edgeKey of this.visualiser.graph.edges()) {
@@ -191,11 +199,11 @@ export class ElementsTabComponent implements OnChanges, DoCheck {
     }
 
     isKindHighlighted(kind: VertexKind): boolean {
-        return this.styleService.highlightedKinds.has(kind);
+        return this.visualiser?.elementSelection.status(this.kindNodes.get(kind) ?? []) === "all";
     }
 
     isTypeHighlighted(typeLabel: string): boolean {
-        return this.styleService.highlightedTypes.has(typeLabel);
+        return this.visualiser?.elementSelection.status(this.typeNodes.get(typeLabel) ?? []) === "all";
     }
 
     isEdgeHighlighted(tag: string): boolean {
@@ -203,13 +211,11 @@ export class ElementsTabComponent implements OnChanges, DoCheck {
     }
 
     toggleHighlightKind(kind: VertexKind): void {
-        this.styleService.toggleHighlightKind(kind);
-        this.visualiser?.sigma.refresh();
+        this.visualiser?.elementSelection.toggle(this.kindNodes.get(kind) ?? []);
     }
 
     toggleHighlightType(typeLabel: string): void {
-        this.styleService.toggleHighlightType(typeLabel);
-        this.visualiser?.sigma.refresh();
+        this.visualiser?.elementSelection.toggle(this.typeNodes.get(typeLabel) ?? []);
     }
 
     toggleHighlightEdge(tag: string): void {
@@ -217,25 +223,37 @@ export class ElementsTabComponent implements OnChanges, DoCheck {
         this.visualiser?.sigma.refresh();
     }
 
-    selectAllKinds(): void {
-        for (const row of this.displayKinds) this.styleService.highlightedKinds.add(row.kind);
-        this.visualiser?.sigma.refresh();
+    isKindPartial(kind: VertexKind): boolean {
+        return this.visualiser?.elementSelection.status(this.kindNodes.get(kind) ?? []) === "partial";
     }
 
-    unselectAllKinds(): void {
-        this.styleService.highlightedKinds.clear();
-        this.visualiser?.sigma.refresh();
+    isTypePartial(typeLabel: string): boolean {
+        return this.visualiser?.elementSelection.status(this.typeNodes.get(typeLabel) ?? []) === "partial";
     }
+
+    selectedTypeCount(typeLabel: string): number {
+        return (this.typeNodes.get(typeLabel) ?? []).filter(key => this.visualiser?.elementSelection.nodes.has(key)).length;
+    }
+
+    focusSelection(event?: Event): void {
+        event?.preventDefault();
+        event?.stopPropagation();
+        this.visualiser?.focusHighlightedNodes();
+    }
+
+    clearSelection(): void {
+        this.styleService.clearPreview();
+        this.visualiser?.elementSelection.clear();
+    }
+
+    selectAllKinds(): void { this.selectAllTypes(); }
+    unselectAllKinds(): void { this.unselectAllTypes(); }
 
     selectAllTypes(): void {
-        for (const row of this.discoveredTypes) this.styleService.highlightedTypes.add(row.typeLabel);
-        this.visualiser?.sigma.refresh();
+        if (this.visualiser) this.visualiser.elementSelection.replace(this.visualiser.graph.nodes());
     }
 
-    unselectAllTypes(): void {
-        this.styleService.highlightedTypes.clear();
-        this.visualiser?.sigma.refresh();
-    }
+    unselectAllTypes(): void { this.visualiser?.elementSelection.replace([]); }
 
     selectAllEdges(): void {
         for (const row of this.edgeLabels) this.styleService.highlightedEdges.add(row.tag);
@@ -248,15 +266,11 @@ export class ElementsTabComponent implements OnChanges, DoCheck {
     }
 
     soloHighlightKind(kind: VertexKind): void {
-        this.styleService.highlightedKinds.clear();
-        this.styleService.highlightedKinds.add(kind);
-        this.visualiser?.sigma.refresh();
+        this.visualiser?.elementSelection.replace(this.kindNodes.get(kind) ?? []);
     }
 
     soloHighlightType(typeLabel: string): void {
-        this.styleService.highlightedTypes.clear();
-        this.styleService.highlightedTypes.add(typeLabel);
-        this.visualiser?.sigma.refresh();
+        this.visualiser?.elementSelection.replace(this.typeNodes.get(typeLabel) ?? []);
     }
 
     soloHighlightEdge(tag: string): void {
@@ -267,7 +281,8 @@ export class ElementsTabComponent implements OnChanges, DoCheck {
 
     /** True when the chip-hover preview is allowed to take effect (no real highlight or vertex selection active). */
     private canPreview(): boolean {
-        if (this.styleService.isHighlightActive()) return false;
+        if (this.styleService.isHighlightActive() || this.visualiser?.elementSelection.active
+            || this.visualiser?.finderMatches || this.visualiser?.searchMatches) return false;
         if (this.visualiser?.interactionHandler.state.selectedNode != null) return false;
         return true;
     }

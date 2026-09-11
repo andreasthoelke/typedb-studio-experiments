@@ -732,6 +732,12 @@
     color: var(--theme-white);
   }
 
+  &.partial {
+    border-color: var(--chip-color);
+    border-style: dashed;
+    color: var(--chip-color);
+  }
+
   &.active {
     border-color: var(--chip-color);
     background: color-mix(in srgb, var(--chip-color) 20%, transparent);
