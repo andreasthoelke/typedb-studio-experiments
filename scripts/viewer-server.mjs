@@ -5,6 +5,8 @@ import { stat } from 'node:fs/promises';
 import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
+import { homedir } from 'node:os';
+import { maxPngBytes, saveGraphPng, validExportName } from './viewer-export.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const maxBodyBytes = 1024 * 1024;
@@ -20,8 +22,8 @@ function json(response, status, body) {
     response.end(JSON.stringify(body));
 }
 
-/** A loopback-only message bridge. Credentials and TypeDB results stay in Studio. */
-export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/browser'), devPort } = {}) {
+/** A loopback-only query bridge and PNG saver. Database credentials stay in Studio. */
+export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/browser'), devPort, downloadsDirectory = resolve(homedir(), 'Downloads') } = {}) {
     const clients = new Set();
     let latest;
 
@@ -44,7 +46,27 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
         try {
             const url = new URL(request.url, 'http://127.0.0.1');
             if (url.pathname === '/api/viewer/health' && request.method === 'GET') {
-                return json(response, 200, { service: 'typedb-studio-bridge', viewers: clients.size, latestRequestId: latest?.id ?? null });
+                return json(response, 200, { service: 'typedb-studio-bridge', pngExport: true, viewers: clients.size, latestRequestId: latest?.id ?? null });
+            }
+            if (url.pathname === '/api/viewer/export' && request.method === 'POST') {
+                if (request.headers['content-type']?.split(';')[0].trim() !== 'image/png') {
+                    return json(response, 415, { error: 'Send image/png.' });
+                }
+                const baseName = url.searchParams.get('name');
+                if (!validExportName(baseName)) return json(response, 400, { error: 'Invalid export name.' });
+                const chunks = [];
+                let size = 0;
+                for await (const chunk of request) {
+                    size += chunk.length;
+                    if (size > maxPngBytes) return json(response, 413, { error: 'Graph PNG exceeds 64 MiB.' });
+                    chunks.push(chunk);
+                }
+                try {
+                    const saved = await saveGraphPng(downloadsDirectory, baseName, Buffer.concat(chunks));
+                    return json(response, 201, saved);
+                } catch (error) {
+                    return json(response, 400, { error: error.message });
+                }
             }
             if (url.pathname === '/api/viewer/events' && request.method === 'GET') {
                 response.writeHead(200, {

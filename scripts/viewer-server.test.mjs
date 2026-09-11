@@ -132,3 +132,31 @@ test('completed operation outcomes survive event delivery and invalid outcomes a
         assert.equal((await post({ query, execution: bad })).status, 400);
     }
 });
+
+test('PNG exports save to Downloads with filesystem-based, concurrent-safe counters', async t => {
+    const downloadsDirectory = await mkdtemp(join(tmpdir(), 'studio-downloads-'));
+    t.after(() => rm(downloadsDirectory, { recursive: true, force: true }));
+    const { origin } = await start(t, { downloadsDirectory });
+    const { readFile, readdir } = await import('node:fs/promises');
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=', 'base64');
+    const save = (name = 'scene-take', headers = {}, body = png) => fetch(`${origin}/api/viewer/export?name=${encodeURIComponent(name)}`, {
+        method: 'POST', headers: {'Content-Type':'image/png', ...headers}, body,
+    });
+    assert.equal((await (await fetch(`${origin}/api/viewer/health`)).json()).pngExport, true);
+    await writeFile(join(downloadsDirectory, 'scene-take-00.png'), 'existing export');
+    const results = await Promise.all([save(), save(), save()]);
+    assert.ok(results.every(r => r.status === 201));
+    const saved = await Promise.all(results.map(r => r.json()));
+    assert.deepEqual(saved.map(s => s.filename).sort(), ['scene-take-01.png', 'scene-take-02.png', 'scene-take-03.png']);
+    assert.equal(await readFile(join(downloadsDirectory, 'scene-take-00.png'), 'utf8'), 'existing export');
+    for (const item of saved) assert.deepEqual(await readFile(item.path), png);
+    // A fresh server still reads the directory rather than an in-memory counter.
+    const second = await start(t, { downloadsDirectory });
+    const next = await fetch(`${second.origin}/api/viewer/export?name=scene-take`, {method:'POST', headers:{'Content-Type':'image/png'}, body:png});
+    assert.equal((await next.json()).filename, 'scene-take-04.png');
+    assert.equal((await save('../escape')).status, 400);
+    assert.equal((await save('scene', {'Origin':'https://example.com'})).status, 403);
+    assert.equal((await save('scene', {'Content-Type':'text/plain'})).status, 415);
+    assert.equal((await save('scene', {}, Buffer.from('not a PNG'))).status, 400);
+    assert.equal((await readdir(downloadsDirectory)).length, 5);
+});

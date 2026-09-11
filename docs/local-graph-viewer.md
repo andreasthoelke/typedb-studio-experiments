@@ -174,6 +174,29 @@ run tabs, and reset with a new result. Reduced-motion preferences disable
 camera animation. Focusing pauses the force layout so the chosen nodes stay in
 view; the redraw control can start a new layout.
 
+## Downloading a graph image
+
+Click the download icon to save the **current view** directly as PNG, preserving
+its camera, zoom, selection highlighting, and hidden nodes. There is no export
+menu. Explorer and other UI controls are not included in the image.
+
+With the local viewer server, files are saved directly to `~/Downloads`. The
+filename uses distinct entity and relation type names from the query attached
+to the displayed result, in query order: for example,
+`scene-scene-take-take-00.png`. Editing the query without running it does not
+change the export name. Attribute-only queries use their attribute names;
+queries without explicit type names fall back to types in the displayed graph.
+Long names are shortened to fit filesystem limits.
+
+The server checks the actual directory, trying `00`, `01`, `02`, etc. until it
+can create a new file without overwriting one. This also works after restarting
+Studio and when two windows export simultaneously. A notification shows the
+saved path. Restart an older viewer server once to enable this endpoint.
+
+Ordinary Studio hosting without the local bridge uses browser downloads and a
+counter remembered in local storage; only the local server can check actual
+files in Downloads.
+
 ## Exploring and styling a result
 
 Use Explorer's **here** mode to inspect an individual node and add its actual

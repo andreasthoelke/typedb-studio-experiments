@@ -4,15 +4,13 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { Component, ElementRef, EventEmitter, HostBinding, Input, DoCheck, OnChanges, OnDestroy, Output, ViewChild, AfterViewInit, AfterViewChecked } from "@angular/core";
+import { Component, ElementRef, EventEmitter, HostBinding, inject, Input, DoCheck, OnChanges, OnDestroy, Output, ViewChild, AfterViewInit, AfterViewChecked } from "@angular/core";
 import { NgTemplateOutlet } from "@angular/common";
 import { MatTooltipModule } from "@angular/material/tooltip";
-import { MatMenuModule } from "@angular/material/menu";
-import { MatButtonModule } from "@angular/material/button";
 
 import { ResizableDirective } from "@hhangular/resizable";
 import { Subscription } from "rxjs";
-import { GraphPngExportMode, GraphVisualiser } from "../engine";
+import { GraphVisualiser } from "../engine";
 import { GraphControlsComponent } from "./graph-controls/graph-controls.component";
 import { GraphSidePanelComponent } from "../side-panel/graph-side-panel.component";
 import { GraphContextMenuComponent } from "../context-menu/graph-context-menu.component";
@@ -20,6 +18,9 @@ import { GraphStyleService, buildBackgroundCSS } from "../../../service/graph-st
 import { RunOutputState } from "../../../service/query-page-state.service";
 import { SelectionMode } from "../../../service/graph-view-state.service";
 
+import { SchemaState } from "../../../service/schema-state.service";
+import { SnackbarService } from "../../../service/snackbar.service";
+import { graphExportBaseName, ExportType } from "../../util/graph-export-name";
 import { fuzzyGraphMatches, GraphFinderEntry } from "../../util/graph-finder";
 
 export type GraphCanvasStatus = "ok" | "running" | "noQueryAnswers" | "noInstancesFound" | "error" | "graphlessQueryType" | "answerOutputDisabled" | "multiQuery" | "emptySchema" | "needsTransaction";
@@ -29,7 +30,7 @@ export type GraphCanvasStatusAction = "viewLog" | "openTransaction" | "switchToA
     selector: "ts-graph-canvas",
     templateUrl: "graph-canvas.component.html",
     styleUrls: ["graph-canvas.component.scss"],
-    imports: [NgTemplateOutlet, MatTooltipModule, MatMenuModule, MatButtonModule, ResizableDirective, GraphControlsComponent, GraphSidePanelComponent, GraphContextMenuComponent],
+    imports: [NgTemplateOutlet, MatTooltipModule, ResizableDirective, GraphControlsComponent, GraphSidePanelComponent, GraphContextMenuComponent],
 })
 export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, AfterViewChecked, OnDestroy {
     @Input() visualiser: GraphVisualiser | null = null;
@@ -288,25 +289,60 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         });
     }
 
+    private schemaState = inject(SchemaState);
+    private snackbar = inject(SnackbarService);
+
+    private exportBaseName(): string {
+        const schema = this.schemaState.value$.value;
+        const fallback: ExportType[] = [];
+        this.visualiser?.graph.forEachNode((_key, attrs) => {
+            const concept = attrs.metadata.concept;
+            if ("type" in concept && concept.type && "label" in concept.type) fallback.push(concept.type);
+            else if ("label" in concept) fallback.push({ label: concept.label, kind: concept.kind });
+        });
+        const known = schema ? [...Object.values(schema.entities), ...Object.values(schema.relations), ...Object.values(schema.attributes)] : fallback;
+        return graphExportBaseName(this.run?.query ?? "", known, fallback);
+    }
+
     exporting = false;
-    async exportPng(mode: GraphPngExportMode) {
+    async exportPng() {
         const visualiser = this.visualiser;
         if (!visualiser || this.exporting) return;
+        const baseName = this.exportBaseName();
         this.exporting = true;
         try {
-            const blob = await visualiser.exportPng(mode);
+            const blob = await visualiser.exportPng("currentView");
+            if (["localhost", "127.0.0.1"].includes(location.hostname)) {
+                const health = await fetch("/api/viewer/health").then(response => response.ok ? response.json() : null).catch(() => null);
+                if (health?.service === "typedb-studio-bridge") {
+                    if (!health.pngExport) throw new Error("Restart the local viewer server to enable numbered PNG downloads.");
+                    const response = await fetch(`/api/viewer/export?name=${encodeURIComponent(baseName)}`, {
+                        method: "POST", headers: { "Content-Type": "image/png" }, body: blob,
+                    });
+                    const saved = await response.json();
+                    if (!response.ok) throw new Error(saved.error || "The viewer could not save the PNG.");
+                    this.snackbar.success(`Saved ${saved.path}`);
+                    return;
+                }
+            }
+            // Ordinary Studio hosting has no access to the download directory.
+            // Remember issued names there; local viewer exports use real files above.
+            const counterKey = `typedb-studio-png-counter:${baseName}`;
+            let counter = 0;
+            try { counter = Number(localStorage.getItem(counterKey)) || 0; } catch { /* storage unavailable */ }
+            if (!Number.isSafeInteger(counter) || counter < 0) counter = 0;
+            try { localStorage.setItem(counterKey, String(counter + 1)); } catch { /* browser still handles collisions */ }
             const url = URL.createObjectURL(blob);
             const a = document.createElement("a");
             a.href = url;
-            const ts = new Date().toISOString().replace(/[:.]/g, "-");
-            const suffix = mode === "wholeGraph" ? "whole-graph" : "current-view";
-            a.download = `graph-${suffix}-${ts}.png`;
+            a.download = `${baseName}-${String(counter).padStart(2, "0")}.png`;
             document.body.appendChild(a);
             a.click();
             a.remove();
             setTimeout(() => URL.revokeObjectURL(url), 0);
         } catch (err) {
             console.error("[Graph PNG Export]", err);
+            this.snackbar.errorPersistent(`Could not save graph: ${err instanceof Error ? err.message : String(err)}`);
         } finally {
             this.exporting = false;
         }

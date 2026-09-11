@@ -1257,12 +1257,11 @@ export class GraphVisualiser {
     }
 
     /**
-     * Render the current graph into an offscreen Sigma instance at 100% zoom (ratio = 1)
+     * Render the current graph into an offscreen Sigma instance
      * and composite all of its canvas layers (WebGL nodes/edges + 2D labels) into a single
      * PNG blob.
      *
-     * - "currentView": the captured graph region matches what the user can currently see,
-     *   but resolved at 1 graph unit = 1 pixel. Output canvas size = liveViewport × liveCameraRatio.
+     * - "currentView": preserves the live viewport dimensions, camera and graph bounds.
      * - "wholeGraph": fits every node, also at 1 graph unit = 1 pixel, with padding for node radii.
      *
      * Throws if the graph has no nodes. Dimensions are capped at MAX_EXPORT_DIMENSION per
@@ -1295,9 +1294,9 @@ export class GraphVisualiser {
         } else {
             const liveCam = this.sigma.getCamera().getState();
             const liveDims = this.sigma.getDimensions();
-            width = Math.max(1, Math.ceil(liveDims.width * liveCam.ratio));
-            height = Math.max(1, Math.ceil(liveDims.height * liveCam.ratio));
-            cameraState = { x: liveCam.x, y: liveCam.y, ratio: 1, angle: liveCam.angle };
+            width = Math.max(1, Math.ceil(liveDims.width));
+            height = Math.max(1, Math.ceil(liveDims.height));
+            cameraState = { ...liveCam };
         }
 
         // Clamp to browser canvas limits, preserving aspect ratio.
@@ -1305,7 +1304,7 @@ export class GraphVisualiser {
         if (scale < 1) {
             width = Math.max(1, Math.floor(width * scale));
             height = Math.max(1, Math.floor(height * scale));
-            cameraState = { ...cameraState, ratio: 1 / scale };
+            if (mode === "wholeGraph") cameraState = { ...cameraState, ratio: 1 / scale };
         }
 
         const bgHex = this.styleService.effectiveBackgroundHex;
