@@ -1,5 +1,6 @@
 
 @use "typography";
+@use "graph-chips";
 
 // NOTE: this SCSS file is shared as styleUrls by graph-side-panel and the
 // three tab components (elements-tab, themes-tab, customise-tab). Any `:host`
@@ -19,9 +20,8 @@
   padding: 0 4px 0 16px;
   border-bottom: 1px solid var(--theme-secondary-deep-grey);
 
-  .explorer-title {
-    margin: 0;
-  }
+  .inspector-tabs { flex: 1; border-bottom: none; align-self: stretch; }
+  .tab:disabled { opacity: 0.4; cursor: default; }
 }
 
 .dock-kebab {
@@ -704,54 +704,6 @@
   &:hover {
     color: var(--theme-white);
   }
-}
-
-.highlight-chips {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.highlight-chip {
-  --chip-color: var(--theme-secondary-light-grey);
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 12px;
-  font-weight: var(--font-weight-regular);
-  padding: 3px 8px 3px 10px;
-  border-radius: 12px;
-  border: 1px solid var(--theme-secondary-deep-grey);
-  background: transparent;
-  color: var(--theme-secondary-light-grey);
-  cursor: pointer;
-  transition: all 0.15s;
-
-  &:hover {
-    border-color: var(--chip-color);
-    color: var(--theme-white);
-  }
-
-  &.partial {
-    border-color: var(--chip-color);
-    border-style: dashed;
-    color: var(--chip-color);
-  }
-
-  &.active {
-    border-color: var(--chip-color);
-    background: color-mix(in srgb, var(--chip-color) 20%, transparent);
-    color: var(--chip-color);
-  }
-}
-
-.highlight-chip-count {
-  font-size: 11px;
-  line-height: 1;
-  padding: 2px 5px;
-  border-radius: 8px;
-  background: color-mix(in srgb, var(--chip-color) 25%, transparent);
-  color: var(--chip-color);
 }
 
 .highlight-filter {

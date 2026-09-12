@@ -138,7 +138,7 @@ test('PNG exports save to a project folder with filesystem-based, concurrent-saf
     t.after(() => rm(downloadsDirectory, { recursive: true, force: true }));
     const { origin } = await start(t);
     const context = new URLSearchParams({projectTempDirectory: downloadsDirectory, database: 'test-db'});
-    const directory = join(downloadsDirectory, 'snaps', 'test-db');
+    const directory = join(downloadsDirectory, 'imgs', 'test-db');
     await mkdir(directory, {recursive:true});
     const { readFile, readdir } = await import('node:fs/promises');
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=', 'base64');
@@ -184,18 +184,18 @@ test('project snapshot destinations travel with editor requests and isolate coun
     });
     const first = await save('pts-tour3');
     assert.equal(first.status, 201);
-    assert.equal((await first.json()).path, join(projectTempDirectory, 'snaps', 'pts-tour3', 'motivation-00.png'));
+    assert.equal((await first.json()).path, join(projectTempDirectory, 'imgs', 'pts-tour3', 'motivation-00.png'));
     assert.equal((await (await save('pts-tour3')).json()).filename, 'motivation-01.png');
-    assert.equal((await (await save('other-db')).json()).path, join(projectTempDirectory, 'snaps', 'other-db', 'motivation-00.png'));
+    assert.equal((await (await save('other-db')).json()).path, join(projectTempDirectory, 'imgs', 'other-db', 'motivation-00.png'));
     const otherProject = join(root, 'second-project', 'temp');
-    assert.equal((await (await save('pts-tour3', otherProject)).json()).path, join(otherProject, 'snaps', 'pts-tour3', 'motivation-00.png'));
+    assert.equal((await (await save('pts-tour3', otherProject)).json()).path, join(otherProject, 'imgs', 'pts-tour3', 'motivation-00.png'));
     for (const badDatabase of ['..', '../escape', 'db/escape', 'db\\escape', '']) assert.equal((await save(badDatabase)).status, 400);
     assert.equal((await save('pts-tour3', 'relative/temp')).status, 400);
     const { stat } = await import('node:fs/promises');
     assert.equal(await stat(downloadsDirectory).catch(() => null), null, 'project saves must not create Downloads');
 });
 
-test('data snaps save alongside PNGs with independent collision-safe names', async t => {
+test('data snaps keep independent collision-safe names in the snaps folder', async t => {
     const downloadsDirectory = await mkdtemp(join(tmpdir(), 'studio-data-snaps-'));
     t.after(() => rm(downloadsDirectory, { recursive: true, force: true }));
     const { origin } = await start(t);
@@ -228,6 +228,7 @@ test('project selection creates the real folder; snap listing and reopening surv
         assert.equal(selected.status,200);
         assert.equal((await selected.json()).directory,directory);
         assert.deepEqual(await readdir(directory),[]);
+        assert.deepEqual(await readdir(join(root,'temp','imgs','test-db')),[]);
     }
     const invalid = await fetch(`${origin}/api/viewer/project?${new URLSearchParams({path:root,database:'../escape'})}`, {method:'POST'});
     assert.equal(invalid.status,400);
@@ -240,6 +241,9 @@ test('project selection creates the real folder; snap listing and reopening surv
     const second = await start(t);
     const list = await (await fetch(`${second.origin}/api/viewer/snaps?${context}`)).json();
     assert.deepEqual(list.files.map(f=>f.filename),[filename]);
+    assert.equal(list.files[0].kind,'data');
+    assert.equal(list.files[0].nodeCount,0);
+    assert.equal(list.imageDirectory,join(root,'temp','imgs','test-db'));
     assert.equal(list.directory,directory);
     assert.ok(list.files[0].bytes>0);
     const open = name => fetch(`${second.origin}/api/viewer/snap?${context}&filename=${encodeURIComponent(name)}`);

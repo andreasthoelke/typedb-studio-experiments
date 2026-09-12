@@ -20,7 +20,7 @@ import { SelectionMode } from "../../../service/graph-view-state.service";
 
 import { Router } from "@angular/router";
 import type { GraphSnap } from "../../util/graph-snap";
-import { GraphSnapshotContext, GraphSnapLibrary, GraphSnapshotService } from "../../../service/graph-snapshot.service";
+import { GraphSnapshotContext, GraphSnapLibrary, GraphSnapshotService, SavedGraphSnap } from "../../../service/graph-snapshot.service";
 import { DriverState } from "../../../service/driver-state.service";
 import { SchemaState } from "../../../service/schema-state.service";
 import { SnackbarService } from "../../../service/snackbar.service";
@@ -179,6 +179,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     }
 
     private libraryContextKey = "";
+    private destroyed = false;
     ngDoCheck(): void {
         const key = JSON.stringify([this.snapshotDatabase, this.snapshotContext]);
         if (key !== this.libraryContextKey) {
@@ -186,7 +187,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
             ++this.libraryRequest;
             this.snapLibrary = null;
             this.snapsBusy = false;
-            if (this.snapsOpen) setTimeout(() => this.refreshSnaps());
+            setTimeout(() => this.refreshSnaps());
         }
         if (this.finderOpen && this.finderGraphOrder !== this.visualiser?.graph.order) this.updateFinder(this.finderText);
     }
@@ -205,6 +206,11 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     }
 
     ngAfterViewChecked() {
+        const chip = this.snapChips?.nativeElement.querySelector<HTMLButtonElement>(".snap-chip.active");
+        if (this.snapshotMode && this.snapshots.focusActiveChip && chip && !this.snapsBusy) {
+            this.snapshots.focusActiveChip = false;
+            setTimeout(() => { if (chip.isConnected) { chip.focus({ preventScroll: true }); chip.scrollIntoView({ block: "nearest" }); } });
+        }
         const el = this.canvasElRef?.nativeElement ?? null;
         if (el && el !== this.attachedCanvasEl && this.attachedCanvasEl !== null) {
             // The host element was rebuilt (dock axis changed). Re-home the
@@ -244,6 +250,8 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     }
 
     ngOnDestroy() {
+        this.destroyed = true;
+        ++this.libraryRequest;
         this.stylesSub.unsubscribe();
     }
 
@@ -324,7 +332,6 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         return graphExportBaseName(this.run?.query || this.loadedSnap?.query || "", known, fallback);
     }
 
-    snapsOpen = false;
     snapsBusy = false;
     snapsError = "";
     projectPath = "";
@@ -346,12 +353,39 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         this.libraryContextKey = JSON.stringify([this.snapshotDatabase, this.snapshotContext]);
     }
 
-    async toggleSnaps(): Promise<void> {
-        this.snapsOpen = !this.snapsOpen;
-        if (this.snapsOpen) await this.refreshSnaps();
+    @ViewChild("snapChips") snapChips?: ElementRef<HTMLElement>;
+
+    get snapGroups(): { kind: string; label: string; files: SavedGraphSnap[] }[] {
+        return [{ kind: "data", label: "Data" }, { kind: "schema", label: "Schema" }, { kind: "unknown", label: "Other" }]
+            .map(group => ({ ...group, files: this.snapLibrary?.files.filter(file => (file.kind ?? "unknown") === group.kind) ?? [] }))
+            .filter(group => group.files.length > 0);
+    }
+
+    snapName(filename: string): string { return filename.replace(/-\d+\.snap\.json$/, "").replace(/\.snap\.json$/, ""); }
+    snapNumber(filename: string): string { return filename.match(/-(\d+)\.snap\.json$/)?.[1] ?? "·"; }
+
+    isActiveSnap(filename: string): boolean {
+        const active = this.snapshots.activeFile;
+        return !!this.loadedSnap && active?.filename === filename && active.database === this.snapshotDatabase
+            && active.projectTempDirectory === this.snapLibrary?.projectTempDirectory;
+    }
+
+    navigateSnaps(event: KeyboardEvent): void {
+        if (!["h", "l"].includes(event.key) || event.ctrlKey || event.metaKey || event.altKey
+            || (event.target as HTMLElement).closest("input, textarea, select, [contenteditable]")) return;
+        event.preventDefault();
+        event.stopPropagation();
+        if (this.snapsBusy) return;
+        const files = this.snapGroups.flatMap(group => group.files);
+        if (!files.length) return;
+        const current = files.findIndex(file => this.isActiveSnap(file.filename));
+        const next = current < 0 ? (event.key === "l" ? 0 : files.length - 1)
+            : (current + (event.key === "l" ? 1 : -1) + files.length) % files.length;
+        void this.openSavedSnap(files[next].filename);
     }
 
     async refreshSnaps(): Promise<void> {
+        if (this.destroyed) return;
         const revision = ++this.libraryRequest;
         const database = this.snapshotDatabase;
         const context = this.snapshotContext;
@@ -365,7 +399,8 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
             if (revision !== this.libraryRequest || database !== this.snapshotDatabase) return;
             this.snapLibrary = library;
             this.projectPath = library.projectTempDirectory;
-            this.useSnapshotContext({ database, projectTempDirectory: library.projectTempDirectory });
+            // Browsing an older result must not replace the last source project for this DB.
+            if (!context) this.useSnapshotContext({ database, projectTempDirectory: library.projectTempDirectory });
         } catch (error) {
             if (revision === this.libraryRequest) this.snapsError = error instanceof Error ? error.message : String(error);
         } finally { if (revision === this.libraryRequest) this.snapsBusy = false; }
@@ -394,7 +429,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         try {
             await this.snapshots.openSaved({ database, projectTempDirectory }, filename);
             await this.router.navigate(["/snap"]);
-            this.snapsOpen = false;
+            if (this.sidePanel) this.sidePanel.inspectorTab = "snaps";
         } catch (error) { this.snapsError = error instanceof Error ? error.message : String(error); }
         finally { this.snapsBusy = false; }
     }
@@ -402,7 +437,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     private async requireSnapshotContext(): Promise<GraphSnapshotContext | undefined> {
         if (this.snapshotContext) return this.snapshotContext;
         await this.refreshSnaps();
-        if (!this.snapshotContext) this.snapsOpen = true;
+        if (!this.snapshotContext && this.sidePanel) this.sidePanel.inspectorTab = "snaps";
         return this.snapshotContext;
     }
 
@@ -424,7 +459,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
                 method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(snap, null, 2),
             });
             this.snackbar.success(`Saved ${result.path}`);
-            if (this.snapsOpen) await this.refreshSnaps();
+            await this.refreshSnaps();
         } catch (error) { this.snackbar.errorPersistent(error instanceof Error ? error.message : String(error)); }
         finally { this.snapping = false; }
     }
@@ -446,6 +481,8 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         try {
             const context = await this.requireSnapshotContext();
             if (!context || this.visualiser !== visualiser) return;
+            const health = await this.snapshots.request<{ imageFolders?: boolean }>("health", {});
+            if (!health.imageFolders) throw new Error("Restart the local viewer server to save PNGs in temp/imgs.");
             const blob = await visualiser.exportPng("currentView");
             const saved = await this.snapshots.request<{ path: string }>("export", { name: baseName, ...context }, {
                 method: "POST", headers: { "Content-Type": "image/png" }, body: blob,

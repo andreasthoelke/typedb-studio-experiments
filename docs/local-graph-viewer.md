@@ -181,10 +181,10 @@ its camera, zoom, selection highlighting, and hidden nodes. There is no export
 menu. Explorer and other UI controls are not included in the image.
 
 With the local viewer server, Neovim supplies the source project's `temp`
-directory. Files are saved to **`<project>/temp/snaps/<database>/`**, creating
+directory. PNGs are saved to **`<project>/temp/imgs/<database>/`**, creating
 folders on the first export. For example, a query from
 `~/Documents/Proj/e2/pts/temp/schema_pts-tour3.tql` saves to
-`~/Documents/Proj/e2/pts/temp/snaps/pts-tour3/`.
+`~/Documents/Proj/e2/pts/temp/imgs/pts-tour3/`.
 
 The Neovim helper finds the nearest project `temp` directory from the source
 buffer (including nested files under `specimens/`). At a Git root without one it
@@ -199,17 +199,18 @@ different project. Schema and newly opened views use the last project remembered
 for their database. The bridge can also recover the destination from a recent
 Neovim request when the browser has not remembered it yet.
 
-Open **Snaps ▾** beside the save buttons to see the actual destination. Expand
+Open the **Snaps** tab beside **Explorer** in the upper side panel. Expand
 **Project folder…** to select another project: paste an absolute path or `~/…`
 pointing to the project root, its `temp` folder, or a file directly inside
 `temp` (such as `schema_pts-tour3.tql`), then click **Use folder** or press Enter.
-This creates `temp/snaps/<database>/` immediately and remembers the destination
+This creates `temp/snaps/<database>/` and `temp/imgs/<database>/` immediately,
+shows both destinations, and remembers the project
 for that database. On a result tab it updates that result's destination; other
 existing results keep theirs.
 
-If no project is known, saving opens this setting. Missing server connections,
+If no project is known, saving activates the Snaps tab with this setting open. Missing server connections,
 unwritable folders and other save errors are reported; files never silently
-fall back to Downloads. The directory is **`snaps`**, plural.
+fall back to Downloads.
 
 The filename uses distinct entity and relation type names from the query attached
 to the displayed result, in query order: for example,
@@ -234,8 +235,8 @@ or restarting.
 
 ## Saving and reopening graph snaps
 
-**Snap**, beside the PNG download button, saves a `.snap.json` file in the same
-`<project>/temp/snaps/<database>/` directory. Names use the query's types and the
+**Snap**, beside the PNG download button, saves a `.snap.json` file in
+`<project>/temp/snaps/<database>/`. PNGs go separately into `temp/imgs/<database>/`. Names use the query's types and the
 first free counter, for example `motivation-00.snap.json`. PNGs and data snaps
 have independent counters; these are separate saves, not automatically paired
 files. Restart the viewer server after updating to enable the snap endpoint.
@@ -252,13 +253,27 @@ A snap contains:
   path, for reference. Expansions made before this update still survive as graph
   data even when their query text was not recorded.
 
-Expand **Snaps ▾** to browse saved snaps for this project and database, newest
-first. The list reads real `.snap.json` files from the destination folder, so
-previously saved snaps appear too. Saving updates an open list; **Refresh list**
-picks up files added outside Studio. Click a snap to restore it directly—no file
-selection dialog. **Import snap file…** remains available for files elsewhere.
-The destination is remembered in this browser across reloads; after changing
-browser/origin, run a query from Neovim or select the project again.
+The upper side panel has **Explorer** and **Snaps** tabs, separate from the
+lower Elements / Themes / Customise tabs. With no node selected, Snaps is active.
+Selecting a graph node activates Explorer; clearing that selection returns to
+Snaps. You can also choose Snaps while a node is selected.
+
+Snaps appear as compact chips grouped into **Data** and **Schema**, newest first
+within each group. Chips show a shortened query-derived name and save number;
+hover for the complete filename, date and node count. Click a chip to restore
+the view and highlight that chip. The Snaps tab remains active during restoration,
+even if the saved view includes an inspected node.
+
+After clicking a chip, **l** opens the next snap and **h** opens the previous one
+in displayed order, wrapping at the ends. Focus follows the active chip across
+restores. These shortcuts apply only inside the Snaps pane and never intercept
+typing in the project path or query editor.
+
+The library reads real `.snap.json` files, so existing snaps appear too.
+**Refresh** picks up files added outside Studio. **Project folder…** contains
+the folder setting, both save destinations and **Import snap file…** for files
+elsewhere. The project is remembered in this browser across reloads; after
+changing browser/origin, run a query from Neovim or select the project again.
 
 Opening a snap navigates to `/snap`, a saved view using the same graph canvas,
 finder and styling controls. It restores the
@@ -422,7 +437,8 @@ at `/api/viewer/events`. No Vite/Angular hot-reload protocol is involved.
 An optional absolute `projectTempDirectory` (for example,
 `/Users/at/Documents/Proj/e2/pts/temp`) travels with the request and its result.
 The Neovim helper supplies it automatically. Export requests include this path
-and the result's database; the server creates `snaps/<database>/` beneath it.
+and the result's database; the server creates `snaps/<database>/` for data snaps
+and `imgs/<database>/` for PNGs beneath it.
 `projectSnapshots: true` in the acknowledgement and health response indicates
 support for project destinations.
 
@@ -463,4 +479,6 @@ The local bridge also exposes `GET /api/viewer/snaps` (list) and
 `projectTempDirectory`. `POST /api/viewer/project` accepts `database` and `path`
 query parameters, resolves the project and creates the destination. Explicit
 project metadata wins over the last project received for that database. The
-`snapLibrary: true` health capability identifies a server with these endpoints.
+`snapLibrary: true` health capability identifies a server with these endpoints;
+`imageFolders: true` identifies PNG routing into `imgs`. Snap listings include
+`kind` (data/schema/unknown), `nodeCount` when readable, and both destination paths.

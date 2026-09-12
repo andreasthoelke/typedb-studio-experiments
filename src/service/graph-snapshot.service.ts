@@ -3,18 +3,22 @@ import { BehaviorSubject } from "rxjs";
 import { GraphSnap, parseGraphSnap } from "../framework/util/graph-snap";
 
 export interface GraphSnapshotContext { database: string; projectTempDirectory: string; }
-export interface SavedGraphSnap { filename: string; modifiedAt: string; bytes: number; }
-export interface GraphSnapLibrary extends GraphSnapshotContext { directory: string; files: SavedGraphSnap[]; }
+export interface SavedGraphSnap { filename: string; modifiedAt: string; bytes: number; kind: "data" | "schema" | "unknown"; nodeCount?: number; }
+export interface GraphSnapLibrary extends GraphSnapshotContext { directory: string; imageDirectory: string; files: SavedGraphSnap[]; }
 const STORAGE_KEY = "typedb-studio-snapshot-projects";
 
 /** Remember the last source project per database for schema and manually opened views. */
 @Injectable({ providedIn: "root" })
 export class GraphSnapshotService {
     readonly opened$ = new BehaviorSubject<GraphSnap | null>(null);
+    activeFile: (GraphSnapshotContext & { filename: string }) | null = null;
+    focusActiveChip = false;
 
     async open(file: File): Promise<void> {
         if (file.size > 64 * 1024 * 1024) throw new Error("Snap exceeds 64 MiB.");
-        this.opened$.next(parseGraphSnap(await file.text()));
+        const snap = parseGraphSnap(await file.text());
+        this.activeFile = null;
+        this.opened$.next(snap);
     }
 
     async request<T>(endpoint: string, params: Record<string, string>, options?: RequestInit): Promise<T> {
@@ -31,7 +35,6 @@ export class GraphSnapshotService {
 
     async list(database: string, context?: GraphSnapshotContext): Promise<GraphSnapLibrary> {
         const library = await this.request<GraphSnapLibrary>("snaps", { database, ...context });
-        this.remember(database, library.projectTempDirectory);
         return library;
     }
 
@@ -44,6 +47,8 @@ export class GraphSnapshotService {
         const snap = parseGraphSnap(JSON.stringify(await this.request("snap", { ...context, filename })));
         // An archive moved into another project should continue saving beside that archive.
         snap.project = context;
+        this.activeFile = { ...context, filename };
+        this.focusActiveChip = true;
         this.opened$.next(snap);
     }
 

@@ -62,43 +62,6 @@
       }
     </div>
 
-    <input #snapFile type="file" accept=".snap.json,.json" hidden (change)="openSnap($event)">
-    <button class="graph-export-button graph-open-snap" (click)="toggleSnaps()" aria-label="Saved snaps" [attr.aria-expanded]="snapsOpen" matTooltip="Saved snaps and project folder">
-      Snaps <i class="fa-light" [class.fa-chevron-down]="!snapsOpen" [class.fa-chevron-up]="snapsOpen"></i>
-    </button>
-    @if (snapsOpen) {
-      <section class="graph-snaps-panel" aria-label="Saved snaps">
-        <strong>Snaps · {{ snapshotDatabase || 'No database selected' }}</strong>
-        <details [open]="!snapLibrary">
-          <summary>Project folder…</summary>
-          <label for="snapshot-project">Project folder, temp folder, or temp/schema file</label>
-          <div class="snap-project-row">
-            <input id="snapshot-project" type="text" [value]="projectPath" (input)="projectPath = $any($event.target).value"
-              (keydown.enter)="chooseSnapshotProject(); $event.stopPropagation()" placeholder="~/Documents/Proj/e2/pts" [disabled]="snapsBusy">
-            <button (click)="chooseSnapshotProject()" [disabled]="snapsBusy || !projectPath.trim() || !snapshotDatabase">Use folder</button>
-          </div>
-        </details>
-        @if (snapLibrary) {
-          <p class="snap-destination">PNG and snap destination: <span>{{ snapLibrary.directory }}</span></p>
-        }
-        <div class="snap-project-row">
-          <button (click)="refreshSnaps()" [disabled]="snapsBusy">Refresh list</button>
-          <button (click)="snapFile.click()">Import snap file…</button>
-        </div>
-        @if (snapsError) { <p role="alert">{{ snapsError }}</p> }
-        @if (snapsBusy) { <p role="status">Loading…</p> }
-        @if (snapLibrary) {
-          <div class="snap-files">
-            @for (file of snapLibrary.files; track file.filename) {
-              <button class="snap-file" (click)="openSavedSnap(file.filename)" [disabled]="snapsBusy" [title]="file.filename">
-                <span>{{ file.filename }}</span>
-                <small>{{ file.modifiedAt | date:'medium' }} · {{ (file.bytes / 1024).toFixed(0) }} KB</small>
-              </button>
-            } @empty { <p>No snaps saved here yet. Use Snap to capture this view.</p> }
-          </div>
-        }
-      </section>
-    }
     @if (canExportPng()) {
       <button class="graph-export-button graph-snap" (click)="saveSnap()" [disabled]="snapping" aria-label="Snap" matTooltip="Save graph data and view">
         Snap
@@ -121,7 +84,7 @@
     @if (!snapshotMode) { <ts-graph-context-menu [visualiser]="visualiser" [run]="run"/> }
 
     @switch (status) {
-      @case ("emptySnap") { <p class="status-text">Expand Snaps to open a saved graph view.</p> }
+      @case ("emptySnap") { <p class="status-text">Open the Snaps tab to restore a saved graph view.</p> }
       @case ("error") {
         <p class="status-text">This query returned an error. <a (click)="statusAction.emit('viewLog')">View in log</a></p>
       }
@@ -180,5 +143,51 @@
                        [schemaMode]="schemaMode"
                        [snapshotMode]="snapshotMode"
                        [initialTypeFilter]="loadedSnap?.view?.typeFilter ?? ''"
+                       [snapsTemplate]="snaps"
                        (selectionModeChange)="selectionModeChange.emit($event)"/>
+</ng-template>
+
+
+<ng-template #snaps>
+  <section #snapChips class="graph-snaps-panel" aria-label="Saved snaps" tabindex="0" (keydown)="navigateSnaps($event)">
+    <input #snapFile type="file" accept=".snap.json,.json" hidden (change)="openSnap($event)">
+    <div class="snap-library-actions">
+      <span>{{ snapshotDatabase || 'No database' }} · h / l</span>
+      <button class="highlight-action-button" (click)="refreshSnaps()" [disabled]="snapsBusy" title="Refresh saved snaps">Refresh</button>
+    </div>
+    @if (snapsError) { <p role="alert">{{ snapsError }}</p> }
+    @if (snapsBusy) { <p role="status">Loading…</p> }
+    @if (snapLibrary) {
+      @for (group of snapGroups; track group.kind) {
+        <div class="snap-group">
+          <span class="snap-group-label">{{ group.label }}</span>
+          <div class="highlight-chips">
+            @for (file of group.files; track file.filename) {
+              <button class="highlight-chip snap-chip" [class.active]="isActiveSnap(file.filename)"
+                [attr.aria-pressed]="isActiveSnap(file.filename)" [attr.aria-label]="file.filename"
+                [disabled]="snapsBusy" (click)="openSavedSnap(file.filename)"
+                [matTooltip]="file.filename + '\n' + (file.modifiedAt | date:'medium') + (file.nodeCount === undefined ? '' : ' · ' + file.nodeCount + ' nodes')">
+                <span class="snap-chip-name">{{ snapName(file.filename) }}</span>
+                <span class="highlight-chip-count">{{ snapNumber(file.filename) }}</span>
+              </button>
+            }
+          </div>
+        </div>
+      } @empty { <p>No snaps saved here yet. Use Snap to capture this view.</p> }
+    }
+    <details class="snap-project" [open]="!snapLibrary">
+      <summary>Project folder…</summary>
+      <label for="snapshot-project">Project folder, temp folder, or temp/schema file</label>
+      <div class="snap-project-row">
+        <input id="snapshot-project" type="text" [value]="projectPath" (input)="projectPath = $any($event.target).value"
+          (keydown.enter)="chooseSnapshotProject(); $event.stopPropagation()" placeholder="~/Documents/Proj/e2/pts" [disabled]="snapsBusy">
+        <button (click)="chooseSnapshotProject()" [disabled]="snapsBusy || !projectPath.trim() || !snapshotDatabase">Use folder</button>
+      </div>
+      @if (snapLibrary) {
+        <p class="snap-destination">Snaps: <span>{{ snapLibrary.directory }}</span></p>
+        <p class="snap-destination">PNGs: <span>{{ snapLibrary.imageDirectory }}</span></p>
+      }
+      <button (click)="snapFile.click()">Import snap file…</button>
+    </details>
+  </section>
 </ng-template>

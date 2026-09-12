@@ -1,4 +1,4 @@
-import { Component, EventEmitter, HostBinding, inject, Input, OnChanges, OnDestroy, Output, SimpleChanges, ViewChild } from "@angular/core";
+import { Component, DoCheck, TemplateRef, EventEmitter, HostBinding, inject, Input, OnChanges, OnDestroy, Output, SimpleChanges, ViewChild } from "@angular/core";
 import { NgTemplateOutlet } from "@angular/common";
 import { MatTooltipModule } from "@angular/material/tooltip";
 import { MatMenuModule } from "@angular/material/menu";
@@ -28,7 +28,7 @@ import { GraphTypeExplorerComponent } from "../explorer/graph-type-explorer.comp
         GraphInstanceExplorerComponent, GraphTypeExplorerComponent,
     ],
 })
-export class GraphSidePanelComponent implements OnChanges, OnDestroy {
+export class GraphSidePanelComponent implements OnChanges, OnDestroy, DoCheck {
 
     // Force the dock-driven layout via inline style. The view-encapsulated SCSS
     // sets these too, but on tab switch the host's stylesheet sometimes lags one
@@ -60,6 +60,26 @@ export class GraphSidePanelComponent implements OnChanges, OnDestroy {
     @Input() schemaMode = false;
     @Input() snapshotMode = false;
     @Input() initialTypeFilter = "";
+    @Input() snapsTemplate: TemplateRef<unknown> | null = null;
+    inspectorTab: "explorer" | "snaps" = "snaps";
+    private inspectedNode: string | null = null;
+    private selectionRenderer: GraphVisualiser["sigma"] | null = null;
+    private onNodeClicked = () => { this.inspectorTab = "explorer"; };
+    private inspectedVisualiser: GraphVisualiser | null = null;
+
+    ngDoCheck(): void {
+        const node = this.visualiser?.interactionHandler.state.selectedNode ?? null;
+        if (this.inspectedVisualiser !== this.visualiser) {
+            this.inspectedVisualiser = this.visualiser;
+            this.inspectedNode = node;
+            // Restoring a snap may restore its inspected node too. Keep browsing snaps.
+            this.inspectorTab = node && !this.snapshotMode ? "explorer" : "snaps";
+        } else if (this.inspectedNode !== node) {
+            this.inspectedNode = node;
+            this.inspectorTab = node ? "explorer" : "snaps";
+        }
+    }
+
     @ViewChild(ElementsTabComponent) elements?: ElementsTabComponent;
 
     get snapshotNodeKey(): string | null { return this.visualiser?.interactionHandler.state.selectedNode ?? null; }
@@ -95,6 +115,9 @@ export class GraphSidePanelComponent implements OnChanges, OnDestroy {
 
     ngOnChanges(changes: SimpleChanges) {
         if (changes["visualiser"]) {
+            this.selectionRenderer?.off("clickNode", this.onNodeClicked);
+            this.selectionRenderer = this.visualiser?.sigma ?? null;
+            this.selectionRenderer?.on("clickNode", this.onNodeClicked);
             this.selectionSub?.unsubscribe();
             this.typeSelectionSub?.unsubscribe();
             this.selectionSub = null;
@@ -115,6 +138,7 @@ export class GraphSidePanelComponent implements OnChanges, OnDestroy {
     }
 
     ngOnDestroy() {
+        this.selectionRenderer?.off("clickNode", this.onNodeClicked);
         this.selectionSub?.unsubscribe();
         this.typeSelectionSub?.unsubscribe();
     }

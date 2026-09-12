@@ -14,14 +14,15 @@ export function validProjectTempDirectory(directory) {
     return typeof directory === 'string' && directory.length <= 4096 && isAbsolute(directory) && !directory.includes('\0');
 }
 
-export function graphSnapshotDirectory(projectTempDirectory, database) {
+export function graphSnapshotDirectory(projectTempDirectory, database, folder = 'snaps') {
     if (projectTempDirectory == null) throw new Error('Choose a project in Snaps, or run a query from its temp/schema file in Neovim.');
     if (!validProjectTempDirectory(projectTempDirectory)) throw new Error('Expected an absolute project temp directory.');
     if (typeof database !== 'string' || !database.trim() || ['.', '..'].includes(database)
         || /[/\\\x00-\x1f]/.test(database) || Buffer.byteLength(database) > 200) {
         throw new Error('Expected a database name without path separators.');
     }
-    return resolve(projectTempDirectory, 'snaps', database);
+    if (!['snaps', 'imgs'].includes(folder)) throw new Error('Invalid graph folder.');
+    return resolve(projectTempDirectory, folder, database);
 }
 
 /** Accept a project root, its temp directory, or a file inside that temp directory. */
@@ -38,8 +39,10 @@ export async function selectSnapshotProject(path, database) {
     }
     const projectTempDirectory = basename(path) === 'temp' ? path : join(path, 'temp');
     const directory = graphSnapshotDirectory(projectTempDirectory, database);
+    const imageDirectory = graphSnapshotDirectory(projectTempDirectory, database, 'imgs');
     await mkdir(directory, { recursive: true });
-    return { database, projectTempDirectory, directory };
+    await mkdir(imageDirectory, { recursive: true });
+    return { database, projectTempDirectory, directory, imageDirectory };
 }
 
 function validSnapFilename(filename) {
@@ -47,16 +50,35 @@ function validSnapFilename(filename) {
         && Buffer.byteLength(filename) <= 255;
 }
 
+// Cache only compact metadata; graph documents are released after inspection.
+const snapMetadata = new Map();
 export async function listGraphSnaps(directory) {
     const entries = await readdir(directory, { withFileTypes: true }).catch(error => {
         if (error.code === 'ENOENT') return [];
         throw error;
     });
-    const files = await Promise.all(entries.filter(e => e.isFile() && validSnapFilename(e.name)).map(async entry => {
-        const info = await stat(join(directory, entry.name)).catch(() => null);
-        return info?.isFile() ? { filename: entry.name, modifiedAt: info.mtime.toISOString(), bytes: info.size } : null;
-    }));
-    return files.filter(Boolean).sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt) || a.filename.localeCompare(b.filename));
+    const files = [];
+    for (const entry of entries.filter(e => e.isFile() && validSnapFilename(e.name))) {
+        const path = join(directory, entry.name);
+        const info = await stat(path).catch(() => null);
+        if (!info?.isFile()) continue;
+        const stamp = `${info.mtimeMs}:${info.ctimeMs}:${info.size}`;
+        let cached = snapMetadata.get(path);
+        if (!cached || cached.stamp !== stamp) {
+            let metadata = { kind: 'unknown' };
+            try {
+                const snap = await readGraphSnap(directory, entry.name);
+                if (snap.format === 'typedb-studio-graph-snap' && Array.isArray(snap.graph?.nodes)) {
+                    metadata = { kind: snap.schemaMode ? 'schema' : 'data', nodeCount: snap.graph.nodes.length };
+                }
+            } catch { /* Keep unreadable files visible; opening reports the error. */ }
+            cached = { stamp, metadata };
+            if (snapMetadata.size >= 500) snapMetadata.delete(snapMetadata.keys().next().value);
+            snapMetadata.set(path, cached);
+        }
+        files.push({ filename: entry.name, modifiedAt: info.mtime.toISOString(), bytes: info.size, ...cached.metadata });
+    }
+    return files.sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt) || a.filename.localeCompare(b.filename));
 }
 
 export async function readGraphSnap(directory, filename) {

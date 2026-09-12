@@ -19,7 +19,7 @@ import { QueryTabsState } from "../../service/query-tabs-state.service";
     providers: [GraphStyleService],
     template: `
       <div class="snap-header">
-        <span>{{ snap ? 'Saved view · ' + (snap.database || 'graph') + ' · ' + snap.createdAt : 'Expand Snaps to open a saved graph view' }}</span>
+        <span>{{ snap ? 'Saved view · ' + (snap.database || 'graph') + ' · ' + snap.createdAt : 'Open the Snaps tab to restore a saved graph view' }}</span>
         @if (snap) {
           <button (click)="showQuery = !showQuery">{{ showQuery ? 'Hide query' : 'Query and expansions' }}</button>
           <button (click)="openQuery()" [disabled]="!snap.query">Open query in Studio</button>
