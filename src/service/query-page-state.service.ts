@@ -23,6 +23,7 @@ import {
 } from "@typedb/driver-http";
 import { AppData, RowLimit } from "./app-data.service";
 import { GraphStyleService } from "./graph-style.service";
+import { GraphSnapshotService, GraphSnapshotContext } from "./graph-snapshot.service";
 import { GraphLabelService } from "./graph-label.service";
 import { splitTypeQLQueries } from "../framework/util/typeql-split";
 
@@ -45,6 +46,7 @@ export interface RunOutputState {
     id: string;
     label: string;
     query: string;
+    snapshotContext?: GraphSnapshotContext;
     pinned: boolean;
     multiQuery: boolean;
     batchSummary: boolean;
@@ -137,6 +139,7 @@ export class QueryPageState {
     queryTabs = inject(QueryTabsState);
     private graphStyleService = inject(GraphStyleService);
     private graphLabels = inject(GraphLabelService);
+    private snapshots = inject(GraphSnapshotService);
 
     outputTypes: OutputType[] = ["log", "table", "graph", "raw"];
     rowLimitControl = new FormControl(this.appData.preferences.queryRowLimit(), { nonNullable: true });
@@ -420,7 +423,7 @@ export class QueryPageState {
         this.runQuery(currentTab.query);
     }
 
-    runQuery(query: string, externalRead?: { limit: number; schemaMode?: boolean }): Observable<RunResult> {
+    runQuery(query: string, externalRead?: { limit: number; schemaMode?: boolean; projectTempDirectory?: string }): Observable<RunResult> {
         if (externalRead && splitTypeQLQueries(query).length > 1) {
             throw new Error("Editor graph requests must contain one query.");
         }
@@ -455,6 +458,10 @@ export class QueryPageState {
         newRun.graph.independentRead = !!externalRead;
         newRun.graph.schemaMode = externalRead?.schemaMode ?? (!!oldRun?.graph.schemaMode && oldRun.graph.query === query);
         newRun.graph.database = this.driver.requireDatabase().name;
+        newRun.snapshotContext = externalRead?.projectTempDirectory
+            ? this.snapshots.remember(newRun.graph.database, externalRead.projectTempDirectory)
+            : !externalRead && oldRun?.snapshotContext?.database === newRun.graph.database ? oldRun.snapshotContext
+            : this.snapshots.forDatabase(newRun.graph.database);
         newRun.graph.applyLabelOverrides(this.appData.nodeLabelPrefs.getAll(newRun.graph.database!));
         newRun.graph.onGraphUpdated = () => { void this.graphLabels.load(newRun.graph); };
 

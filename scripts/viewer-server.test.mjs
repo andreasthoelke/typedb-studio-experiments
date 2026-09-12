@@ -160,3 +160,34 @@ test('PNG exports save to Downloads with filesystem-based, concurrent-safe count
     assert.equal((await save('scene', {}, Buffer.from('not a PNG'))).status, 400);
     assert.equal((await readdir(downloadsDirectory)).length, 5);
 });
+
+test('project snapshot destinations travel with editor requests and isolate counters per project and database', async t => {
+    const root = await mkdtemp(join(tmpdir(), 'studio-project-snaps-'));
+    t.after(() => rm(root, { recursive: true, force: true }));
+    const downloadsDirectory = join(root, 'Downloads');
+    const projectTempDirectory = join(root, 'project with spaces', 'temp');
+    const { post, subscribe, origin } = await start(t, { downloadsDirectory });
+    const response = await post({ query: 'query text', database: 'pts-tour3', projectTempDirectory });
+    assert.equal(response.status, 202);
+    assert.equal((await response.json()).projectSnapshots, true);
+    const next = await subscribe();
+    const request = await next();
+    assert.equal(request.projectTempDirectory, projectTempDirectory);
+    assert.equal(request.database, 'pts-tour3');
+    assert.equal((await post({ query: 'text', projectTempDirectory: '../temp' })).status, 400);
+    const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=', 'base64');
+    const save = (database, directory = projectTempDirectory) => fetch(`${origin}/api/viewer/export?${new URLSearchParams({name:'motivation', database, projectTempDirectory:directory})}`, {
+        method:'POST', headers:{'Content-Type':'image/png'}, body:png,
+    });
+    const first = await save('pts-tour3');
+    assert.equal(first.status, 201);
+    assert.equal((await first.json()).path, join(projectTempDirectory, 'snaps', 'pts-tour3', 'motivation-00.png'));
+    assert.equal((await (await save('pts-tour3')).json()).filename, 'motivation-01.png');
+    assert.equal((await (await save('other-db')).json()).path, join(projectTempDirectory, 'snaps', 'other-db', 'motivation-00.png'));
+    const otherProject = join(root, 'second-project', 'temp');
+    assert.equal((await (await save('pts-tour3', otherProject)).json()).path, join(otherProject, 'snaps', 'pts-tour3', 'motivation-00.png'));
+    for (const badDatabase of ['..', '../escape', 'db/escape', 'db\\escape', '']) assert.equal((await save(badDatabase)).status, 400);
+    assert.equal((await save('pts-tour3', 'relative/temp')).status, 400);
+    const { stat } = await import('node:fs/promises');
+    assert.equal(await stat(downloadsDirectory).catch(() => null), null, 'project saves must not create Downloads');
+});

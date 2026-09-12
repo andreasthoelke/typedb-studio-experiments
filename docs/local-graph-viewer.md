@@ -180,8 +180,25 @@ Click the download icon to save the **current view** directly as PNG, preserving
 its camera, zoom, selection highlighting, and hidden nodes. There is no export
 menu. Explorer and other UI controls are not included in the image.
 
-With the local viewer server, files are saved directly to `~/Downloads`. The
-filename uses distinct entity and relation type names from the query attached
+With the local viewer server, Neovim supplies the source project's `temp`
+directory. Files are saved to **`<project>/temp/snaps/<database>/`**, creating
+folders on the first export. For example, a query from
+`~/Documents/Proj/e2/pts/temp/schema_pts-tour3.tql` saves to
+`~/Documents/Proj/e2/pts/temp/snaps/pts-tour3/`.
+
+The Neovim helper finds the nearest project `temp` directory from the source
+buffer (including nested files under `specimens/`). At a Git root without one it
+uses `<root>/temp`; without a source project it uses Neovim's working directory.
+`vim.b.typedb_graph_temp_dir` or the helper's `temp_dir` setup option can override
+this discovery. `schema_<db>.tql` and `data_<db>.tql` names also supply the database
+when one wasn't explicitly provided.
+
+The destination belongs to the result: Studio reruns retain that project, and
+switching to an older result preserves its destination even after querying a
+different project. Schema and newly opened views use the last project remembered
+for their database. If no project is known, exports fall back to `~/Downloads`.
+
+The filename uses distinct entity and relation type names from the query attached
 to the displayed result, in query order: for example,
 `scene-scene-take-take-00.png`. Editing the query without running it does not
 change the export name. Attribute-only queries use their attribute names;
@@ -191,11 +208,15 @@ Long names are shortened to fit filesystem limits.
 The server checks the actual directory, trying `00`, `01`, `02`, etc. until it
 can create a new file without overwriting one. This also works after restarting
 Studio and when two windows export simultaneously. A notification shows the
-saved path. Restart an older viewer server once to enable this endpoint.
+saved path. Counters are independent for each project/database folder.
+
+After updating, reload `~/.config/nvim/plugin/ftype/typedb_graph.lua`, restart the
+viewer (`:TypeDBGraphStop`, then `:TypeDBGraphStart`), reload the browser, and run
+one query from the project to establish the destination.
 
 Ordinary Studio hosting without the local bridge uses browser downloads and a
 counter remembered in local storage; only the local server can check actual
-files in Downloads.
+files in the destination directory.
 
 ## Exploring and styling a result
 
@@ -324,6 +345,13 @@ at `/api/viewer/events`. No Vite/Angular hot-reload protocol is involved.
 ```json
 { "query": "your TypeQL query", "database": "my_database", "limit": 1000 }
 ```
+
+An optional absolute `projectTempDirectory` (for example,
+`/Users/at/Documents/Proj/e2/pts/temp`) travels with the request and its result.
+The Neovim helper supplies it automatically. Export requests include this path
+and the result's database; the server creates `snaps/<database>/` beneath it.
+`projectSnapshots: true` in the acknowledgement and health response indicates
+support for project destinations.
 
 An optional `execution` object reports a completed console statement:
 `{ "kind": "read" | "write" | "schema", "status": "success" | "error", "error": "optional error text" }`.

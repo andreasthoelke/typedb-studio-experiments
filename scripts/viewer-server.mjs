@@ -6,7 +6,7 @@ import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
-import { maxPngBytes, saveGraphPng, validExportName } from './viewer-export.mjs';
+import { maxPngBytes, saveGraphPng, validExportName, validProjectTempDirectory, graphSnapshotDirectory } from './viewer-export.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const maxBodyBytes = 1024 * 1024;
@@ -46,7 +46,7 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
         try {
             const url = new URL(request.url, 'http://127.0.0.1');
             if (url.pathname === '/api/viewer/health' && request.method === 'GET') {
-                return json(response, 200, { service: 'typedb-studio-bridge', pngExport: true, viewers: clients.size, latestRequestId: latest?.id ?? null });
+                return json(response, 200, { service: 'typedb-studio-bridge', pngExport: true, projectSnapshots: true, viewers: clients.size, latestRequestId: latest?.id ?? null });
             }
             if (url.pathname === '/api/viewer/export' && request.method === 'POST') {
                 if (request.headers['content-type']?.split(';')[0].trim() !== 'image/png') {
@@ -62,7 +62,8 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                     chunks.push(chunk);
                 }
                 try {
-                    const saved = await saveGraphPng(downloadsDirectory, baseName, Buffer.concat(chunks));
+                    const directory = graphSnapshotDirectory(downloadsDirectory, url.searchParams.get('projectTempDirectory'), url.searchParams.get('database'));
+                    const saved = await saveGraphPng(directory, baseName, Buffer.concat(chunks));
                     return json(response, 201, saved);
                 } catch (error) {
                     return json(response, 400, { error: error.message });
@@ -103,6 +104,9 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                     || (body.limit !== undefined && (!Number.isInteger(body.limit) || body.limit < 1 || body.limit > 100000))) {
                     return json(response, 400, { error: 'Expected query text, optional database, and optional integer limit (1–100000).' });
                 }
+                if (body.projectTempDirectory !== undefined && !validProjectTempDirectory(body.projectTempDirectory)) {
+                    return json(response, 400, { error: 'Expected an absolute projectTempDirectory.' });
+                }
                 const execution = body.execution;
                 if (execution !== undefined && (!execution || !['read', 'write', 'schema'].includes(execution.kind)
                     || !['success', 'error'].includes(execution.status)
@@ -110,9 +114,10 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                     return json(response, 400, { error: 'Invalid execution outcome.' });
                 }
                 latest = { id: randomUUID(), query: body.query, database: body.database, limit: body.limit ?? 1000,
+                    ...(body.projectTempDirectory ? { projectTempDirectory: body.projectTempDirectory } : {}),
                     ...(execution ? { execution: { kind: execution.kind, status: execution.status, error: execution.error } } : {}) };
                 for (const client of clients) send(client, latest);
-                return json(response, 202, { id: latest.id, viewers: clients.size, executionContext: true });
+                return json(response, 202, { id: latest.id, viewers: clients.size, executionContext: true, projectSnapshots: true });
             }
             if (url.pathname.startsWith('/api/viewer/')) return json(response, 404, { error: 'Unknown viewer endpoint or method.' });
             if (url.pathname === '/viewer') {

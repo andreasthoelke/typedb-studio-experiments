@@ -18,6 +18,8 @@ import { GraphStyleService, buildBackgroundCSS } from "../../../service/graph-st
 import { RunOutputState } from "../../../service/query-page-state.service";
 import { SelectionMode } from "../../../service/graph-view-state.service";
 
+import { GraphSnapshotService } from "../../../service/graph-snapshot.service";
+import { DriverState } from "../../../service/driver-state.service";
 import { SchemaState } from "../../../service/schema-state.service";
 import { SnackbarService } from "../../../service/snackbar.service";
 import { graphExportBaseName, ExportType } from "../../util/graph-export-name";
@@ -290,6 +292,8 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     }
 
     private schemaState = inject(SchemaState);
+    private snapshots = inject(GraphSnapshotService);
+    private driver = inject(DriverState);
     private snackbar = inject(SnackbarService);
 
     private exportBaseName(): string {
@@ -309,6 +313,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         const visualiser = this.visualiser;
         if (!visualiser || this.exporting) return;
         const baseName = this.exportBaseName();
+        const snapshotContext = this.run?.snapshotContext ?? this.snapshots.forDatabase(this.run?.graph.database ?? this.driver.database$.value?.name);
         this.exporting = true;
         try {
             const blob = await visualiser.exportPng("currentView");
@@ -316,7 +321,9 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
                 const health = await fetch("/api/viewer/health").then(response => response.ok ? response.json() : null).catch(() => null);
                 if (health?.service === "typedb-studio-bridge") {
                     if (!health.pngExport) throw new Error("Restart the local viewer server to enable numbered PNG downloads.");
-                    const response = await fetch(`/api/viewer/export?name=${encodeURIComponent(baseName)}`, {
+                    if (snapshotContext && !health.projectSnapshots) throw new Error("Restart the local viewer server to enable project snapshot folders.");
+                    const params = new URLSearchParams({ name: baseName, ...(snapshotContext ?? {}) });
+                    const response = await fetch(`/api/viewer/export?${params}`, {
                         method: "POST", headers: { "Content-Type": "image/png" }, body: blob,
                     });
                     const saved = await response.json();

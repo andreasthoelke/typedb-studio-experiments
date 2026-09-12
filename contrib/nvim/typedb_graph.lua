@@ -98,14 +98,33 @@ function M.mirror(query, database, execution)
   M.send(query, database, { quiet = true, execution = execution })
 end
 
+-- Resolve before starting the bridge: termopen and result floats can change buffers.
+local function projectTempDirectory()
+  local override = vim.b.typedb_graph_temp_dir or config.temp_dir
+  if override then return vim.fn.fnamemodify(vim.fn.expand(override), ':p'):gsub('/+$', '') end
+  local source = vim.api.nvim_buf_get_name(0)
+  local dir = source ~= '' and vim.bo.buftype == '' and vim.fn.fnamemodify(source, ':p:h') or vim.fn.getcwd()
+  while dir and dir ~= '' do
+    if vim.fn.fnamemodify(dir, ':t') == 'temp' then return dir end
+    if vim.fn.isdirectory(dir .. '/temp') == 1 then return dir .. '/temp' end
+    if vim.fn.isdirectory(dir .. '/.git') == 1 or vim.fn.filereadable(dir .. '/.git') == 1 then return dir .. '/temp' end
+    local parent = vim.fn.fnamemodify(dir, ':h')
+    if parent == dir then break end
+    dir = parent
+  end
+  return vim.fn.getcwd() .. '/temp'
+end
+
 function M.send(query, database, options)
   options = options or {}
   if not query:find('%S') then
     vim.notify('TypeDB graph: no query selected', vim.log.levels.WARN)
     return
   end
-  database = database or vim.b.typedb_database or vim.g.typedb_database or vim.g.typedb_active_schema
-  local body = { query = query, limit = config.limit, execution = options.execution }
+  local filename = vim.fn.expand('%:t')
+  local panelDatabase = filename:match('^schema_(.+)%.tql$') or filename:match('^data_(.+)%.tql$')
+  database = database or vim.b.typedb_database or panelDatabase or vim.g.typedb_database or vim.g.typedb_active_schema
+  local body = { query = query, limit = config.limit, execution = options.execution, projectTempDirectory = projectTempDirectory() }
   if database and database ~= '' then body.database = database end
   sequence = sequence + 1
   local requestSequence = sequence
@@ -127,6 +146,10 @@ function M.send(query, database, options)
           end
           if options.execution and response.executionContext ~= true then
             notifyError("Restart the Studio bridge to enable operation context (:TypeDBGraphStop, then :TypeDBGraphStart).")
+            return
+          end
+          if response.projectSnapshots ~= true then
+            notifyError("Restart the Studio bridge to save snapshots in the project (:TypeDBGraphStop, then :TypeDBGraphStart).")
             return
           end
           if options.quiet then return end

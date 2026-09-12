@@ -8,7 +8,7 @@ import { SnackbarService } from "./snackbar.service";
 import { prepareOperationContext, prepareSchemaContext, EditorExecution, OperationContext } from "../framework/util/operation-context";
 import { prepareGraphQuery } from "../framework/util/graph-query";
 
-interface EditorRequest { id: string; query: string; database?: string; limit: number; execution?: EditorExecution; }
+interface EditorRequest { id: string; query: string; database?: string; limit: number; execution?: EditorExecution; projectTempDirectory?: string; }
 const OPTIONS_KEY = "typedb-studio-nvim-options";
 const ENABLED_KEY = "typedb-studio-nvim-enabled";
 
@@ -184,7 +184,7 @@ export class NvimQueryBridge {
                 this.state.outputTypeControl.setValue("graph");
                 this.note = context.note;
                 this.message = `Running Neovim context in ${database}…`;
-                this.state.runQuery(context.query, { limit: request.limit, schemaMode: context.schemaMode }).subscribe(result => {
+                this.state.runQuery(context.query, { limit: request.limit, schemaMode: context.schemaMode, projectTempDirectory: request.projectTempDirectory }).subscribe(result => {
                     if (this.lastRequest !== request) return;
                     const empty = ["noQueryAnswers", "noInstancesFound"].includes(this.state.graphOutput.status);
                     if (this.operationContext && !context.schemaMode && !fallback && (!result.success || empty) && !this.pending) {
