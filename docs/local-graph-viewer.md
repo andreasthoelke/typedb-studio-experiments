@@ -264,8 +264,8 @@ current canvas. The URL stays on the same route, including in full-screen mode.
 
 Chips show two-letter abbreviations of the distinct node type names, splitting
 hyphenated names into words: `mental-state`, `goal`, `source` become
-`me st go so`. Long lists end in `..`. There are no hover tooltips or snap keyboard
-shortcuts. The loaded snap's chip is highlighted.
+`me st go so`. Long lists end in `..`. There are no hover tooltips. Use `h` / `l`
+to browse snaps (see keyboard controls below). The loaded snap's chip is highlighted.
 
 Each chip has an **×** button that immediately deletes that `.snap.json` file,
 without a confirmation dialog. Other snaps and PNGs are unaffected. Deleting the
@@ -355,6 +355,49 @@ travel together. Each saved preset's menu also exports that preset individually.
 Two presets inspired by the Neovim TypeQL palette are available in
 [contrib/graph-presets](../contrib/graph-presets/README.md): **Munsell Ink** and
 **Munsell Paper**. See that guide for import instructions and the colour choices.
+
+## Keyboard controls and additive graph selection
+
+**Shift-click** a node to toggle it and its periphery in the shared selection.
+A first Shift-click extends the neighborhood of the node you were already
+inspecting. Subsequent Shift-clicks add or remove groups. Shared nodes stay
+selected while another selected group still includes them. This uses the same
+periphery rules as ordinary inspection, including relation role players; it does
+not issue a query or load more nodes. It works in Query, Schema, and saved views.
+
+The finder checkboxes and Elements tags reflect the result. Editing those controls
+establishes a new explicit selection, so subsequent Shift-clicks extend that base.
+Removing the last group selects **None**; **Clear** restores ordinary highlighting.
+Neighborhood groups survive snap save/restore. Ordinary clicking still opens the
+Explorer without replacing an explicit selection.
+
+| Key | Action |
+| --- | --- |
+| `h` / `l` | Previous / next snap in the displayed route-specific list, wrapping at the ends |
+| `Backspace` | Return from a saved view to the preserved live view |
+| `Enter` | Smoothly focus the current shared selection or ordinary highlights |
+| `s` | Save a snap |
+| `/` | Focus the fuzzy finder |
+| `?` | Open/close shortcut help in Snaps |
+
+These work across the visible graph view; snap chips do not need keyboard focus.
+Inputs, the query editor, dialogs, menus, modified browser shortcuts, and key
+repeat are left alone. After typing, click an empty area of the graph to use graph
+shortcuts. Enter inside either search field keeps that field's existing behavior.
+The Snaps **Keys** button shows help and the last shortcut Studio received.
+
+**Vimium setup:** in Vimium's popup/options, add an exclusion rule with pattern
+`http://localhost:1430/*` and excluded/pass-through keys `hls/?`, then save.
+Use your actual port if different. Leave the keys field empty to disable Vimium
+entirely for this site, or press `i` for temporary pass-through (Escape ends it).
+Default Vimium does not map Enter or Backspace. Custom mappings for those keys
+may require a full site exclusion or insert mode.
+
+Vimium 2.4.2 was tested from this machine's installed extension in an isolated
+browser profile: default `h`/`l` never reached Studio's window capture listener;
+the exclusion rule passed them through. No real Chrome profile was modified.
+A web page cannot override an extension that consumes the event first. See
+[Vimium's exclusion documentation](https://github.com/philc/vimium/wiki/Disabling-Vimium).
 
 ## Query lifecycle
 

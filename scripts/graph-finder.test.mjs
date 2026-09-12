@@ -53,3 +53,32 @@ test('selection snapshots survive renderer remounts without sharing mutable stat
  assert.equal(new GraphElementSelection().active, false, 'new results start fresh');
  assert.equal(restored.status([]), 'none');
 });
+
+test('Shift-click neighborhoods preserve overlap and the previously inspected group', () => {
+ const selection = new GraphElementSelection();
+ selection.toggleNeighborhood('b', ['shared','b1'], ['a',['a','shared','a1']]);
+ assert.deepEqual([...selection.nodes].sort(), ['a','a1','b','b1','shared']);
+ selection.toggleNeighborhood('a', ['shared','a1']);
+ assert.deepEqual([...selection.nodes].sort(), ['b','b1','shared']);
+ selection.toggleNeighborhood('b', ['shared','b1']);
+ assert.equal(selection.nodes.size, 0);
+ assert.equal(selection.active, true, 'deselecting every group selects None; Clear restores ordinary highlighting');
+});
+
+test('neighborhood groups survive snaps and preserve independently selected nodes', () => {
+ let saved;
+ const selection = new GraphElementSelection(undefined, value => saved = value);
+ selection.set(['shared','independent'], true);
+ selection.toggleNeighborhood('a', ['shared']);
+ const restored = new GraphElementSelection(JSON.parse(JSON.stringify(saved)));
+ restored.toggleNeighborhood('a', ['shared']);
+ assert.deepEqual([...restored.nodes].sort(), ['independent','shared']);
+ assert.deepEqual([...selection.nodes].sort(), ['a','independent','shared']);
+ restored.set(['a'], true); // Finder/type chips establish a new base.
+ restored.toggleNeighborhood('a', ['neighbor']);
+ restored.toggleNeighborhood('a', ['neighbor']);
+ assert.deepEqual([...restored.nodes].sort(), ['a','independent','shared']);
+ restored.clear();
+ restored.toggleNeighborhood('z', []);
+ assert.deepEqual([...restored.nodes], ['z']);
+});

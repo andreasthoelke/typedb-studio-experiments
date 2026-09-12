@@ -287,6 +287,15 @@ export class InteractionHandler {
         }
         this.visualiser?.clearSearch();
         const node = event.node;
+        if ((event.event?.original as MouseEvent | undefined)?.shiftKey && this.visualiser) {
+            // Use the same graph-aware periphery as ordinary inspection (including
+            // relation role players), and keep inspection independent of selection.
+            const primary = this.state.selectedNode;
+            this.visualiser.elementSelection.toggleNeighborhood(node,
+                [...this.collectHighlightedNeighbors(node)],
+                primary ? [primary, [...new Set([primary, ...(this.state.selectedNeighbors ?? [])])]] : undefined);
+            return;
+        }
         if (this.selectionMode === "types") this.handleTypeSelectionClick(node);
         else this.handleInstanceSelectionClick(node);
     }

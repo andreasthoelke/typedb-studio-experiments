@@ -3,6 +3,15 @@
 TypeDB Studio is an interactive visual environment for working with TypeDB.
 It is an Angular app whose source code lives under the `src` directory.
 
+## Personal local fork
+
+Read [docs/LOCAL-FORK-HANDOFF.md](docs/LOCAL-FORK-HANDOFF.md) before changing the
+Neovim bridge, graph interactions, snapshots, or project exports. The user's
+workflow guide is [docs/local-graph-viewer.md](docs/local-graph-viewer.md).
+This is an evolving personal fork; an upstream PR is not an objective. Keep these
+documents current when behavior or setup changes. The existing user-owned viewer
+job may run inside Neovim; prefer isolated validation servers over restarting it.
+
 ## Submodule Dependencies
 
 **typedb-web** is a Git submodule dependency used via pnpm workspace:

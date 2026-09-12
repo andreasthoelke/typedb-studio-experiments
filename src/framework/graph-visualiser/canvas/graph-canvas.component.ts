@@ -28,6 +28,7 @@ import { DriverState } from "../../../service/driver-state.service";
 import { SchemaState } from "../../../service/schema-state.service";
 import { SnackbarService } from "../../../service/snackbar.service";
 import { graphExportBaseName, ExportType } from "../../util/graph-export-name";
+import { graphShortcut } from "../../util/graph-shortcuts";
 import { fuzzyGraphMatches, GraphFinderEntry } from "../../util/graph-finder";
 
 export type GraphCanvasStatus = "ok" | "running" | "noQueryAnswers" | "noInstancesFound" | "error" | "graphlessQueryType" | "answerOutputDisabled" | "multiQuery" | "emptySchema" | "emptySnap" | "needsTransaction";
@@ -49,6 +50,59 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     private snapStyles: GraphStyleService | null = null;
     private snapStylesSub?: Subscription;
     private injector = inject(Injector);
+    private host = inject<ElementRef<HTMLElement>>(ElementRef);
+    private static keyboardOwner: GraphCanvasComponent | null = null;
+    shortcutHelpOpen = false;
+    lastShortcut = "None received yet";
+
+    private isKeyboardVisible(): boolean {
+        const el = this.host.nativeElement;
+        return el.isConnected && !el.closest(".invisible, [hidden], [inert], [aria-hidden='true']")
+            && el.getBoundingClientRect().width > 0 && el.getBoundingClientRect().height > 0;
+    }
+
+    private ownKeyboard = (event: Event): void => {
+        if (event.composedPath().includes(this.host.nativeElement)) GraphCanvasComponent.keyboardOwner = this;
+    };
+
+    private onGraphKey = (event: KeyboardEvent): void => {
+        const action = graphShortcut(event);
+        if (!action || !this.isKeyboardVisible()) return;
+        const owner = GraphCanvasComponent.keyboardOwner;
+        if (owner && owner !== this && owner.isKeyboardVisible()) return;
+        // Includes CodeMirror, native controls, shadow-DOM editors, and open Material overlays.
+        if (event.composedPath().some(target => target instanceof HTMLElement &&
+            (target.isContentEditable || target.closest("input, textarea, select, [role='textbox'], [role='dialog'], [role='menu']")))) return;
+        if (action === "focus" && event.composedPath().some(target => target instanceof HTMLElement &&
+            target.closest("button, a[href], [role='button']"))) return;
+        if (document.querySelector(".cdk-overlay-pane .mat-mdc-dialog-container, .cdk-overlay-pane .mat-mdc-menu-panel, .cdk-overlay-pane .mat-mdc-select-panel")) return;
+        GraphCanvasComponent.keyboardOwner = this;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        this.lastShortcut = `${event.key} → ${action}`;
+        if (action === "help") { this.shortcutHelpOpen = !this.shortcutHelpOpen; this.showSnapsTab(); }
+        else if (action === "focus") { this.visualiser?.focusHighlightedNodes(); }
+        else if (action === "live") { if (this.inlineSnap || this.snapsBusy) this.closeInlineSnap(); }
+        else if (action === "find") {
+            this.host.nativeElement.querySelector<HTMLInputElement>("input[aria-label='Find types or labels']")?.focus();
+        } else if (action === "snap") { if (this.canExportPng()) void this.saveSnap(); }
+        else if (!this.snapsBusy) {
+            this.showSnapsTab();
+            void this.stepSnap(action === "next" ? 1 : -1);
+        }
+    };
+
+    private showSnapsTab(): void { if (this.sidePanel) this.sidePanel.inspectorTab = "snaps"; }
+
+    private async stepSnap(direction: number): Promise<void> {
+        if (!this.snapLibrary) await this.refreshSnaps();
+        const files = this.snapFiles;
+        if (!files.length || this.destroyed) return;
+        const current = files.findIndex(file => this.isActiveSnap(file.filename));
+        const next = current < 0 ? (direction > 0 ? 0 : files.length - 1) : (current + direction + files.length) % files.length;
+        await this.openSavedSnap(files[next].filename);
+    }
+
     private cdr = inject(ChangeDetectorRef);
     private rehomingSnap = false;
     @ViewChild("snapCanvasEl") snapCanvasEl?: ElementRef<HTMLElement>;
@@ -121,6 +175,9 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     private stylesSub: Subscription;
 
     constructor(private liveStyleService: GraphStyleService) {
+        window.addEventListener("keydown", this.onGraphKey, true);
+        window.addEventListener("pointerdown", this.ownKeyboard, true);
+        window.addEventListener("focusin", this.ownKeyboard, true);
         this.stylesSub = this.styleService.styles$.subscribe(() => {
             this.updateControlTheme();
             this.applyBackground();
@@ -207,6 +264,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     private get styleService(): GraphStyleService { return this.snapStyles ?? this.liveStyleService; }
 
     closeInlineSnap(): void {
+        ++this.snapOpenRequest;
         this.snapVisualiser?.destroy();
         this.snapVisualiser = null;
         this.inlineSnap = null;
@@ -332,6 +390,10 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     }
 
     ngOnDestroy() {
+        window.removeEventListener("keydown", this.onGraphKey, true);
+        window.removeEventListener("pointerdown", this.ownKeyboard, true);
+        window.removeEventListener("focusin", this.ownKeyboard, true);
+        if (GraphCanvasComponent.keyboardOwner === this) GraphCanvasComponent.keyboardOwner = null;
         this.destroyed = true;
         ++this.libraryRequest;
         this.stylesSub.unsubscribe();
@@ -420,6 +482,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     projectPath = "";
     snapLibrary: GraphSnapLibrary | null = null;
     private libraryRequest = 0;
+    private snapOpenRequest = 0;
 
     get snapshotDatabase(): string {
         return this.loadedSnap?.database ?? this.run?.graph.database ?? this.driver.database$.value?.name ?? "";
@@ -509,10 +572,11 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     async openSavedSnap(filename: string): Promise<void> {
         if (!this.snapLibrary || this.snapsBusy) return;
         const { database, projectTempDirectory } = this.snapLibrary;
+        const request = ++this.snapOpenRequest;
         this.snapsBusy = true;
         try {
             const snap = await this.snapshots.openSaved({ database, projectTempDirectory }, filename);
-            if (this.destroyed) return;
+            if (this.destroyed || request !== this.snapOpenRequest) return;
             this.restoreInlineSnap(snap);
             this.snapshots.activeFile = { database, projectTempDirectory, filename };
             if (this.sidePanel) this.sidePanel.inspectorTab = "snaps";

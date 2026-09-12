@@ -7,6 +7,10 @@
 
 # TypeDB Studio
 
+This checkout is also a personal Neovim/graph exploration fork. Start with the
+[local workflow guide](docs/local-graph-viewer.md) or the
+[maintainer handoff](docs/LOCAL-FORK-HANDOFF.md).
+
 TypeDB Studio is an interactive visual environment for managing and querying [TypeDB](https://typedb.com) databases.
 
 With Studio, database users can efficiently manage databases, execute queries, and explore query results,
