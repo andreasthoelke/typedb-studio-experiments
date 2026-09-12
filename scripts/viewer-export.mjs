@@ -1,4 +1,4 @@
-import { mkdir, open, unlink, stat, readdir } from 'node:fs/promises';
+import { mkdir, open, unlink, stat, lstat, readdir } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
@@ -69,7 +69,14 @@ export async function listGraphSnaps(directory) {
             try {
                 const snap = await readGraphSnap(directory, entry.name);
                 if (snap.format === 'typedb-studio-graph-snap' && Array.isArray(snap.graph?.nodes)) {
-                    metadata = { kind: snap.schemaMode ? 'schema' : 'data', nodeCount: snap.graph.nodes.length };
+                    const names = [...new Set(snap.graph.nodes.map(node => {
+                        const concept = node.attributes?.metadata?.concept;
+                        return concept?.type?.label ?? concept?.label;
+                    }).filter(name => typeof name === 'string'))];
+                    const words = names.flatMap(name => name.split(/[-_\s]+/)).filter(Boolean);
+                    const abbreviation = words.slice(0, 10).map(word => [...word].slice(0, 2).join('')).join(' ')
+                        + (words.length > 10 ? ' ..' : '');
+                    metadata = { kind: snap.schemaMode ? 'schema' : 'data', nodeCount: snap.graph.nodes.length, abbreviation };
                 }
             } catch { /* Keep unreadable files visible; opening reports the error. */ }
             cached = { stamp, metadata };
@@ -89,6 +96,15 @@ export async function readGraphSnap(directory, filename) {
         if (!info.isFile() || info.size > maxPngBytes) throw new Error('Invalid snap file or size (maximum 64 MiB).');
         return JSON.parse(await file.readFile('utf8'));
     } finally { await file.close(); }
+}
+
+export async function deleteGraphSnap(directory, filename) {
+    if (!validSnapFilename(filename)) throw new Error('Invalid snap filename.');
+    const path = join(directory, filename);
+    if (!(await lstat(path)).isFile()) throw new Error('Expected a regular snap file.');
+    await unlink(path);
+    snapMetadata.delete(path);
+    return { filename };
 }
 
 /** Exclusive creation checks the real directory and handles simultaneous exports. */

@@ -258,36 +258,33 @@ lower Elements / Themes / Customise tabs. With no node selected, Snaps is active
 Selecting a graph node activates Explorer; clearing that selection returns to
 Snaps. You can also choose Snaps while a node is selected.
 
-Snaps appear as compact chips grouped into **Data** and **Schema**, newest first
-within each group. Chips show a shortened query-derived name and save number;
-hover for the complete filename, date and node count. Click a chip to restore
-the view and highlight that chip. The Snaps tab remains active during restoration,
-even if the saved view includes an inspected node.
+The **query route shows data snaps**, and the **schema route shows schema snaps**,
+newest first. Clicking a chip restores the saved graph directly inside the
+current canvas. The URL stays on the same route, including in full-screen mode.
 
-After clicking a chip, **l** opens the next snap and **h** opens the previous one
-in displayed order, wrapping at the ends. Focus follows the active chip across
-restores. These shortcuts apply only inside the Snaps pane and never intercept
-typing in the project path or query editor.
+Chips show two-letter abbreviations of the distinct node type names, splitting
+hyphenated names into words: `mental-state`, `goal`, `source` become
+`me st go so`. Long lists end in `..`. There are no hover tooltips or snap keyboard
+shortcuts. The loaded snap's chip is highlighted.
+
+Each chip has an **×** button that immediately deletes that `.snap.json` file,
+without a confirmation dialog. Other snaps and PNGs are unaffected. Deleting the
+snap currently on screen removes its chip but keeps the loaded graph visible.
+Deletion failures are shown and leave the chip available for retry.
+
+The saved graph includes its positions, camera, highlights and styling. It
+loads without querying TypeDB and keeps its layout stopped. **Saved query** in
+the Snaps tab shows its query and recorded expansions. The Explorer uses cached
+values while inspecting a saved view. **Live view** returns to the original
+query result or schema graph; running another query also returns to live output.
+The original graph and its style service are kept separate while a snap is open.
 
 The library reads real `.snap.json` files, so existing snaps appear too.
 **Refresh** picks up files added outside Studio. **Project folder…** contains
 the folder setting, both save destinations and **Import snap file…** for files
-elsewhere. The project is remembered in this browser across reloads; after
-changing browser/origin, run a query from Neovim or select the project again.
-
-Opening a snap navigates to `/snap`, a saved view using the same graph canvas,
-finder and styling controls. It restores the
-graph directly without querying TypeDB and leaves the layout stopped. You can
-inspect saved node values, change the selection, pan/zoom, and deliberately
-redraw if you want to experiment. Restoring appearance does not overwrite your
-normal saved style settings. The inspector in this view uses saved values rather
-than fetching current links or attributes from the database.
-
-**Query and expansions** shows the recorded TypeQL. **Open query in Studio**
-opens the main query in a pinned tab and selects its database when available;
-it does not run the query. Running it is a separate action that obtains fresh
-data and a new layout. Listed Explorer expansion queries are not automatically
-replayed. On the full schema route there may be no explicit main query to open.
+elsewhere; imports must match the current route's snap type. The project is
+remembered in this browser across reloads; after changing browser/origin, run a
+query from Neovim or select the project again.
 
 Positions and the normalized camera are preserved exactly. A differently sized
 window or dock arrangement can reveal a different amount of the graph, and
@@ -481,4 +478,6 @@ query parameters, resolves the project and creates the destination. Explicit
 project metadata wins over the last project received for that database. The
 `snapLibrary: true` health capability identifies a server with these endpoints;
 `imageFolders: true` identifies PNG routing into `imgs`. Snap listings include
-`kind` (data/schema/unknown), `nodeCount` when readable, and both destination paths.
+`kind` (data/schema/unknown), `nodeCount` and a compact `abbreviation` when readable,
+and both destination paths. `DELETE /api/viewer/snap` uses the same project/DB
+parameters and `filename` to remove one snap; it rejects traversal and non-snap filenames.

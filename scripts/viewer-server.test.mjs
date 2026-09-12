@@ -261,3 +261,26 @@ test('project selection creates the real folder; snap listing and reopening surv
     const other = await (await fetch(`${origin}/api/viewer/snaps?${new URLSearchParams({projectTempDirectory:join(root,'temp'),database:'other-db'})}`)).json();
     assert.deepEqual(other.files,[]);
 });
+
+test('snap chips describe node names, and deletion removes only the named snap without confirmation', async t => {
+    const root = await mkdtemp(join(tmpdir(), 'studio-delete-snap-'));
+    t.after(() => rm(root, {recursive:true,force:true}));
+    const { origin } = await start(t);
+    const context = new URLSearchParams({database:'test-db',projectTempDirectory:root});
+    const value = {format:'typedb-studio-graph-snap',version:1,query:'stored text',schemaMode:false,
+        graph:{nodes:[{attributes:{metadata:{concept:{type:{label:'mental-state'}}}}}, {attributes:{metadata:{concept:{type:{label:'goal'}}}}}],edges:[]},view:{}};
+    const save = async name => (await fetch(`${origin}/api/viewer/snap?${context}&name=${name}`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)})).json();
+    const first=await save('first');const second=await save('second');
+    const list=await(await fetch(`${origin}/api/viewer/snaps?${context}`)).json();
+    assert.equal(list.files[0].abbreviation,'me st go');
+    const remove=(filename,headers={})=>fetch(`${origin}/api/viewer/snap?${context}&filename=${encodeURIComponent(filename)}`,{method:'DELETE',headers});
+    assert.equal((await remove(first.filename,{Origin:'https://example.com'})).status,403);
+    assert.equal((await remove('../second-00.snap.json')).status,400);
+    assert.equal((await remove('image.png')).status,400);
+    assert.equal((await remove(first.filename)).status,200);
+    assert.equal((await remove(first.filename)).status,400);
+    const remaining=await(await fetch(`${origin}/api/viewer/snaps?${context}`)).json();
+    assert.deepEqual(remaining.files.map(file=>file.filename),[second.filename]);
+    assert.equal(await readFile(first.path).catch(()=>null),null);
+    assert.ok(await readFile(second.path));
+});

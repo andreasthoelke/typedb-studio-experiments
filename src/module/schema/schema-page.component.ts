@@ -56,6 +56,11 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
         private router: Router) {
     }
 
+    onGraphCanvasRebuilt(el: HTMLElement): void {
+        this.state.visualiser.destroy();
+        this.state.visualiser.canvasEl$.next(el);
+    }
+
     onGraphStatusAction(action: string) {
         if (action === "viewLog") this.router.navigate(["/history"]);
     }

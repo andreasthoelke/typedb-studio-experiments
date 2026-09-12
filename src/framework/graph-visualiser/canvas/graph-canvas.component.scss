@@ -238,11 +238,21 @@
 
     p { margin: 10px 0; white-space: normal; }
     .snap-library-actions { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
-    .snap-group { margin-top: 10px; }
-    .snap-group-label { display: block; color: var(--gc-fg-muted); font-size: 11px; margin-bottom: 6px; }
     .snap-chip { max-width: 100%; --chip-color: var(--gc-green); }
-    .snap-chip-name { min-width: 0; max-width: 16ch; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .snap-chip:disabled { opacity: 0.5; cursor: wait; }
+    .snap-chips, .saved-view-actions { margin-top: 10px; }
+    .snap-chip {
+        padding: 0;
+        gap: 0;
+        button { background: none; border: none; color: inherit; font: inherit; }
+        button:disabled { opacity: 0.5; cursor: wait; }
+        .snap-chip-open { padding: 3px 4px 3px 9px; white-space: normal; text-align: left; }
+        .snap-chip-delete { padding: 3px 7px 3px 4px; }
+    }
+    .snap-query {
+        margin-top: 12px;
+        summary { cursor: pointer; }
+        pre { font-size: 11px; white-space: pre-wrap; overflow-wrap: anywhere; }
+    }
     .snap-project {
         margin-top: 14px;
         label { display: block; margin-bottom: 8px; }

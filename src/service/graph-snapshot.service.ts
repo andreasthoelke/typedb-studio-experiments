@@ -3,7 +3,7 @@ import { BehaviorSubject } from "rxjs";
 import { GraphSnap, parseGraphSnap } from "../framework/util/graph-snap";
 
 export interface GraphSnapshotContext { database: string; projectTempDirectory: string; }
-export interface SavedGraphSnap { filename: string; modifiedAt: string; bytes: number; kind: "data" | "schema" | "unknown"; nodeCount?: number; }
+export interface SavedGraphSnap { filename: string; modifiedAt: string; bytes: number; kind: "data" | "schema" | "unknown"; nodeCount?: number; abbreviation?: string; }
 export interface GraphSnapLibrary extends GraphSnapshotContext { directory: string; imageDirectory: string; files: SavedGraphSnap[]; }
 const STORAGE_KEY = "typedb-studio-snapshot-projects";
 
@@ -12,13 +12,11 @@ const STORAGE_KEY = "typedb-studio-snapshot-projects";
 export class GraphSnapshotService {
     readonly opened$ = new BehaviorSubject<GraphSnap | null>(null);
     activeFile: (GraphSnapshotContext & { filename: string }) | null = null;
-    focusActiveChip = false;
 
-    async open(file: File): Promise<void> {
+    async open(file: File): Promise<GraphSnap> {
         if (file.size > 64 * 1024 * 1024) throw new Error("Snap exceeds 64 MiB.");
         const snap = parseGraphSnap(await file.text());
-        this.activeFile = null;
-        this.opened$.next(snap);
+        return snap;
     }
 
     async request<T>(endpoint: string, params: Record<string, string>, options?: RequestInit): Promise<T> {
@@ -43,13 +41,11 @@ export class GraphSnapshotService {
         return this.remember(database, selected.projectTempDirectory);
     }
 
-    async openSaved(context: GraphSnapshotContext, filename: string): Promise<void> {
+    async openSaved(context: GraphSnapshotContext, filename: string): Promise<GraphSnap> {
         const snap = parseGraphSnap(JSON.stringify(await this.request("snap", { ...context, filename })));
         // An archive moved into another project should continue saving beside that archive.
         snap.project = context;
-        this.activeFile = { ...context, filename };
-        this.focusActiveChip = true;
-        this.opened$.next(snap);
+        return snap;
     }
 
     private projects = new Map<string, string>();

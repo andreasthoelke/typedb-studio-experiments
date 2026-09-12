@@ -7,16 +7,17 @@
      [class.dock-bottom]="dock === 'bottom'">
   @if (isVertical) {
     <ng-container *ngTemplateOutlet="canvasPane"></ng-container>
-    <ng-container *ngTemplateOutlet="sidePanel"></ng-container>
+    <ng-container *ngTemplateOutlet="sidePanel; injector: snapInjector"></ng-container>
   } @else {
     <ng-container *ngTemplateOutlet="canvasPane"></ng-container>
-    <ng-container *ngTemplateOutlet="sidePanel"></ng-container>
+    <ng-container *ngTemplateOutlet="sidePanel; injector: snapInjector"></ng-container>
   }
 </div>
 
 <ng-template #canvasPane>
   <div class="graph-split-left" resizable [percent]="graphPercent" (percentChange)="graphPercentChange.emit($event)">
-    <div class="canvas-element" #canvasEl></div>
+    <div class="canvas-element" #canvasEl [style.visibility]="inlineSnap ? 'hidden' : null"></div>
+    @if (inlineSnap) { <div class="canvas-element" #snapCanvasEl></div> }
     <ng-content/>
 
     <div class="graph-search-bar">
@@ -149,31 +150,36 @@
 
 
 <ng-template #snaps>
-  <section #snapChips class="graph-snaps-panel" aria-label="Saved snaps" tabindex="0" (keydown)="navigateSnaps($event)">
+  <section class="graph-snaps-panel" aria-label="Saved snaps">
     <input #snapFile type="file" accept=".snap.json,.json" hidden (change)="openSnap($event)">
     <div class="snap-library-actions">
-      <span>{{ snapshotDatabase || 'No database' }} · h / l</span>
+      <span>{{ snapshotDatabase || 'No database' }}</span>
       <button class="highlight-action-button" (click)="refreshSnaps()" [disabled]="snapsBusy" title="Refresh saved snaps">Refresh</button>
     </div>
     @if (snapsError) { <p role="alert">{{ snapsError }}</p> }
     @if (snapsBusy) { <p role="status">Loading…</p> }
+    @if (inlineSnap) {
+      <div class="snap-library-actions saved-view-actions">
+        <span>Saved view</span>
+        <button class="highlight-action-button" (click)="closeInlineSnap()">Live view</button>
+      </div>
+    }
     @if (snapLibrary) {
-      @for (group of snapGroups; track group.kind) {
-        <div class="snap-group">
-          <span class="snap-group-label">{{ group.label }}</span>
-          <div class="highlight-chips">
-            @for (file of group.files; track file.filename) {
-              <button class="highlight-chip snap-chip" [class.active]="isActiveSnap(file.filename)"
-                [attr.aria-pressed]="isActiveSnap(file.filename)" [attr.aria-label]="file.filename"
-                [disabled]="snapsBusy" (click)="openSavedSnap(file.filename)"
-                [matTooltip]="file.filename + '\n' + (file.modifiedAt | date:'medium') + (file.nodeCount === undefined ? '' : ' · ' + file.nodeCount + ' nodes')">
-                <span class="snap-chip-name">{{ snapName(file.filename) }}</span>
-                <span class="highlight-chip-count">{{ snapNumber(file.filename) }}</span>
-              </button>
-            }
-          </div>
-        </div>
-      } @empty { <p>No snaps saved here yet. Use Snap to capture this view.</p> }
+      <div class="highlight-chips snap-chips">
+        @for (file of snapFiles; track file.filename) {
+          <span class="highlight-chip snap-chip" [class.active]="isActiveSnap(file.filename)">
+            <button class="snap-chip-open" [attr.aria-pressed]="isActiveSnap(file.filename)" [attr.aria-label]="file.filename"
+              [disabled]="snapsBusy" (click)="openSavedSnap(file.filename)">{{ snapName(file) }}</button>
+            <button class="snap-chip-delete" [attr.aria-label]="'Delete ' + file.filename" [disabled]="snapsBusy"
+              (click)="deleteSnap(file.filename)">×</button>
+          </span>
+        } @empty { <p>No {{ snapKind }} snaps saved here yet.</p> }
+      </div>
+    }
+    @if (inlineSnap?.query) {
+      <details class="snap-query"><summary>Saved query</summary><pre>{{ inlineSnap?.query }}</pre>
+        @for (query of inlineSnap?.expansionQueries ?? []; track $index) { <pre>{{ query }}</pre> }
+      </details>
     }
     <details class="snap-project" [open]="!snapLibrary">
       <summary>Project folder…</summary>

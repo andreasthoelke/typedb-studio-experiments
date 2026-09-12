@@ -6,7 +6,7 @@ import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { maxPngBytes, saveGraphPng, saveGraphSnap, validExportName, validProjectTempDirectory, graphSnapshotDirectory,
-    selectSnapshotProject, listGraphSnaps, readGraphSnap } from './viewer-export.mjs';
+    selectSnapshotProject, listGraphSnaps, readGraphSnap, deleteGraphSnap } from './viewer-export.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const maxBodyBytes = 1024 * 1024;
@@ -56,6 +56,12 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                     const selected = await selectSnapshotProject(url.searchParams.get('path'), database);
                     projects.set(database, selected.projectTempDirectory);
                     return json(response, 200, selected);
+                } catch (error) { return json(response, 400, { error: error.message }); }
+            }
+            if (url.pathname === '/api/viewer/snap' && request.method === 'DELETE') {
+                try {
+                    const directory = graphSnapshotDirectory(projectTempDirectory, database);
+                    return json(response, 200, await deleteGraphSnap(directory, url.searchParams.get('filename')));
                 } catch (error) { return json(response, 400, { error: error.message }); }
             }
             if (['/api/viewer/snaps', '/api/viewer/snap'].includes(url.pathname) && request.method === 'GET') {

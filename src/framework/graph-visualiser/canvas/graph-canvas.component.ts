@@ -4,13 +4,16 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { Component, ElementRef, EventEmitter, HostBinding, inject, Input, DoCheck, OnChanges, OnDestroy, Output, ViewChild, AfterViewInit, AfterViewChecked } from "@angular/core";
-import { DatePipe, NgTemplateOutlet } from "@angular/common";
+import { Component, ChangeDetectorRef, Injector, DestroyableInjector, ElementRef, EventEmitter, HostBinding, inject, Input, DoCheck, OnChanges, OnDestroy, Output, ViewChild, AfterViewInit, AfterViewChecked } from "@angular/core";
+import { NgTemplateOutlet } from "@angular/common";
 import { MatTooltipModule } from "@angular/material/tooltip";
 
 import { ResizableDirective } from "@hhangular/resizable";
 import { Subscription } from "rxjs";
 import { GraphVisualiser } from "../engine";
+import { newGraph } from "../engine/graph";
+import { Layouts } from "../engine/layout";
+import { createSigmaRenderer, defaultSigmaSettings } from "../engine/sigma-settings";
 import { GraphControlsComponent } from "./graph-controls/graph-controls.component";
 import { GraphSidePanelComponent } from "../side-panel/graph-side-panel.component";
 import { GraphContextMenuComponent } from "../context-menu/graph-context-menu.component";
@@ -34,11 +37,30 @@ export type GraphCanvasStatusAction = "viewLog" | "openTransaction" | "switchToA
     selector: "ts-graph-canvas",
     templateUrl: "graph-canvas.component.html",
     styleUrls: ["graph-canvas.component.scss"],
-    imports: [DatePipe, NgTemplateOutlet, MatTooltipModule, ResizableDirective, GraphControlsComponent, GraphSidePanelComponent, GraphContextMenuComponent],
+    imports: [NgTemplateOutlet, MatTooltipModule, ResizableDirective, GraphControlsComponent, GraphSidePanelComponent, GraphContextMenuComponent],
 })
 export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, AfterViewChecked, OnDestroy {
-    @Input() visualiser: GraphVisualiser | null = null;
-    @Input() status: GraphCanvasStatus = "ok";
+    private liveVisualiser: GraphVisualiser | null = null;
+    private liveCanvasRebuilding = false;
+    private liveStatus: GraphCanvasStatus = "ok";
+    private snapVisualiser: GraphVisualiser | null = null;
+    inlineSnap: GraphSnap | null = null;
+    snapInjector: DestroyableInjector | null = null;
+    private snapStyles: GraphStyleService | null = null;
+    private snapStylesSub?: Subscription;
+    private injector = inject(Injector);
+    private cdr = inject(ChangeDetectorRef);
+    private rehomingSnap = false;
+    @ViewChild("snapCanvasEl") snapCanvasEl?: ElementRef<HTMLElement>;
+
+    @Input() set visualiser(value: GraphVisualiser | null) {
+        if (this.inlineSnap && !this.liveCanvasRebuilding && value?.graph !== this.liveVisualiser?.graph) this.closeInlineSnap();
+        this.liveCanvasRebuilding = false;
+        this.liveVisualiser = value;
+    }
+    get visualiser(): GraphVisualiser | null { return this.snapVisualiser ?? this.liveVisualiser; }
+    @Input() set status(value: GraphCanvasStatus) { this.liveStatus = value; }
+    get status(): GraphCanvasStatus { return this.inlineSnap ? "ok" : this.liveStatus; }
     @Input() graphPercent = 75;
     @Input() stylesPanePercent = 25;
     @Input() maximised = false;
@@ -66,8 +88,12 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
      *  data instances). Passed to the side panel so the type explorer hides
      *  instance-oriented UI (the "N in graph" count and connection chips). */
     @Input() schemaMode = false;
-    @Input() snapshotMode = false;
-    @Input() loadedSnap: GraphSnap | null = null;
+    private externalSnapshotMode = false;
+    private externalSnap: GraphSnap | null = null;
+    @Input() set snapshotMode(value: boolean) { this.externalSnapshotMode = value; }
+    get snapshotMode(): boolean { return !!this.inlineSnap || this.externalSnapshotMode; }
+    @Input() set loadedSnap(value: GraphSnap | null) { this.externalSnap = value; }
+    get loadedSnap(): GraphSnap | null { return this.inlineSnap ?? this.externalSnap; }
 
     @Output() maximisedChange = new EventEmitter<boolean>();
     @Output() graphPercentChange = new EventEmitter<number>();
@@ -94,7 +120,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
 
     private stylesSub: Subscription;
 
-    constructor(private styleService: GraphStyleService) {
+    constructor(private liveStyleService: GraphStyleService) {
         this.stylesSub = this.styleService.styles$.subscribe(() => {
             this.updateControlTheme();
             this.applyBackground();
@@ -178,6 +204,57 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         this.visualiser?.searchGraph(text.toLowerCase());
     }
 
+    private get styleService(): GraphStyleService { return this.snapStyles ?? this.liveStyleService; }
+
+    closeInlineSnap(): void {
+        this.snapVisualiser?.destroy();
+        this.snapVisualiser = null;
+        this.inlineSnap = null;
+        this.snapStylesSub?.unsubscribe();
+        this.snapStyles = null;
+        this.snapInjector?.destroy();
+        this.snapInjector = null;
+        this.finderVisualiser = null;
+        this.ngOnChanges();
+        this.updateControlTheme();
+        this.applyBackground();
+        if (!this.destroyed && this.liveVisualiser?.sigma.getContainer().querySelector("canvas")) {
+            this.liveVisualiser.applyStyleUpdate();
+            this.liveVisualiser.applyEdgeStyleUpdate();
+        }
+    }
+
+    private restoreInlineSnap(snap: GraphSnap): void {
+        if ((snap.schemaMode ? "schema" : "data") !== this.snapKind) throw new Error(`Open this snap from the ${snap.schemaMode ? 'schema' : 'query'} route.`);
+        if (!this.snapInjector) {
+            this.snapInjector = Injector.create({ providers: [GraphStyleService], parent: this.injector });
+            this.snapStyles = this.snapInjector.get(GraphStyleService);
+            this.snapStylesSub = this.snapStyles.styles$.subscribe(() => { this.updateControlTheme(); this.applyBackground(); });
+        }
+        this.inlineSnap = snap;
+        this.cdr.detectChanges();
+        this.renderInlineSnap(snap);
+        this.finderVisualiser = null;
+        this.ngOnChanges();
+        this.cdr.detectChanges();
+        if (this.sidePanel) this.sidePanel.inspectorTab = "snaps";
+    }
+
+    private renderInlineSnap(snap: GraphSnap): void {
+        const container = this.snapCanvasEl?.nativeElement;
+        if (!container || !this.snapStyles) return;
+        this.snapVisualiser?.destroy();
+        this.snapStyles.applyCapturedPreset(snap.style);
+        const graph = newGraph();
+        graph.import(snap.graph);
+        const sigma = createSigmaRenderer(container, defaultSigmaSettings as any, graph);
+        this.snapVisualiser = new GraphVisualiser(graph, sigma, Layouts.createD3ForceSupervisor(graph), this.snapStyles);
+        for (const node of snap.graph.nodes) graph.replaceNodeAttributes(node.key, structuredClone(node.attributes!));
+        for (const edge of snap.graph.edges) graph.replaceEdgeAttributes(edge.key!, structuredClone(edge.attributes!));
+        this.snapVisualiser.restoreSnapView(snap);
+        this.applyBackground();
+    }
+
     private libraryContextKey = "";
     private destroyed = false;
     ngDoCheck(): void {
@@ -206,16 +283,21 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     }
 
     ngAfterViewChecked() {
-        const chip = this.snapChips?.nativeElement.querySelector<HTMLButtonElement>(".snap-chip.active");
-        if (this.snapshotMode && this.snapshots.focusActiveChip && chip && !this.snapsBusy) {
-            this.snapshots.focusActiveChip = false;
-            setTimeout(() => { if (chip.isConnected) { chip.focus({ preventScroll: true }); chip.scrollIntoView({ block: "nearest" }); } });
+        const snapEl = this.snapCanvasEl?.nativeElement;
+        if (this.snapVisualiser && snapEl && snapEl !== this.snapVisualiser.sigma.getContainer() && !this.rehomingSnap) {
+            this.rehomingSnap = true;
+            const current = this.snapVisualiser.captureSnap(this.inlineSnap!.query, this.inlineSnap!.schemaMode, this.inlineSnap!.expansionQueries);
+            setTimeout(() => {
+                if (!this.destroyed && this.inlineSnap) { this.renderInlineSnap(current); this.cdr.detectChanges(); }
+                this.rehomingSnap = false;
+            });
         }
         const el = this.canvasElRef?.nativeElement ?? null;
         if (el && el !== this.attachedCanvasEl && this.attachedCanvasEl !== null) {
             // The host element was rebuilt (dock axis changed). Re-home the
             // renderer onto the new node.
             this.attachedCanvasEl = el;
+            this.liveCanvasRebuilding = true;
             if (this.run && !this.parentManagesCanvas) {
                 // Graph page: this canvas owns its run, so re-home here.
                 // GraphOutputState.attach/detach preserves the graph and
@@ -253,10 +335,11 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         this.destroyed = true;
         ++this.libraryRequest;
         this.stylesSub.unsubscribe();
+        this.closeInlineSnap();
     }
 
     private applyBackground() {
-        const el = this.canvasElRef?.nativeElement;
+        const el = this.inlineSnap ? this.snapCanvasEl?.nativeElement : this.canvasElRef?.nativeElement;
         if (!el) return;
         const css = buildBackgroundCSS(this.styleService.background);
         el.style.backgroundColor = css.color;
@@ -329,7 +412,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
             else if ("label" in concept) fallback.push({ label: concept.label, kind: concept.kind });
         });
         const known = schema ? [...Object.values(schema.entities), ...Object.values(schema.relations), ...Object.values(schema.attributes)] : fallback;
-        return graphExportBaseName(this.run?.query || this.loadedSnap?.query || "", known, fallback);
+        return graphExportBaseName(this.loadedSnap?.query || this.run?.query || "", known, fallback);
     }
 
     snapsBusy = false;
@@ -339,30 +422,32 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     private libraryRequest = 0;
 
     get snapshotDatabase(): string {
-        return this.run?.graph.database ?? this.loadedSnap?.database ?? this.driver.database$.value?.name ?? "";
+        return this.loadedSnap?.database ?? this.run?.graph.database ?? this.driver.database$.value?.name ?? "";
     }
 
     private get snapshotContext(): GraphSnapshotContext | undefined {
-        return this.run?.snapshotContext ?? this.loadedSnap?.project ?? this.snapshots.forDatabase(this.snapshotDatabase);
+        return this.loadedSnap?.project ?? this.run?.snapshotContext ?? this.snapshots.forDatabase(this.snapshotDatabase);
     }
 
     private useSnapshotContext(context: GraphSnapshotContext): void {
         this.snapshots.remember(context.database, context.projectTempDirectory);
-        if (this.run) this.run.snapshotContext = context;
+        if (this.run && !this.inlineSnap) this.run.snapshotContext = context;
         if (this.loadedSnap) this.loadedSnap.project = context;
         this.libraryContextKey = JSON.stringify([this.snapshotDatabase, this.snapshotContext]);
     }
 
-    @ViewChild("snapChips") snapChips?: ElementRef<HTMLElement>;
-
-    get snapGroups(): { kind: string; label: string; files: SavedGraphSnap[] }[] {
-        return [{ kind: "data", label: "Data" }, { kind: "schema", label: "Schema" }, { kind: "unknown", label: "Other" }]
-            .map(group => ({ ...group, files: this.snapLibrary?.files.filter(file => (file.kind ?? "unknown") === group.kind) ?? [] }))
-            .filter(group => group.files.length > 0);
+    get snapKind(): "data" | "schema" {
+        const path = this.router.url.split(/[?#]/)[0];
+        return path === "/schema" ? "schema" : path === "/query" ? "data" : this.schemaMode ? "schema" : "data";
     }
 
-    snapName(filename: string): string { return filename.replace(/-\d+\.snap\.json$/, "").replace(/\.snap\.json$/, ""); }
-    snapNumber(filename: string): string { return filename.match(/-(\d+)\.snap\.json$/)?.[1] ?? "·"; }
+    get snapFiles(): SavedGraphSnap[] { return this.snapLibrary?.files.filter(file => file.kind === this.snapKind) ?? []; }
+
+    snapName(file: SavedGraphSnap): string {
+        if (file.abbreviation) return file.abbreviation;
+        const words = file.filename.replace(/-\d+\.snap\.json$/, "").split(/[-_\s]+/);
+        return words.slice(0, 10).map(word => [...word].slice(0, 2).join("")).join(" ") + (words.length > 10 ? " .." : "");
+    }
 
     isActiveSnap(filename: string): boolean {
         const active = this.snapshots.activeFile;
@@ -370,18 +455,17 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
             && active.projectTempDirectory === this.snapLibrary?.projectTempDirectory;
     }
 
-    navigateSnaps(event: KeyboardEvent): void {
-        if (!["h", "l"].includes(event.key) || event.ctrlKey || event.metaKey || event.altKey
-            || (event.target as HTMLElement).closest("input, textarea, select, [contenteditable]")) return;
-        event.preventDefault();
-        event.stopPropagation();
-        if (this.snapsBusy) return;
-        const files = this.snapGroups.flatMap(group => group.files);
-        if (!files.length) return;
-        const current = files.findIndex(file => this.isActiveSnap(file.filename));
-        const next = current < 0 ? (event.key === "l" ? 0 : files.length - 1)
-            : (current + (event.key === "l" ? 1 : -1) + files.length) % files.length;
-        void this.openSavedSnap(files[next].filename);
+    async deleteSnap(filename: string): Promise<void> {
+        if (!this.snapLibrary || this.snapsBusy) return;
+        const { database, projectTempDirectory } = this.snapLibrary;
+        this.snapsBusy = true;
+        this.snapsError = "";
+        try {
+            await this.snapshots.request("snap", { database, projectTempDirectory, filename }, { method: "DELETE" });
+            if (this.isActiveSnap(filename)) this.snapshots.activeFile = null;
+            await this.refreshSnaps();
+        } catch (error) { this.snapsError = error instanceof Error ? error.message : String(error); }
+        finally { this.snapsBusy = false; }
     }
 
     async refreshSnaps(): Promise<void> {
@@ -427,8 +511,10 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         const { database, projectTempDirectory } = this.snapLibrary;
         this.snapsBusy = true;
         try {
-            await this.snapshots.openSaved({ database, projectTempDirectory }, filename);
-            await this.router.navigate(["/snap"]);
+            const snap = await this.snapshots.openSaved({ database, projectTempDirectory }, filename);
+            if (this.destroyed) return;
+            this.restoreInlineSnap(snap);
+            this.snapshots.activeFile = { database, projectTempDirectory, filename };
             if (this.sidePanel) this.sidePanel.inspectorTab = "snaps";
         } catch (error) { this.snapsError = error instanceof Error ? error.message : String(error); }
         finally { this.snapsBusy = false; }
@@ -449,8 +535,8 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
             const visualiser = this.visualiser;
             const context = await this.requireSnapshotContext();
             if (!context || this.visualiser !== visualiser) return;
-            const snap = visualiser.captureSnap(this.run?.query || this.run?.graph.query || this.loadedSnap?.query || "", this.schemaMode,
-                this.run?.expansionQueries ?? this.loadedSnap?.expansionQueries ?? []);
+            const snap = visualiser.captureSnap(this.loadedSnap?.query || this.run?.query || this.run?.graph.query || "", this.loadedSnap?.schemaMode ?? this.schemaMode,
+                this.loadedSnap?.expansionQueries ?? this.run?.expansionQueries ?? []);
             snap.view.finderText = this.finderText;
             snap.view.typeFilter = this.sidePanel?.elements?.typeFilter ?? "";
             snap.database = context.database;
@@ -468,7 +554,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         const input = event.target as HTMLInputElement;
         const file = input.files?.[0]; input.value = "";
         if (!file) return;
-        try { await this.snapshots.open(file); await this.router.navigate(["/snap"]); }
+        try { const snap = await this.snapshots.open(file); if (!this.destroyed) { this.restoreInlineSnap(snap); this.snapshots.activeFile = null; } }
         catch (error) { this.snackbar.errorPersistent(error instanceof Error ? error.message : String(error)); }
     }
 
