@@ -138,6 +138,8 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
      *  (e.g. for canvas usages that don't have a type/instance distinction
      *  like chat output). */
     @Input() selectionMode: SelectionMode | null = null;
+    /** Original source for schema context exports when there is no query run. */
+    @Input() contextQuery = "";
     /** True for the schema visualiser surface (graphs schema type nodes, not
      *  data instances). Passed to the side panel so the type explorer hides
      *  instance-oriented UI (the "N in graph" count and connection chips). */
@@ -474,7 +476,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
             else if ("label" in concept) fallback.push({ label: concept.label, kind: concept.kind });
         });
         const known = schema ? [...Object.values(schema.entities), ...Object.values(schema.relations), ...Object.values(schema.attributes)] : fallback;
-        return graphExportBaseName(this.loadedSnap?.query || this.run?.query || "", known, fallback);
+        return graphExportBaseName(this.loadedSnap?.query || this.run?.query || this.contextQuery, known, fallback);
     }
 
     snapsBusy = false;
@@ -599,7 +601,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
             const visualiser = this.visualiser;
             const context = await this.requireSnapshotContext();
             if (!context || this.visualiser !== visualiser) return;
-            const snap = visualiser.captureSnap(this.loadedSnap?.query || this.run?.query || this.run?.graph.query || "", this.loadedSnap?.schemaMode ?? this.schemaMode,
+            const snap = visualiser.captureSnap(this.loadedSnap?.query || this.run?.query || this.run?.graph.query || this.contextQuery, this.loadedSnap?.schemaMode ?? this.schemaMode,
                 this.loadedSnap?.expansionQueries ?? this.run?.expansionQueries ?? []);
             snap.view.finderText = this.finderText;
             snap.view.typeFilter = this.sidePanel?.elements?.typeFilter ?? "";

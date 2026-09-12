@@ -9,7 +9,8 @@ existing components where helpful; improve the design as actual use suggests.
 
 - Working branch: `feat/nvim-studio-query`.
 - Browser: **http://localhost:1430/query?nvim=1**, normal Studio with fullscreen,
-  Explorer, and editable query tabs. Schema is `/schema`.
+  Explorer, and editable query tabs. Use `/schema?nvim=1` in a second tab for
+  parallel schema context, or enable **Follow Neovim** on `/schema`.
 - Neovim loader on this Mac: `~/.config/nvim/plugin/ftype/typedb_graph.lua`.
   It loads `contrib/nvim/typedb_graph.lua` from this checkout. Existing `gep`,
   `geq...`, schema inspector, and TypeDB start/stop integration also involve
@@ -88,6 +89,7 @@ Manual checks when modifying live graph lifecycle:
 | Local HTTP helper, SSE, Angular proxy | `scripts/viewer-server.mjs` |
 | Project resolution, safe snap/PNG files, numbering | `scripts/viewer-export.mjs` |
 | Incoming events and query lifecycle | `src/service/nvim-query-bridge.service.ts` |
+| Bounded schema focus from original editor source | `src/framework/util/schema-focus.ts`, `src/module/schema/schema-page.component.ts` |
 | Query conversion / compatible relation augmentation | `src/framework/util/graph-query.ts` |
 | Context following writes/schema changes | `src/framework/util/operation-context.ts` |
 | Canvas, finder, exports, inline snap overlay, shortcuts | `src/framework/graph-visualiser/canvas/graph-canvas.component.ts` |
@@ -101,9 +103,14 @@ Manual checks when modifying live graph lifecycle:
 
 Neovim POSTs to `/api/viewer/query`. The helper pushes events over **SSE** at
 `/api/viewer/events`; no custom WebSocket or dependency on Vite HMR is needed.
-It retains the latest pending request. The enabled Studio tab prepares a graph
-read and runs it through normal Studio execution. Every enabled browser tab runs
-independently. Latest unpinned query tab is reused. Completed writes/schema
+It retains the latest pending request. An enabled Query tab prepares a graph read
+and runs it through normal Studio execution. An enabled Schema tab passes a focus
+callback to the same bridge: it selects known types and bounded role/player context
+in its loaded graph, without running the data query. Each tab receives independently.
+Route attachment resets event deduplication so the latest SSE replay reaches the
+new route. A schema operation refreshes the schema before focus; database switches
+wait for the matching schema. Schema source provenance travels via the canvas's
+`contextQuery` input. The existing project service remembers the incoming directory. Latest unpinned query tab is reused. Completed writes/schema
 operations are **not replayed**: their outcome triggers a separate contextual read.
 The workflow guide documents the payload and transaction rules in detail.
 
@@ -124,6 +131,10 @@ Project context inferred from a Neovim schema file can be overridden in Snaps.
   containers. Reattach both renderers; do not discard a snap simply because the
   live canvas is rebuilding. Schema also handles the canvas-rebuilt event. Returning
   live invalidates pending snap reads so a late response cannot reopen an overlay.
+  Schema remounts import graph state before constructing `GraphVisualiser` so its
+  explicit selection is initialized correctly (import the serialized export: importing
+  a Graphology graph instance omits graph attributes), and retain the new reducers rather
+  than callbacks bound to a destroyed visualiser.
 - **Snapshots contain rendered data.** Query and expansion strings are provenance;
   restoring does not rerun them. Graph attributes, node positions, styles,
   display-attribute cache, selection, camera, and viewport are recorded. Explorer
@@ -167,3 +178,22 @@ The durable browser smoke test covers the shared canvas on the standalone surfac
 It does not replace the live Query/Schema/docking checks above. Existing build
 warnings about unused SpinnerComponent imports are unrelated to these features.
 Keep new validation scripts reproducible and update this handoff as decisions change.
+
+## Parallel schema validation
+
+`node scripts/viewer-schema-focus.browser.mjs` is an additional live, read-only
+browser check. It requires TypeDB and an existing database containing the current
+specimen's `motivation`, `goal`, `scene`, and `scene-take` types. It defaults to the
+local `pts-tour3` connection; override `TYPEDB_TEST_DATABASE` and
+`TYPEDB_TEST_CONNECTION` if needed. It creates an isolated local HTTP server,
+browser profile, and temporary project, and never submits a write transaction.
+Synthetic schema-completion notifications exercise refresh/context handling.
+
+It checks parallel Query/Schema delivery, role/player focus, no data run in the
+Schema tab, pause/resume and replay, docking with subsequent selection edits,
+schema refresh, snap provenance and return to live, and unknown-type fallback.
+The normal unit suite includes the bounded selection algorithm and lexical cases.
+Automatic schema framing waits up to 60 visible animation frames for a running
+layout, and cancels when the user changes selection, opens a snap, pauses following,
+or replaces/destroys the renderer. Avoid freezing a freshly loaded graph at its
+initial random positions, especially in the second/background tab.

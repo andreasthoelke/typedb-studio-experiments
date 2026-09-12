@@ -48,6 +48,52 @@ scheme, hostname, and port. `127.0.0.1:1430`, `localhost:1431`, and
 `studio.typedb.com` each have separate saved connections, themes, and settings.
 Changing the address does not migrate old browser storage.
 
+## A parallel schema reminder
+
+Keep these two browser tabs open:
+
+- **http://localhost:1430/query?nvim=1** for the data/context result.
+- **http://localhost:1430/schema?nvim=1** for the related schema neighborhood.
+
+The URL parameter is `nvim=1` (equals one). It enables the Neovim event receiver
+for that browser tab and is remembered in session storage. `nvim=0` disables it.
+On the Schema page, **Follow Neovim** enables it without editing the URL; click
+**Neovim · following** to pause while you explore manually. **Refocus** reapplies
+the latest received source after you change the selection or camera.
+
+Each `gep` / mirrored query now reaches both enabled routes independently. Query
+usually shows instances; schema declarations and some empty/error operation
+contexts can already show types there. The parallel Schema page always uses the
+loaded schema graph and never executes the original statement as a data query.
+
+The schema focus starts from known type names in the **original Neovim source**,
+including declarations, anonymous relation inserts, and attribute references.
+Comments, string values, and variable names do not seed unrelated types. It adds:
+
+- owned attributes and direct subtypes of referenced types;
+- relations that those types can play in, with their roles and other player types;
+- owners when an attribute is referenced;
+- ancestor paths needed to explain inherited connections.
+
+Expansion stops before recursively following the other players' unrelated
+relations. It uses the current schema, independently of instance availability or
+the Query page's data-augmentation allowlist. This is a pragmatic reference scan,
+not query inference: a generic query using only type variables or opaque function
+calls may provide no usable type names. In that case the previous schema view is
+kept and the Neovim button's status explains why.
+
+Selected types share the existing finder/Elements selection; remaining schema
+nodes are dimmed and remain available. Enter focuses your edited selection.
+A fresh layout gets a short settling period before automatic framing. A background
+tab frames when it can render. Changing the selection cancels a pending automatic
+frame. New received context returns an inline snap to live view.
+
+A completed schema-operation notification refreshes the schema before focusing,
+including when the operation failed (surviving types can still explain the error).
+An open Studio transaction must be closed before following new schema context.
+Saving a focused schema snap records its original source, selection and viewport,
+and uses the incoming project's `temp/snaps/<db>/`; PNGs use `temp/imgs/<db>/`.
+
 ## Graph context
 
 The browser prepares a separate graph query; the query executed for Neovim's
@@ -404,7 +450,8 @@ A web page cannot override an extension that consumes the event first. See
 `?nvim=1` enables receiving on the local Query page and remembers it for that
 browser tab's session, including after connection setup or navigating away and
 back. `?nvim=0` disables it. Ordinary Studio sessions are not enabled by default.
-Each enabled browser tab executes incoming queries independently.
+Each enabled Query tab executes incoming queries independently; an enabled Schema
+tab instead focuses its schema graph.
 
 The latest unpinned query tab is reused. If all tabs are pinned, a new tab is
 created. Pin queries you want to preserve. Studio's normal run history and output

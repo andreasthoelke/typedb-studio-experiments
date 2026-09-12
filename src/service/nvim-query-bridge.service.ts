@@ -3,12 +3,12 @@ import { combineLatest, Subscription } from "rxjs";
 import { DriverState } from "./driver-state.service";
 import { QueryPageState } from "./query-page-state.service";
 import { QueryTabsState } from "./query-tabs-state.service";
-import { SchemaState } from "./schema-state.service";
+import { Schema, SchemaState } from "./schema-state.service";
 import { SnackbarService } from "./snackbar.service";
 import { prepareOperationContext, prepareSchemaContext, EditorExecution, OperationContext } from "../framework/util/operation-context";
 import { prepareGraphQuery } from "../framework/util/graph-query";
 
-interface EditorRequest { id: string; query: string; database?: string; limit: number; execution?: EditorExecution; projectTempDirectory?: string; }
+export interface EditorRequest { id: string; query: string; database?: string; limit: number; execution?: EditorExecution; projectTempDirectory?: string; }
 const OPTIONS_KEY = "typedb-studio-nvim-options";
 const ENABLED_KEY = "typedb-studio-nvim-enabled";
 
@@ -23,6 +23,8 @@ export class NvimQueryBridge {
     relationTypes = "";
     lastRequest: EditorRequest | null = null;
     private pending = false;
+    private schemaFocus?: (request: EditorRequest, schema: Schema) => boolean;
+    private retryTimer?: ReturnType<typeof setTimeout>;
     private refreshedRequest?: string;
     get operationContext(): boolean {
         return !!this.lastRequest?.execution && (this.lastRequest.execution.kind !== "read" || this.lastRequest.execution.status === "error");
@@ -53,8 +55,13 @@ export class NvimQueryBridge {
         } catch { /* Storage is optional. */ }
     }
 
-    attach(parameter: string | null): void {
+    attach(parameter: string | null, schemaFocus?: (request: EditorRequest, schema: Schema) => boolean): void {
         this.detach();
+        this.schemaFocus = schemaFocus;
+        // The SSE replay must reach the newly mounted route, even if another route
+        // handled this request earlier in the same browser tab.
+        this.lastRequest = null;
+        this.pending = false;
         this.enabled = ["localhost", "127.0.0.1"].includes(location.hostname)
             && (parameter === "1" || (parameter !== "0" && this.enabled));
         try { sessionStorage.setItem(ENABLED_KEY, this.enabled ? "1" : "0"); } catch { /* Optional. */ }
@@ -100,12 +107,14 @@ export class NvimQueryBridge {
     reapply(): void {
         clearTimeout(this.reapplyTimer);
         this.reapplyTimer = undefined;
-        this.saveOptions();
+        if (!this.schemaFocus) this.saveOptions();
         this.pending = !!this.lastRequest;
         this.schedule();
     }
 
     detach(): void {
+        clearTimeout(this.retryTimer);
+        this.retryTimer = undefined;
         clearTimeout(this.reapplyTimer);
         this.reapplyTimer = undefined;
         this.events?.close();
@@ -124,11 +133,16 @@ export class NvimQueryBridge {
         }));
     }
 
+    private retry(): void {
+        clearTimeout(this.retryTimer);
+        this.retryTimer = setTimeout(() => this.schedule(), 100);
+    }
+
     private drain(): void {
         const request = this.lastRequest;
         if (!this.pending || !request) return;
         if (!this.driverConnected) { this.message = "Query received. Connect to TypeDB to run it."; return; }
-        if (this.busy) { this.message = "Latest Neovim query queued until the current run finishes."; return; }
+        if (this.busy && !this.schemaFocus) { this.message = "Latest Neovim query queued until the current run finishes."; return; }
         const database = request.database ?? this.driver.database$.value?.name;
         if (!database) { this.message = "Query received. Choose a database."; return; }
         if (!this.databaseNames.includes(database)) {
@@ -146,18 +160,39 @@ export class NvimQueryBridge {
             this.schedule();
             return;
         }
-        if (this.operationContext && this.driver.transactionOpen) {
-            this.message = "Close the Studio transaction to load current context for the completed Neovim statement.";
+        if ((this.operationContext || this.schemaFocus) && this.driver.transactionOpen) {
+            this.message = "Close the Studio transaction to load current context from Neovim.";
             return;
         }
-        if (this.operationContext && this.refreshedRequest !== request.id) {
-            if (this.schema.isRefreshing) { setTimeout(() => this.schedule(), 100); return; }
+        if ((this.schemaFocus ? request.execution?.kind === "schema" : this.operationContext) && this.refreshedRequest !== request.id) {
+            if (this.schema.isRefreshing) { this.retry(); return; }
             this.refreshedRequest = request.id;
             this.schema.refresh();
         }
-        if ((this.neighbours || this.operationContext) && this.schema.isRefreshing) {
+        if ((this.schemaFocus || this.neighbours || this.operationContext) && this.schema.isRefreshing) {
             this.message = "Loading the schema for graph context…";
-            setTimeout(() => this.schedule(), 100);
+            this.retry();
+            return;
+        }
+        if (this.schemaFocus) {
+            if (this.schema.visualiser.database !== database) {
+                this.schema.refresh();
+                this.retry();
+                return;
+            }
+            const schema = this.schema.value$.value;
+            if (!schema || this.schema.visualiser.status === "error") {
+                this.pending = false;
+                this.message = "Could not load schema context. Refresh the schema and run gep again.";
+                return;
+            }
+            try {
+                if (!this.schemaFocus(request, schema)) { this.retry(); return; }
+            } catch (error) {
+                this.message = error instanceof Error ? error.message : String(error);
+                this.snackbar.warnPersistent(this.message);
+            }
+            this.pending = false;
             return;
         }
         this.pending = false;

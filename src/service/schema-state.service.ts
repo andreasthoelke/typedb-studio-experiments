@@ -9,7 +9,6 @@ import {
     ApiOkResponse, ApiResponse, AttributeType, ConceptRowsQueryResponse, EntityType,
     isApiErrorResponse, QueryResponse, RelationType, RoleType, Type
 } from "@typedb/driver-http";
-import Graph from "graphology";
 import { BehaviorSubject, combineLatest, distinctUntilChanged, finalize, first, map } from "rxjs";
 import Sigma, { Camera } from "sigma";
 import { GraphVisualiser } from "../framework/graph-visualiser/engine";
@@ -441,6 +440,9 @@ export class VisualiserState {
             if (el && this.savedState && this.database) {
                 this._status = "ok";
                 const graph = newGraph();
+                // The visualiser reads shared selection when it is constructed.
+                // Import first so a dock/fullscreen remount retains that selection.
+                graph.import(this.savedState.graph.export());
                 const sigma = createSigmaRenderer(el, defaultSigmaSettings as any, graph);
                 const layout = Layouts.createD3ForceSupervisor(graph);
                 this.visualiser = new GraphVisualiser(graph, sigma, layout, this.styleService);
@@ -486,7 +488,7 @@ export class VisualiserState {
     }
 
     saveState(sigma: Sigma): SigmaState {
-        const graph = sigma.getGraph().copy();
+        const graph = sigma.getGraph().copy() as ReturnType<typeof newGraph>;
         const camera = sigma.getCamera().copy();
         const settings = sigma.getSettings();
         return { graph, camera, settings };
@@ -495,10 +497,14 @@ export class VisualiserState {
     restoreState(state: SigmaState, sigma: Sigma) {
         if (state.graph) {
             sigma.getGraph().clear();
-            sigma.getGraph().import(state.graph);
+            sigma.getGraph().import(state.graph.export());
         }
         if (state.camera) sigma.getCamera().setState(state.camera);
-        if (state.settings) sigma.setSettings(state.settings);
+        if (state.settings) sigma.setSettings({ ...state.settings,
+            // Saved reducers close over the destroyed visualiser. Keep the new
+            // renderer's reducers so subsequent selection edits affect the view.
+            nodeReducer: sigma.getSetting("nodeReducer"), edgeReducer: sigma.getSetting("edgeReducer"),
+        });
     }
 
     dropSavedState() {
@@ -507,7 +513,7 @@ export class VisualiserState {
 }
 
 export interface SigmaState {
-    graph: Graph;
+    graph: ReturnType<typeof newGraph>;
     camera: Camera;
     settings: any;
 }

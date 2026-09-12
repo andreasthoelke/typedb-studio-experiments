@@ -16,9 +16,9 @@ import { MatFormFieldModule } from "@angular/material/form-field";
 import { MatInputModule } from "@angular/material/input";
 import { MatSortModule } from "@angular/material/sort";
 import { MatTooltipModule } from "@angular/material/tooltip";
-import { Router, RouterLink } from "@angular/router";
+import { ActivatedRoute, Router, RouterLink } from "@angular/router";
 import { ResizableDirective } from "@hhangular/resizable";
-import { filter, map, Observable, startWith } from "rxjs";
+import { distinctUntilChanged, filter, map, Observable, startWith } from "rxjs";
 import { AppData } from "../../service/app-data.service";
 import { DriverState } from "../../service/driver-state.service";
 import { SchemaState } from "../../service/schema-state.service";
@@ -26,6 +26,11 @@ import { DatabaseCreateDialogComponent } from "../database/create-dialog/databas
 import { DatabaseSelectDialogComponent } from "../database/select-dialog/database-select-dialog.component";
 import { PageScaffoldComponent } from "../scaffold/page/page-scaffold.component";
 import { SchemaToolWindowComponent } from "./tool-window/schema-tool-window.component";
+import { NvimQueryBridge, EditorRequest } from "../../service/nvim-query-bridge.service";
+import { GraphSnapshotService } from "../../service/graph-snapshot.service";
+import { Schema } from "../../service/schema-state.service";
+import { GraphVisualiser } from "../../framework/graph-visualiser/engine";
+import { schemaFocus } from "../../framework/util/schema-focus";
 import { GraphCanvasComponent } from "../../framework/graph-visualiser/canvas/graph-canvas.component";
 
 @Component({
@@ -49,11 +54,63 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
     private static readonly DEFAULT_PANEL_SIZES = [20, 80, 75, 25];
     panelSizes = [...SchemaPageComponent.DEFAULT_PANEL_SIZES];
     graphMaximised = false;
+    contextQuery = "";
+    private focusFrame = 0;
+    readonly localViewer = ["localhost", "127.0.0.1"].includes(location.hostname);
+
+    toggleNvim(): void {
+        void this.router.navigate([], { relativeTo: this.route, queryParams: { nvim: this.bridge.enabled ? "0" : "1" }, queryParamsHandling: "merge" });
+    }
+
+    private focusEditorSchema = (request: EditorRequest, schema: Schema): boolean => {
+        const visualiser = this.state.visualiser.visualiser;
+        const canvas = this.graphCanvasComponents?.first;
+        if (!visualiser || !canvas) return false;
+        const focus = schemaFocus(request.query, schema);
+        if (!focus.seeds.length) {
+            this.bridge.message = "No explicit type names from this statement exist in the current schema; the previous view is kept.";
+            return true;
+        }
+        const keys = visualiser.graph.nodes().filter(key => {
+            const concept = visualiser.graph.getNodeAttribute(key, "metadata").concept;
+            return "label" in concept && focus.labels.has(concept.label);
+        });
+        if (!keys.length) return false;
+        if (request.projectTempDirectory) this.snapshots.remember(this.state.visualiser.database!, request.projectTempDirectory);
+        this.contextQuery = request.query;
+        canvas.closeInlineSnap();
+        visualiser.interactionHandler.clearSelection();
+        visualiser.elementSelection.replace(keys);
+        this.frameSchemaFocus(visualiser, canvas);
+        this.bridge.message = `Schema context for ${focus.seeds.join(", ")} in ${this.state.visualiser.database}.`;
+        this.cdr.detectChanges();
+        return true;
+    };
+
+    private frameSchemaFocus(visualiser: GraphVisualiser, canvas: GraphCanvasComponent): void {
+        cancelAnimationFrame(this.focusFrame);
+        const revision = visualiser.elementSelection.revision;
+        let frames = 0;
+        const focus = () => {
+            this.focusFrame = 0;
+            if (!this.bridge.enabled || visualiser !== this.state.visualiser.visualiser || canvas.inlineSnap ||
+                visualiser.elementSelection.revision !== revision || visualiser.interactionHandler.state.selectedNode != null) return;
+            // A newly loaded schema starts at random positions. Give its existing
+            // layout visible frames before freezing/framing it. Background tabs
+            // naturally defer rAF until they can render, rather than freezing unseen.
+            if (visualiser.layout.isRunning && ++frames < 60) {
+                this.focusFrame = requestAnimationFrame(focus);
+                return;
+            }
+            visualiser.focusHighlightedNodes();
+        };
+        this.focusFrame = requestAnimationFrame(focus);
+    }
 
     constructor(
         protected state: SchemaState, public driver: DriverState, private appData: AppData,
         private destroyRef: DestroyRef, private dialog: MatDialog, private cdr: ChangeDetectorRef,
-        private router: Router) {
+        private router: Router, private route: ActivatedRoute, public bridge: NvimQueryBridge, private snapshots: GraphSnapshotService) {
     }
 
     onGraphCanvasRebuilt(el: HTMLElement): void {
@@ -75,6 +132,11 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
 
     ngOnInit() {
         this.appData.viewState.setLastUsedTool("schema");
+        this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
+            this.bridge.attach(params.get("nvim"), this.focusEditorSchema);
+        });
+        this.driver.database$.pipe(map(db => db?.name), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
+            .subscribe(() => { this.contextQuery = ""; });
         const saved = this.appData.panelLayout.get("schema");
         if (saved && saved.length === SchemaPageComponent.DEFAULT_PANEL_SIZES.length) {
             this.panelSizes = saved;
@@ -98,7 +160,7 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
             filter(queryList => queryList.length > 0 && !!queryList.first.canvasEl),
             map(x => x.first.canvasEl!),
         );
-        this.canvasEl$.subscribe(canvasEl => {
+        this.canvasEl$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(canvasEl => {
             this.state.visualiser.canvasEl$.next(canvasEl);
             if (this.state.visualiser.visualiser?.graph.nodes().length) {
                 this.state.visualiser.visualiser.sigma.scheduleRender();
@@ -117,6 +179,8 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     ngOnDestroy() {
+        cancelAnimationFrame(this.focusFrame);
+        this.bridge.detach();
         this.state.visualiser.destroy();
     }
 
