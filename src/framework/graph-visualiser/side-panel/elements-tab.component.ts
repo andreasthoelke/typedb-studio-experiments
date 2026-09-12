@@ -81,7 +81,7 @@ export class ElementsTabComponent implements OnChanges, DoCheck {
 
     /** Filter input for the Types chip section. Live-narrows the rendered chip list — necessary
      *  at scale (some schemas have 10k+ types and rendering a chip per type cripples the UI). */
-    typeFilter = "";
+    @Input() typeFilter = "";
     /** Hard cap on the number of Types chips rendered at once. */
     static readonly TYPE_DISPLAY_LIMIT = 100;
     displayedTypes: TypeRow[] = [];
@@ -91,6 +91,7 @@ export class ElementsTabComponent implements OnChanges, DoCheck {
     private lastGraphSize = -1;
 
     ngOnChanges(changes: SimpleChanges): void {
+        if (changes["typeFilter"]) this.recomputeDisplayedTypes();
         if (changes["visualiser"]) {
             this.lastGraphOrder = -1; // force recompute on next DoCheck
             this.lastGraphSize = -1;

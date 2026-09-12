@@ -15,6 +15,7 @@ import { HomeComponent } from "../module/home/home.component";
 import { QueryPageComponent } from "../module/query/query-page.component";
 import { UsersPageComponent } from "../module/user/users-page.component";
 import { AppData } from "../service/app-data.service";
+import { SnapPageComponent } from "../module/snap/snap-page.component";
 import { SchemaPageComponent } from "../module/schema/schema-page.component";
 import { DataPageComponent } from "../module/data/data-page.component";
 import { ChatPageComponent } from "../module/chat/chat-page.component";
@@ -54,6 +55,7 @@ export const routes: Routes = [
     { path: "welcome", component: HomeComponent, title: "Welcome", data: { domain: "overview" } },
     { path: "connect", component: ConnectionCreatorComponent, canActivate: [connectGuard], title: "Connect" },
     { path: "query", component: QueryPageComponent, title: "Query", data: { domain: "query" } },
+    { path: "snap", component: SnapPageComponent, title: "Graph snap", data: { domain: "query" } },
     { path: "schema", component: SchemaPageComponent, title: "Schema", data: { domain: "schema" } },
     { path: "data", component: DataPageComponent, title: "Data", data: { domain: "data" } },
     { path: "graph", component: GraphPageComponent, title: "Graph", data: { domain: "graph-view" } },

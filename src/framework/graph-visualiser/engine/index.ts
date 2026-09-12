@@ -3,6 +3,7 @@ import {
     isApiErrorResponse,
     QueryResponse,
 } from "@typedb/driver-http";
+import type { GraphSnap } from "../../util/graph-snap";
 import { GraphElementSelection } from "../../util/graph-element-selection";
 import type { GraphFinderEntry } from "../../util/graph-finder";
 import chroma from "chroma-js";
@@ -1122,6 +1123,52 @@ export class GraphVisualiser {
         });
         return [...groups].map(([label, nodes]) => ({ id: `type:${label}`, label,
             detail: `type · ${nodes.length} node${nodes.length === 1 ? "" : "s"}`, nodes, text: label })).concat(entries);
+    }
+
+    captureSnap(query: string, schemaMode: boolean, expansionQueries: string[] = []): GraphSnap {
+        const style = this.styleService.capturePreset();
+        if (style.background.type === "default" || style.background.themed) {
+            style.background = { ...style.background, type: style.background.type === "default" ? "solid" : style.background.type,
+                color1: this.styleService.effectiveBackgroundHex, themed: false };
+        }
+        const state = this.interactionHandler.state;
+        return JSON.parse(JSON.stringify({
+            format: "typedb-studio-graph-snap", version: 1, createdAt: new Date().toISOString(), query, schemaMode, expansionQueries,
+            graph: this.graph.export(), style,
+            view: { camera: this.sigma.getCamera().getState(), bbox: this.sigma.getCustomBBox() ?? this.sigma.getBBox(),
+                viewport: this.sigma.getDimensions(), layoutDensity: this.layout.density, searchTerm: this.searchTerm, finderMatches: this.finderMatches ? [...this.finderMatches] : null,
+                selectedNode: state.selectedNode, selectedNeighbors: [...(state.selectedNeighbors ?? [])],
+                highlightedEdges: [...this.styleService.highlightedEdges], highlightedTypes: [...this.styleService.highlightedTypes],
+                highlightedKinds: [...this.styleService.highlightedKinds] },
+            labels: { attributes: [...this.displayAttributes].map(([key, attrs]) => [key, [...attrs]]), overrides: [...this.labelOverridesByType] },
+        }));
+    }
+
+    restoreSnapView(snap: GraphSnap): void {
+        this.autoZoomEnabled = false;
+        if (snap.view.layoutDensity) this.layout.setDensity(snap.view.layoutDensity);
+        this.layout.stop();
+        this.displayAttributes = new Map(snap.labels.attributes.map(([key, attrs]) => [key, new Map(attrs)]));
+        this.labelOverridesByType = new Map(snap.labels.overrides);
+        this.searchGraph(snap.view.searchTerm);
+        this.finderMatches = snap.view.finderMatches ? new Set(snap.view.finderMatches) : null;
+        this.interactionHandler.state.selectedNode = snap.view.selectedNode;
+        this.interactionHandler.state.selectedNeighbors = new Set(snap.view.selectedNeighbors);
+        this.styleService.highlightedEdges.clear();
+        this.styleService.highlightedTypes.clear();
+        this.styleService.highlightedKinds.clear();
+        snap.view.highlightedEdges.forEach(tag => this.styleService.highlightedEdges.add(tag));
+        snap.view.highlightedTypes.forEach(tag => this.styleService.highlightedTypes.add(tag));
+        snap.view.highlightedKinds.forEach(tag => this.styleService.highlightedKinds.add(tag as any));
+        this.sigma.setCustomBBox(snap.view.bbox);
+        this.sigma.refresh();
+        this.sigma.getCamera().setState(snap.view.camera);
+    }
+
+    savedNodeAttributes(key: string): [string, unknown[]][] {
+        const concept = this.graph.getNodeAttribute(key, "metadata").concept;
+        const id = "iid" in concept ? concept.iid : undefined;
+        return id ? [...(this.displayAttributes.get(id) ?? [])] : [];
     }
 
     focusHighlightedNodes(): void {

@@ -1,4 +1,4 @@
-import { Component, EventEmitter, HostBinding, inject, Input, OnChanges, OnDestroy, Output, SimpleChanges } from "@angular/core";
+import { Component, EventEmitter, HostBinding, inject, Input, OnChanges, OnDestroy, Output, SimpleChanges, ViewChild } from "@angular/core";
 import { NgTemplateOutlet } from "@angular/common";
 import { MatTooltipModule } from "@angular/material/tooltip";
 import { MatMenuModule } from "@angular/material/menu";
@@ -58,6 +58,19 @@ export class GraphSidePanelComponent implements OnChanges, OnDestroy {
     /** True for the schema visualiser (graph of type nodes, no instances) —
      *  passed to the type explorer so it hides instance-oriented UI. */
     @Input() schemaMode = false;
+    @Input() snapshotMode = false;
+    @Input() initialTypeFilter = "";
+    @ViewChild(ElementsTabComponent) elements?: ElementsTabComponent;
+
+    get snapshotNodeKey(): string | null { return this.visualiser?.interactionHandler.state.selectedNode ?? null; }
+    get snapshotNodeLabel(): string { const key = this.snapshotNodeKey; return key ? this.visualiser!.graph.getNodeAttribute(key, "label") : ""; }
+    get snapshotAttributes(): [string, string][] {
+        const key = this.snapshotNodeKey;
+        return key ? this.visualiser!.savedNodeAttributes(key).map(([label, values]) => [label, values.map(v => String(v)).join(", ")]) : [];
+    }
+    toggleSnapshotSelection(): void { if (this.snapshotNodeKey) this.visualiser?.elementSelection.toggle([this.snapshotNodeKey]); }
+    get snapshotSelected(): boolean { return !!this.snapshotNodeKey && !!this.visualiser?.elementSelection.nodes.has(this.snapshotNodeKey); }
+
 
     /** Emitted when the user flips the inspector-header mode toggle. The host
      *  (graph tab, via the canvas) owns `selectionMode` and applies it. */

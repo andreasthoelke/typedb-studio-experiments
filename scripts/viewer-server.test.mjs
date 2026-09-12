@@ -191,3 +191,18 @@ test('project snapshot destinations travel with editor requests and isolate coun
     const { stat } = await import('node:fs/promises');
     assert.equal(await stat(downloadsDirectory).catch(() => null), null, 'project saves must not create Downloads');
 });
+
+test('data snaps save alongside PNGs with independent collision-safe names', async t => {
+    const downloadsDirectory = await mkdtemp(join(tmpdir(), 'studio-data-snaps-'));
+    t.after(() => rm(downloadsDirectory, { recursive: true, force: true }));
+    const { origin } = await start(t, { downloadsDirectory });
+    const value = {format:'typedb-studio-graph-snap',version:1,query:'stored text',graph:{nodes:[],edges:[]},view:{}};
+    const save = body => fetch(`${origin}/api/viewer/snap?name=motivation`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    await writeFile(join(downloadsDirectory,'motivation-00.png'),'image');
+    const first = await save(value);assert.equal(first.status,201);
+    assert.equal((await first.json()).filename,'motivation-00.snap.json');
+    assert.equal((await (await save(value)).json()).filename,'motivation-01.snap.json');
+    assert.equal((await save({...value,version:2})).status,400);
+    const { readFile } = await import('node:fs/promises');
+    assert.deepEqual(JSON.parse(await readFile(join(downloadsDirectory,'motivation-00.snap.json'),'utf8')),value);
+});

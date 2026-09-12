@@ -226,6 +226,9 @@
     right: 56px;
 }
 
+.graph-snap { right: 96px; width: 48px; @include typography.p3; }
+.graph-open-snap { right: 152px; }
+
 .status-text {
     position: absolute;
     top: 50%;

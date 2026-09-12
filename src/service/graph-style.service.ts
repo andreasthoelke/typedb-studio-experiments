@@ -733,8 +733,8 @@ export class GraphStyleService implements OnDestroy {
         return incoming.length;
     }
 
-    saveCustomPreset(name: string, description: string): void {
-        const preset: CustomPreset = {
+    capturePreset(name = "Snapshot", description = "Saved graph appearance"): CustomPreset {
+        return {
             name,
             description,
             kindStyles: structuredClone(this._kindStyles),
@@ -751,6 +751,10 @@ export class GraphStyleService implements OnDestroy {
             fillOpacity: this._fillOpacity,
             background: { ...this._background },
         };
+    }
+
+    saveCustomPreset(name: string, description: string): void {
+        const preset = this.capturePreset(name, description);
         const idx = this._customPresets.findIndex(p => p.name === name);
         if (idx >= 0) {
             this._customPresets[idx] = preset;
@@ -763,6 +767,10 @@ export class GraphStyleService implements OnDestroy {
     applyCustomPreset(name: string): void {
         const preset = this._customPresets.find(p => p.name === name);
         if (!preset) return;
+        this.applyCapturedPreset(preset, true);
+    }
+
+    applyCapturedPreset(preset: CustomPreset, persist = false): void {
         this._kindStyles = structuredClone(preset.kindStyles);
         this._typeStyles = structuredClone(preset.typeStyles);
         this._edgeLabelColors = { ...preset.edgeLabelColors };
@@ -776,8 +784,8 @@ export class GraphStyleService implements OnDestroy {
         this._edgesCurvedByDefault = preset.edgesCurvedByDefault ?? false;
         if (preset.fillOpacity != null) this._fillOpacity = preset.fillOpacity;
         this._background = { ...preset.background };
-        this._activePreset = `custom:${name}`;
-        this.save();
+        this._activePreset = `custom:${preset.name}`;
+        if (persist) this.save();
         this.styles$.next();
     }
 

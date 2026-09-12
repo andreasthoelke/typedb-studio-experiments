@@ -683,7 +683,10 @@ export class GraphViewState {
     private async runAndPush(run: RunOutputState, query: string, rowLimit: number): Promise<void> {
         try {
             const res = await this.runQuery(query, rowLimit);
-            if (!isApiErrorResponse(res)) this.pushSafely(run, res);
+            if (!isApiErrorResponse(res)) {
+                (run.expansionQueries ??= []).push(query);
+                this.pushSafely(run, res);
+            }
         } catch (err) {
             console.error("[Graph query]", err);
         }

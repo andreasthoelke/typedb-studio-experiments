@@ -62,7 +62,14 @@
       }
     </div>
 
+    <input #snapFile type="file" accept=".snap.json,.json" hidden (change)="openSnap($event)">
+    <button class="graph-export-button graph-open-snap" (click)="snapFile.click()" aria-label="Open snap" matTooltip="Open saved graph snap">
+      <i class="fa-light fa-folder-open"></i>
+    </button>
     @if (canExportPng()) {
+      <button class="graph-export-button graph-snap" (click)="saveSnap()" [disabled]="snapping" aria-label="Snap" matTooltip="Save graph data and view">
+        Snap
+      </button>
       <button class="graph-export-button" (click)="exportPng()" aria-label="Download current view"
               matTooltip="Download current view as PNG" [matTooltipShowDelay]="500" [disabled]="exporting">
         <i class="fa-light fa-arrow-down-to-line"></i>
@@ -78,9 +85,10 @@
                        [hasChanges]="hasChanges"
                        (resetChangesClicked)="resetChangesClicked.emit()"/>
 
-    <ts-graph-context-menu [visualiser]="visualiser" [run]="run"/>
+    @if (!snapshotMode) { <ts-graph-context-menu [visualiser]="visualiser" [run]="run"/> }
 
     @switch (status) {
+      @case ("emptySnap") { <p class="status-text">Use the folder button to open a saved graph snap.</p> }
       @case ("error") {
         <p class="status-text">This query returned an error. <a (click)="statusAction.emit('viewLog')">View in log</a></p>
       }
@@ -137,5 +145,7 @@
                        [selectionMode]="selectionMode ?? 'types'"
                        [showSelectionModeToggle]="selectionMode != null"
                        [schemaMode]="schemaMode"
+                       [snapshotMode]="snapshotMode"
+                       [initialTypeFilter]="loadedSnap?.view?.typeFilter ?? ''"
                        (selectionModeChange)="selectionModeChange.emit($event)"/>
 </ng-template>

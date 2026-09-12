@@ -1,0 +1,13 @@
+@use "typography";
+@use "colors";
+
+:host { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+.snap-header {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 8px 16px;
+  @include typography.p3;
+  border-bottom: 1px solid var(--theme-secondary-deep-grey);
+  span { flex: 1; }
+  button { color: var(--theme-white); background: var(--theme-secondary-purple); border: 1px solid var(--theme-secondary-deep-grey); border-radius: 4px; padding: 4px 8px; cursor: pointer; }
+}
+.snap-query { max-height: 30vh; overflow: auto; padding: 8px 16px; pre { white-space: pre-wrap; } }
+ts-graph-canvas { flex: 1; min-height: 0; }

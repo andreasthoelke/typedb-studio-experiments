@@ -47,6 +47,7 @@ export interface RunOutputState {
     label: string;
     query: string;
     snapshotContext?: GraphSnapshotContext;
+    expansionQueries?: string[];
     pinned: boolean;
     multiQuery: boolean;
     batchSummary: boolean;

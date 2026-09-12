@@ -218,6 +218,57 @@ Ordinary Studio hosting without the local bridge uses browser downloads and a
 counter remembered in local storage; only the local server can check actual
 files in the destination directory.
 
+## Saving and reopening graph snaps
+
+**Snap**, beside the PNG download button, saves a `.snap.json` file in the same
+`<project>/temp/snaps/<database>/` directory. Names use the query's types and the
+first free counter, for example `motivation-00.snap.json`. PNGs and data snaps
+have independent counters; these are separate saves, not automatically paired
+files. Restart the viewer server after updating to enable the snap endpoint.
+
+A snap contains:
+
+- the executed graph query, including Neovim's automatic query augmentation;
+- every currently loaded node and edge, including Explorer expansions, hidden
+  nodes, labels, and cached attributes that aren't separate graph nodes;
+- node coordinates, graph bounds, camera position/zoom, viewport dimensions,
+  density setting, and the current selection/search/filter state;
+- the graph's styling and display-attribute choices;
+- successfully executed expansion queries recorded through the graph loading
+  path, for reference. Expansions made before this update still survive as graph
+  data even when their query text was not recorded.
+
+Use the **folder button (Open snap)** to select a file. It opens `/snap`, a saved
+view using the same graph canvas, finder and styling controls. It restores the
+graph directly without querying TypeDB and leaves the layout stopped. You can
+inspect saved node values, change the selection, pan/zoom, and deliberately
+redraw if you want to experiment. Restoring appearance does not overwrite your
+normal saved style settings. The inspector in this view uses saved values rather
+than fetching current links or attributes from the database.
+
+**Query and expansions** shows the recorded TypeQL. **Open query in Studio**
+opens the main query in a pinned tab and selects its database when available;
+it does not run the query. Running it is a separate action that obtains fresh
+data and a new layout. Listed Explorer expansion queries are not automatically
+replayed. On the full schema route there may be no explicit main query to open.
+
+Positions and the normalized camera are preserved exactly. A differently sized
+window or dock arrangement can reveal a different amount of the graph, and
+fonts or future renderer changes can affect pixels. The stored viewport size
+provides a reference; the PNG button remains the way to save an exact image.
+A snap is a saved visualization, not a database backup or a write to authored
+`pos-x` / `pos-y` attributes. Reopen the file after a browser refresh if needed.
+
+A tested nine-node graph with Explorer-added attributes occupied about 27 KB;
+storing coordinates is a small part of that. The current file format is version
+1 with a 64 MiB limit. Unknown formats and invalid graphs are rejected before
+replacing the current saved view.
+
+See [Graph visualization experiments](graph-visualisation-experiments.md) for
+Sigma v4, dotted edges, layout controls and group contours mapped to the
+mechanism schema. Those are proposed follow-up experiments, not part of this
+snap implementation.
+
 ## Exploring and styling a result
 
 Use Explorer's **here** mode to inspect an individual node and add its actual

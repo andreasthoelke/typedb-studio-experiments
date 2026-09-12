@@ -1,4 +1,6 @@
 import { Injectable } from "@angular/core";
+import { BehaviorSubject } from "rxjs";
+import { GraphSnap, parseGraphSnap } from "../framework/util/graph-snap";
 
 export interface GraphSnapshotContext { database: string; projectTempDirectory: string; }
 const STORAGE_KEY = "typedb-studio-snapshot-projects";
@@ -6,6 +8,13 @@ const STORAGE_KEY = "typedb-studio-snapshot-projects";
 /** Remember the last source project per database for schema and manually opened views. */
 @Injectable({ providedIn: "root" })
 export class GraphSnapshotService {
+    readonly opened$ = new BehaviorSubject<GraphSnap | null>(null);
+
+    async open(file: File): Promise<void> {
+        if (file.size > 64 * 1024 * 1024) throw new Error("Snap exceeds 64 MiB.");
+        this.opened$.next(parseGraphSnap(await file.text()));
+    }
+
     private projects = new Map<string, string>();
 
     constructor() {

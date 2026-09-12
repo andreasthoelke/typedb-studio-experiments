@@ -32,7 +32,7 @@
       </mat-menu>
     </div>
 
-    @if (showSelectionModeToggle && hasSelection) {
+    @if (!snapshotMode && showSelectionModeToggle && hasSelection) {
       <div class="selection-mode-toggle">
         <button class="mode-button"
                 [class.active]="selectionMode === 'instances'"
@@ -47,7 +47,19 @@
       </div>
     }
 
-    @if (selectionMode === 'types') {
+    @if (snapshotMode) {
+      <div class="panel-section snapshot-details">
+        @if (snapshotNodeKey) {
+          <p>{{ snapshotNodeLabel }}</p>
+          <div class="highlight-group-actions">
+            <button class="highlight-action-button" (click)="visualiser?.revealNodes([snapshotNodeKey!])">Reveal in graph</button>
+            <button class="highlight-action-button" (click)="toggleSnapshotSelection()">{{ snapshotSelected ? 'Remove from selection' : 'Add to selection' }}</button>
+          </div>
+          @for (attr of snapshotAttributes; track attr[0]) { <p>{{ attr[0] }}: {{ attr[1] }}</p> }
+        } @else { <p>Select a node to inspect its saved values.</p> }
+        <p>Saved graph. Open the query in Studio to explore live data.</p>
+      </div>
+    } @else if (selectionMode === 'types') {
       <ts-graph-type-explorer
                              [selectedType]="selectedTypeForTypeMode"
                              [run]="run"
@@ -74,7 +86,7 @@
 
     <div class="panel-scroll">
       @if (topTab === 'elements') {
-        <ts-graph-side-panel-elements-tab [visualiser]="visualiser" [run]="run"></ts-graph-side-panel-elements-tab>
+        <ts-graph-side-panel-elements-tab [typeFilter]="initialTypeFilter" [visualiser]="visualiser" [run]="run"></ts-graph-side-panel-elements-tab>
       }
       @if (topTab === 'presets') {
         <ts-graph-styles-themes-tab [visualiser]="visualiser"></ts-graph-styles-themes-tab>

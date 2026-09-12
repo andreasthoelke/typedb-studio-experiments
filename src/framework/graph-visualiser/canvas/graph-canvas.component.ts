@@ -18,6 +18,8 @@ import { GraphStyleService, buildBackgroundCSS } from "../../../service/graph-st
 import { RunOutputState } from "../../../service/query-page-state.service";
 import { SelectionMode } from "../../../service/graph-view-state.service";
 
+import { Router } from "@angular/router";
+import type { GraphSnap } from "../../util/graph-snap";
 import { GraphSnapshotService } from "../../../service/graph-snapshot.service";
 import { DriverState } from "../../../service/driver-state.service";
 import { SchemaState } from "../../../service/schema-state.service";
@@ -25,7 +27,7 @@ import { SnackbarService } from "../../../service/snackbar.service";
 import { graphExportBaseName, ExportType } from "../../util/graph-export-name";
 import { fuzzyGraphMatches, GraphFinderEntry } from "../../util/graph-finder";
 
-export type GraphCanvasStatus = "ok" | "running" | "noQueryAnswers" | "noInstancesFound" | "error" | "graphlessQueryType" | "answerOutputDisabled" | "multiQuery" | "emptySchema" | "needsTransaction";
+export type GraphCanvasStatus = "ok" | "running" | "noQueryAnswers" | "noInstancesFound" | "error" | "graphlessQueryType" | "answerOutputDisabled" | "multiQuery" | "emptySchema" | "emptySnap" | "needsTransaction";
 export type GraphCanvasStatusAction = "viewLog" | "openTransaction" | "switchToAuto";
 
 @Component({
@@ -64,6 +66,8 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
      *  data instances). Passed to the side panel so the type explorer hides
      *  instance-oriented UI (the "N in graph" count and connection chips). */
     @Input() schemaMode = false;
+    @Input() snapshotMode = false;
+    @Input() loadedSnap: GraphSnap | null = null;
 
     @Output() maximisedChange = new EventEmitter<boolean>();
     @Output() graphPercentChange = new EventEmitter<number>();
@@ -80,6 +84,8 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     @Output() canvasElRebuilt = new EventEmitter<HTMLElement>();
 
     get queryRunning() { return this.status === "running"; }
+
+    @ViewChild(GraphSidePanelComponent) sidePanel?: GraphSidePanelComponent;
 
     @ViewChild("canvasEl", { static: false }) canvasElRef?: ElementRef<HTMLElement>;
 
@@ -178,7 +184,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
 
     ngOnChanges() {
         if (this.finderVisualiser !== this.visualiser) {
-            this.finderText = ""; this.finderResults = []; this.finderOpen = false;
+            this.finderText = this.loadedSnap?.view.finderText ?? ""; this.finderResults = []; this.finderOpen = false;
             this.selectionRevision = -1; this.selectionGraphOrder = -1;
             this.finderVisualiser = this.visualiser;
         }
@@ -293,6 +299,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
 
     private schemaState = inject(SchemaState);
     private snapshots = inject(GraphSnapshotService);
+    private router = inject(Router);
     private driver = inject(DriverState);
     private snackbar = inject(SnackbarService);
 
@@ -305,7 +312,46 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
             else if ("label" in concept) fallback.push({ label: concept.label, kind: concept.kind });
         });
         const known = schema ? [...Object.values(schema.entities), ...Object.values(schema.relations), ...Object.values(schema.attributes)] : fallback;
-        return graphExportBaseName(this.run?.query ?? "", known, fallback);
+        return graphExportBaseName(this.run?.query || this.loadedSnap?.query || "", known, fallback);
+    }
+
+    snapping = false;
+    async saveSnap(): Promise<void> {
+        if (!this.visualiser || this.snapping) return;
+        this.snapping = true;
+        try {
+            const snap = this.visualiser.captureSnap(this.run?.query || this.run?.graph.query || this.loadedSnap?.query || "", this.schemaMode,
+                this.run?.expansionQueries ?? this.loadedSnap?.expansionQueries ?? []);
+            snap.view.finderText = this.finderText;
+            snap.view.typeFilter = this.sidePanel?.elements?.typeFilter ?? "";
+            snap.database = this.run?.graph.database ?? this.loadedSnap?.database ?? this.driver.database$.value?.name;
+            snap.project = this.run?.snapshotContext ?? this.loadedSnap?.project ?? this.snapshots.forDatabase(snap.database);
+            const baseName = this.exportBaseName();
+            const body = JSON.stringify(snap, null, 2);
+            const health = await fetch("/api/viewer/health").then(r => r.ok ? r.json() : null).catch(() => null);
+            if (health?.service === "typedb-studio-bridge") {
+                if (!health.graphSnaps) throw new Error("Restart the local viewer server to enable graph snaps.");
+                const params = new URLSearchParams({ name: baseName, ...(snap.project ?? {}) });
+                const response = await fetch(`/api/viewer/snap?${params}`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || "Could not save snap.");
+                this.snackbar.success(`Saved ${result.path}`);
+            } else {
+                const url = URL.createObjectURL(new Blob([body], { type: "application/json" }));
+                const a = document.createElement("a"); a.href = url;
+                a.download = `${baseName}-${Date.now()}.snap.json`; a.click();
+                setTimeout(() => URL.revokeObjectURL(url), 1000);
+            }
+        } catch (error) { this.snackbar.errorPersistent(error instanceof Error ? error.message : String(error)); }
+        finally { this.snapping = false; }
+    }
+
+    async openSnap(event: Event): Promise<void> {
+        const input = event.target as HTMLInputElement;
+        const file = input.files?.[0]; input.value = "";
+        if (!file) return;
+        try { await this.snapshots.open(file); await this.router.navigate(["/snap"]); }
+        catch (error) { this.snackbar.errorPersistent(error instanceof Error ? error.message : String(error)); }
     }
 
     exporting = false;
@@ -313,7 +359,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         const visualiser = this.visualiser;
         if (!visualiser || this.exporting) return;
         const baseName = this.exportBaseName();
-        const snapshotContext = this.run?.snapshotContext ?? this.snapshots.forDatabase(this.run?.graph.database ?? this.driver.database$.value?.name);
+        const snapshotContext = this.run?.snapshotContext ?? this.loadedSnap?.project ?? this.snapshots.forDatabase(this.run?.graph.database ?? this.driver.database$.value?.name);
         this.exporting = true;
         try {
             const blob = await visualiser.exportPng("currentView");

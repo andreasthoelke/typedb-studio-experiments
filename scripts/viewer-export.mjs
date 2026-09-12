@@ -28,9 +28,21 @@ export async function saveGraphPng(directory, baseName, bytes) {
         || !bytes.subarray(0, 8).equals(pngSignature) || bytes.toString('ascii', 12, 16) !== 'IHDR') {
         throw new Error('Invalid graph PNG or filename.');
     }
+    return saveNumberedFile(directory, baseName, bytes, '.png');
+}
+
+export async function saveGraphSnap(directory, baseName, bytes) {
+    if (!validExportName(baseName) || bytes.length > maxPngBytes) throw new Error('Invalid snap filename or size.');
+    const snap = JSON.parse(bytes.toString('utf8'));
+    if (snap?.format !== 'typedb-studio-graph-snap' || snap.version !== 1 || !Array.isArray(snap.graph?.nodes)
+        || !Array.isArray(snap.graph?.edges) || !snap.view || typeof snap.query !== 'string') throw new Error('Invalid graph snap.');
+    return saveNumberedFile(directory, baseName, bytes, '.snap.json');
+}
+
+async function saveNumberedFile(directory, baseName, bytes, extension) {
     await mkdir(directory, { recursive: true });
     for (let index = 0; index < 1000000; index++) {
-        const filename = `${baseName}-${String(index).padStart(2, '0')}.png`;
+        const filename = `${baseName}-${String(index).padStart(2, '0')}${extension}`;
         const path = join(directory, filename);
         let file;
         try { file = await open(path, 'wx'); }

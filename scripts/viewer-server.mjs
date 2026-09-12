@@ -6,7 +6,7 @@ import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
 import { homedir } from 'node:os';
-import { maxPngBytes, saveGraphPng, validExportName, validProjectTempDirectory, graphSnapshotDirectory } from './viewer-export.mjs';
+import { maxPngBytes, saveGraphPng, saveGraphSnap, validExportName, validProjectTempDirectory, graphSnapshotDirectory } from './viewer-export.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const maxBodyBytes = 1024 * 1024;
@@ -46,11 +46,12 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
         try {
             const url = new URL(request.url, 'http://127.0.0.1');
             if (url.pathname === '/api/viewer/health' && request.method === 'GET') {
-                return json(response, 200, { service: 'typedb-studio-bridge', pngExport: true, projectSnapshots: true, viewers: clients.size, latestRequestId: latest?.id ?? null });
+                return json(response, 200, { service: 'typedb-studio-bridge', pngExport: true, projectSnapshots: true, graphSnaps: true, viewers: clients.size, latestRequestId: latest?.id ?? null });
             }
-            if (url.pathname === '/api/viewer/export' && request.method === 'POST') {
-                if (request.headers['content-type']?.split(';')[0].trim() !== 'image/png') {
-                    return json(response, 415, { error: 'Send image/png.' });
+            if (['/api/viewer/export', '/api/viewer/snap'].includes(url.pathname) && request.method === 'POST') {
+                const isSnap = url.pathname.endsWith('/snap');
+                if (request.headers['content-type']?.split(';')[0].trim() !== (isSnap ? 'application/json' : 'image/png')) {
+                    return json(response, 415, { error: isSnap ? 'Send application/json.' : 'Send image/png.' });
                 }
                 const baseName = url.searchParams.get('name');
                 if (!validExportName(baseName)) return json(response, 400, { error: 'Invalid export name.' });
@@ -63,7 +64,7 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                 }
                 try {
                     const directory = graphSnapshotDirectory(downloadsDirectory, url.searchParams.get('projectTempDirectory'), url.searchParams.get('database'));
-                    const saved = await saveGraphPng(directory, baseName, Buffer.concat(chunks));
+                    const saved = await (isSnap ? saveGraphSnap : saveGraphPng)(directory, baseName, Buffer.concat(chunks));
                     return json(response, 201, saved);
                 } catch (error) {
                     return json(response, 400, { error: error.message });
