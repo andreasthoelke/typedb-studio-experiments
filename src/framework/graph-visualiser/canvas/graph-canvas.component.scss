@@ -227,7 +227,51 @@
 }
 
 .graph-snap { right: 96px; width: 48px; @include typography.p3; }
-.graph-open-snap { right: 152px; }
+.graph-open-snap { right: 152px; width: 76px; gap: 6px; @include typography.p3; }
+
+.graph-snaps-panel {
+    @include typography.p3;
+    position: absolute;
+    top: 56px;
+    right: 16px;
+    z-index: 12;
+    width: 430px;
+    max-width: calc(100% - 32px);
+    max-height: calc(100% - 112px);
+    overflow-y: auto;
+    box-sizing: border-box;
+    padding: 16px;
+    border: 1px solid var(--gc-border);
+    border-radius: 6px;
+    background: var(--gc-bg);
+    color: var(--gc-fg);
+
+    strong, label { display: block; margin-bottom: 8px; }
+    summary { cursor: pointer; margin-bottom: 8px; }
+    p { margin: 10px 0; white-space: normal; }
+    button, input {
+        @include typography.p3;
+        border: 1px solid var(--gc-border);
+        border-radius: 4px;
+        background: var(--gc-bg);
+        color: var(--gc-fg);
+        padding: 6px 8px;
+    }
+    button {
+        cursor: pointer;
+        &:hover { background: var(--gc-hover-bg); }
+        &:disabled { opacity: 0.5; cursor: wait; }
+    }
+    input { flex: 1; min-width: 0; }
+    .snap-project-row { display: flex; gap: 8px; margin-bottom: 8px; }
+    .snap-destination span { display: block; overflow-wrap: anywhere; }
+    .snap-files { display: flex; flex-direction: column; gap: 6px; }
+    .snap-file {
+        text-align: left;
+        span { display: block; overflow-wrap: anywhere; white-space: normal; }
+        small { display: block; color: var(--gc-fg-muted); margin-top: 4px; }
+    }
+}
 
 .status-text {
     position: absolute;

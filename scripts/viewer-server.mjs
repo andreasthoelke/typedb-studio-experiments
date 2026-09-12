@@ -5,8 +5,8 @@ import { stat } from 'node:fs/promises';
 import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
-import { homedir } from 'node:os';
-import { maxPngBytes, saveGraphPng, saveGraphSnap, validExportName, validProjectTempDirectory, graphSnapshotDirectory } from './viewer-export.mjs';
+import { maxPngBytes, saveGraphPng, saveGraphSnap, validExportName, validProjectTempDirectory, graphSnapshotDirectory,
+    selectSnapshotProject, listGraphSnaps, readGraphSnap } from './viewer-export.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const maxBodyBytes = 1024 * 1024;
@@ -23,8 +23,9 @@ function json(response, status, body) {
 }
 
 /** A loopback-only query bridge and PNG saver. Database credentials stay in Studio. */
-export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/browser'), devPort, downloadsDirectory = resolve(homedir(), 'Downloads') } = {}) {
+export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/browser'), devPort } = {}) {
     const clients = new Set();
+    const projects = new Map();
     let latest;
 
     function send(client, request) {
@@ -46,7 +47,23 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
         try {
             const url = new URL(request.url, 'http://127.0.0.1');
             if (url.pathname === '/api/viewer/health' && request.method === 'GET') {
-                return json(response, 200, { service: 'typedb-studio-bridge', pngExport: true, projectSnapshots: true, graphSnaps: true, viewers: clients.size, latestRequestId: latest?.id ?? null });
+                return json(response, 200, { service: 'typedb-studio-bridge', pngExport: true, projectSnapshots: true, graphSnaps: true, snapLibrary: true, viewers: clients.size, latestRequestId: latest?.id ?? null });
+            }
+            const database = url.searchParams.get('database');
+            const projectTempDirectory = url.searchParams.get('projectTempDirectory') ?? projects.get(database);
+            if (url.pathname === '/api/viewer/project' && request.method === 'POST') {
+                try {
+                    const selected = await selectSnapshotProject(url.searchParams.get('path'), database);
+                    projects.set(database, selected.projectTempDirectory);
+                    return json(response, 200, selected);
+                } catch (error) { return json(response, 400, { error: error.message }); }
+            }
+            if (['/api/viewer/snaps', '/api/viewer/snap'].includes(url.pathname) && request.method === 'GET') {
+                try {
+                    const directory = graphSnapshotDirectory(projectTempDirectory, database);
+                    if (url.pathname.endsWith('/snap')) return json(response, 200, await readGraphSnap(directory, url.searchParams.get('filename')));
+                    return json(response, 200, { database, projectTempDirectory, directory, files: await listGraphSnaps(directory) });
+                } catch (error) { return json(response, 400, { error: error.message }); }
             }
             if (['/api/viewer/export', '/api/viewer/snap'].includes(url.pathname) && request.method === 'POST') {
                 const isSnap = url.pathname.endsWith('/snap');
@@ -63,7 +80,7 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                     chunks.push(chunk);
                 }
                 try {
-                    const directory = graphSnapshotDirectory(downloadsDirectory, url.searchParams.get('projectTempDirectory'), url.searchParams.get('database'));
+                    const directory = graphSnapshotDirectory(projectTempDirectory, database);
                     const saved = await (isSnap ? saveGraphSnap : saveGraphPng)(directory, baseName, Buffer.concat(chunks));
                     return json(response, 201, saved);
                 } catch (error) {
@@ -117,6 +134,7 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                 latest = { id: randomUUID(), query: body.query, database: body.database, limit: body.limit ?? 1000,
                     ...(body.projectTempDirectory ? { projectTempDirectory: body.projectTempDirectory } : {}),
                     ...(execution ? { execution: { kind: execution.kind, status: execution.status, error: execution.error } } : {}) };
+                if (body.database && body.projectTempDirectory) projects.set(body.database, body.projectTempDirectory);
                 for (const client of clients) send(client, latest);
                 return json(response, 202, { id: latest.id, viewers: clients.size, executionContext: true, projectSnapshots: true });
             }

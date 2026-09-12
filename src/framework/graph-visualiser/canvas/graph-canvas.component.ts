@@ -5,7 +5,7 @@
  */
 
 import { Component, ElementRef, EventEmitter, HostBinding, inject, Input, DoCheck, OnChanges, OnDestroy, Output, ViewChild, AfterViewInit, AfterViewChecked } from "@angular/core";
-import { NgTemplateOutlet } from "@angular/common";
+import { DatePipe, NgTemplateOutlet } from "@angular/common";
 import { MatTooltipModule } from "@angular/material/tooltip";
 
 import { ResizableDirective } from "@hhangular/resizable";
@@ -20,7 +20,7 @@ import { SelectionMode } from "../../../service/graph-view-state.service";
 
 import { Router } from "@angular/router";
 import type { GraphSnap } from "../../util/graph-snap";
-import { GraphSnapshotService } from "../../../service/graph-snapshot.service";
+import { GraphSnapshotContext, GraphSnapLibrary, GraphSnapshotService } from "../../../service/graph-snapshot.service";
 import { DriverState } from "../../../service/driver-state.service";
 import { SchemaState } from "../../../service/schema-state.service";
 import { SnackbarService } from "../../../service/snackbar.service";
@@ -34,7 +34,7 @@ export type GraphCanvasStatusAction = "viewLog" | "openTransaction" | "switchToA
     selector: "ts-graph-canvas",
     templateUrl: "graph-canvas.component.html",
     styleUrls: ["graph-canvas.component.scss"],
-    imports: [NgTemplateOutlet, MatTooltipModule, ResizableDirective, GraphControlsComponent, GraphSidePanelComponent, GraphContextMenuComponent],
+    imports: [DatePipe, NgTemplateOutlet, MatTooltipModule, ResizableDirective, GraphControlsComponent, GraphSidePanelComponent, GraphContextMenuComponent],
 })
 export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, AfterViewChecked, OnDestroy {
     @Input() visualiser: GraphVisualiser | null = null;
@@ -178,7 +178,16 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         this.visualiser?.searchGraph(text.toLowerCase());
     }
 
+    private libraryContextKey = "";
     ngDoCheck(): void {
+        const key = JSON.stringify([this.snapshotDatabase, this.snapshotContext]);
+        if (key !== this.libraryContextKey) {
+            this.libraryContextKey = key;
+            ++this.libraryRequest;
+            this.snapLibrary = null;
+            this.snapsBusy = false;
+            if (this.snapsOpen) setTimeout(() => this.refreshSnaps());
+        }
         if (this.finderOpen && this.finderGraphOrder !== this.visualiser?.graph.order) this.updateFinder(this.finderText);
     }
 
@@ -315,33 +324,107 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         return graphExportBaseName(this.run?.query || this.loadedSnap?.query || "", known, fallback);
     }
 
+    snapsOpen = false;
+    snapsBusy = false;
+    snapsError = "";
+    projectPath = "";
+    snapLibrary: GraphSnapLibrary | null = null;
+    private libraryRequest = 0;
+
+    get snapshotDatabase(): string {
+        return this.run?.graph.database ?? this.loadedSnap?.database ?? this.driver.database$.value?.name ?? "";
+    }
+
+    private get snapshotContext(): GraphSnapshotContext | undefined {
+        return this.run?.snapshotContext ?? this.loadedSnap?.project ?? this.snapshots.forDatabase(this.snapshotDatabase);
+    }
+
+    private useSnapshotContext(context: GraphSnapshotContext): void {
+        this.snapshots.remember(context.database, context.projectTempDirectory);
+        if (this.run) this.run.snapshotContext = context;
+        if (this.loadedSnap) this.loadedSnap.project = context;
+        this.libraryContextKey = JSON.stringify([this.snapshotDatabase, this.snapshotContext]);
+    }
+
+    async toggleSnaps(): Promise<void> {
+        this.snapsOpen = !this.snapsOpen;
+        if (this.snapsOpen) await this.refreshSnaps();
+    }
+
+    async refreshSnaps(): Promise<void> {
+        const revision = ++this.libraryRequest;
+        const database = this.snapshotDatabase;
+        const context = this.snapshotContext;
+        this.snapLibrary = null;
+        this.projectPath = context?.projectTempDirectory ?? "";
+        this.snapsError = "";
+        if (!database) { this.snapsError = "Select a database to browse its snaps."; return; }
+        this.snapsBusy = true;
+        try {
+            const library = await this.snapshots.list(database, context);
+            if (revision !== this.libraryRequest || database !== this.snapshotDatabase) return;
+            this.snapLibrary = library;
+            this.projectPath = library.projectTempDirectory;
+            this.useSnapshotContext({ database, projectTempDirectory: library.projectTempDirectory });
+        } catch (error) {
+            if (revision === this.libraryRequest) this.snapsError = error instanceof Error ? error.message : String(error);
+        } finally { if (revision === this.libraryRequest) this.snapsBusy = false; }
+    }
+
+    async chooseSnapshotProject(): Promise<void> {
+        if (this.snapsBusy || !this.snapshotDatabase) return;
+        this.snapsBusy = true;
+        this.snapsError = "";
+        const database = this.snapshotDatabase;
+        const run = this.run;
+        const snap = this.loadedSnap;
+        try {
+            const context = await this.snapshots.selectProject(database, this.projectPath);
+            if (database !== this.snapshotDatabase || run !== this.run || snap !== this.loadedSnap) return;
+            this.useSnapshotContext(context);
+            await this.refreshSnaps();
+        } catch (error) { this.snapsError = error instanceof Error ? error.message : String(error); }
+        finally { this.snapsBusy = false; }
+    }
+
+    async openSavedSnap(filename: string): Promise<void> {
+        if (!this.snapLibrary || this.snapsBusy) return;
+        const { database, projectTempDirectory } = this.snapLibrary;
+        this.snapsBusy = true;
+        try {
+            await this.snapshots.openSaved({ database, projectTempDirectory }, filename);
+            await this.router.navigate(["/snap"]);
+            this.snapsOpen = false;
+        } catch (error) { this.snapsError = error instanceof Error ? error.message : String(error); }
+        finally { this.snapsBusy = false; }
+    }
+
+    private async requireSnapshotContext(): Promise<GraphSnapshotContext | undefined> {
+        if (this.snapshotContext) return this.snapshotContext;
+        await this.refreshSnaps();
+        if (!this.snapshotContext) this.snapsOpen = true;
+        return this.snapshotContext;
+    }
+
     snapping = false;
     async saveSnap(): Promise<void> {
         if (!this.visualiser || this.snapping) return;
         this.snapping = true;
         try {
-            const snap = this.visualiser.captureSnap(this.run?.query || this.run?.graph.query || this.loadedSnap?.query || "", this.schemaMode,
+            const visualiser = this.visualiser;
+            const context = await this.requireSnapshotContext();
+            if (!context || this.visualiser !== visualiser) return;
+            const snap = visualiser.captureSnap(this.run?.query || this.run?.graph.query || this.loadedSnap?.query || "", this.schemaMode,
                 this.run?.expansionQueries ?? this.loadedSnap?.expansionQueries ?? []);
             snap.view.finderText = this.finderText;
             snap.view.typeFilter = this.sidePanel?.elements?.typeFilter ?? "";
-            snap.database = this.run?.graph.database ?? this.loadedSnap?.database ?? this.driver.database$.value?.name;
-            snap.project = this.run?.snapshotContext ?? this.loadedSnap?.project ?? this.snapshots.forDatabase(snap.database);
-            const baseName = this.exportBaseName();
-            const body = JSON.stringify(snap, null, 2);
-            const health = await fetch("/api/viewer/health").then(r => r.ok ? r.json() : null).catch(() => null);
-            if (health?.service === "typedb-studio-bridge") {
-                if (!health.graphSnaps) throw new Error("Restart the local viewer server to enable graph snaps.");
-                const params = new URLSearchParams({ name: baseName, ...(snap.project ?? {}) });
-                const response = await fetch(`/api/viewer/snap?${params}`, { method: "POST", headers: { "Content-Type": "application/json" }, body });
-                const result = await response.json();
-                if (!response.ok) throw new Error(result.error || "Could not save snap.");
-                this.snackbar.success(`Saved ${result.path}`);
-            } else {
-                const url = URL.createObjectURL(new Blob([body], { type: "application/json" }));
-                const a = document.createElement("a"); a.href = url;
-                a.download = `${baseName}-${Date.now()}.snap.json`; a.click();
-                setTimeout(() => URL.revokeObjectURL(url), 1000);
-            }
+            snap.database = context.database;
+            snap.project = context;
+            const result = await this.snapshots.request<{ path: string }>("snap", { name: this.exportBaseName(), ...context }, {
+                method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(snap, null, 2),
+            });
+            this.snackbar.success(`Saved ${result.path}`);
+            if (this.snapsOpen) await this.refreshSnaps();
         } catch (error) { this.snackbar.errorPersistent(error instanceof Error ? error.message : String(error)); }
         finally { this.snapping = false; }
     }
@@ -359,40 +442,15 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         const visualiser = this.visualiser;
         if (!visualiser || this.exporting) return;
         const baseName = this.exportBaseName();
-        const snapshotContext = this.run?.snapshotContext ?? this.loadedSnap?.project ?? this.snapshots.forDatabase(this.run?.graph.database ?? this.driver.database$.value?.name);
         this.exporting = true;
         try {
+            const context = await this.requireSnapshotContext();
+            if (!context || this.visualiser !== visualiser) return;
             const blob = await visualiser.exportPng("currentView");
-            if (["localhost", "127.0.0.1"].includes(location.hostname)) {
-                const health = await fetch("/api/viewer/health").then(response => response.ok ? response.json() : null).catch(() => null);
-                if (health?.service === "typedb-studio-bridge") {
-                    if (!health.pngExport) throw new Error("Restart the local viewer server to enable numbered PNG downloads.");
-                    if (snapshotContext && !health.projectSnapshots) throw new Error("Restart the local viewer server to enable project snapshot folders.");
-                    const params = new URLSearchParams({ name: baseName, ...(snapshotContext ?? {}) });
-                    const response = await fetch(`/api/viewer/export?${params}`, {
-                        method: "POST", headers: { "Content-Type": "image/png" }, body: blob,
-                    });
-                    const saved = await response.json();
-                    if (!response.ok) throw new Error(saved.error || "The viewer could not save the PNG.");
-                    this.snackbar.success(`Saved ${saved.path}`);
-                    return;
-                }
-            }
-            // Ordinary Studio hosting has no access to the download directory.
-            // Remember issued names there; local viewer exports use real files above.
-            const counterKey = `typedb-studio-png-counter:${baseName}`;
-            let counter = 0;
-            try { counter = Number(localStorage.getItem(counterKey)) || 0; } catch { /* storage unavailable */ }
-            if (!Number.isSafeInteger(counter) || counter < 0) counter = 0;
-            try { localStorage.setItem(counterKey, String(counter + 1)); } catch { /* browser still handles collisions */ }
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement("a");
-            a.href = url;
-            a.download = `${baseName}-${String(counter).padStart(2, "0")}.png`;
-            document.body.appendChild(a);
-            a.click();
-            a.remove();
-            setTimeout(() => URL.revokeObjectURL(url), 0);
+            const saved = await this.snapshots.request<{ path: string }>("export", { name: baseName, ...context }, {
+                method: "POST", headers: { "Content-Type": "image/png" }, body: blob,
+            });
+            this.snackbar.success(`Saved ${saved.path}`);
         } catch (err) {
             console.error("[Graph PNG Export]", err);
             this.snackbar.errorPersistent(`Could not save graph: ${err instanceof Error ? err.message : String(err)}`);

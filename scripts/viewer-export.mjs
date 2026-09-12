@@ -1,5 +1,7 @@
-import { mkdir, open, unlink } from 'node:fs/promises';
-import { isAbsolute, join, resolve } from 'node:path';
+import { mkdir, open, unlink, stat, readdir } from 'node:fs/promises';
+import { constants } from 'node:fs';
+import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
+import { homedir } from 'node:os';
 
 const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 export const maxPngBytes = 64 * 1024 * 1024;
@@ -12,14 +14,59 @@ export function validProjectTempDirectory(directory) {
     return typeof directory === 'string' && directory.length <= 4096 && isAbsolute(directory) && !directory.includes('\0');
 }
 
-export function graphSnapshotDirectory(downloadsDirectory, projectTempDirectory, database) {
-    if (projectTempDirectory == null) return downloadsDirectory;
+export function graphSnapshotDirectory(projectTempDirectory, database) {
+    if (projectTempDirectory == null) throw new Error('Choose a project in Snaps, or run a query from its temp/schema file in Neovim.');
     if (!validProjectTempDirectory(projectTempDirectory)) throw new Error('Expected an absolute project temp directory.');
     if (typeof database !== 'string' || !database.trim() || ['.', '..'].includes(database)
         || /[/\\\x00-\x1f]/.test(database) || Buffer.byteLength(database) > 200) {
         throw new Error('Expected a database name without path separators.');
     }
     return resolve(projectTempDirectory, 'snaps', database);
+}
+
+/** Accept a project root, its temp directory, or a file inside that temp directory. */
+export async function selectSnapshotProject(path, database) {
+    if (typeof path !== 'string' || !path.trim()) throw new Error('Enter a project folder or temp/schema file path.');
+    path = path.trim().replace(/^~(?=\/|$)/, homedir());
+    if (!validProjectTempDirectory(path)) throw new Error('Use an absolute path or ~/… for the project.');
+    path = resolve(path);
+    const info = await stat(path).catch(() => null);
+    if (!info || (!info.isDirectory() && !info.isFile())) throw new Error('That project folder or schema file does not exist.');
+    if (info.isFile()) {
+        path = dirname(path);
+        if (basename(path) !== 'temp') throw new Error('Select the project folder or a file directly inside its temp folder.');
+    }
+    const projectTempDirectory = basename(path) === 'temp' ? path : join(path, 'temp');
+    const directory = graphSnapshotDirectory(projectTempDirectory, database);
+    await mkdir(directory, { recursive: true });
+    return { database, projectTempDirectory, directory };
+}
+
+function validSnapFilename(filename) {
+    return typeof filename === 'string' && /^[\p{L}\p{N}_-]+\.snap\.json$/u.test(filename)
+        && Buffer.byteLength(filename) <= 255;
+}
+
+export async function listGraphSnaps(directory) {
+    const entries = await readdir(directory, { withFileTypes: true }).catch(error => {
+        if (error.code === 'ENOENT') return [];
+        throw error;
+    });
+    const files = await Promise.all(entries.filter(e => e.isFile() && validSnapFilename(e.name)).map(async entry => {
+        const info = await stat(join(directory, entry.name)).catch(() => null);
+        return info?.isFile() ? { filename: entry.name, modifiedAt: info.mtime.toISOString(), bytes: info.size } : null;
+    }));
+    return files.filter(Boolean).sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt) || a.filename.localeCompare(b.filename));
+}
+
+export async function readGraphSnap(directory, filename) {
+    if (!validSnapFilename(filename)) throw new Error('Invalid snap filename.');
+    const file = await open(join(directory, filename), constants.O_RDONLY | constants.O_NOFOLLOW);
+    try {
+        const info = await file.stat();
+        if (!info.isFile() || info.size > maxPngBytes) throw new Error('Invalid snap file or size (maximum 64 MiB).');
+        return JSON.parse(await file.readFile('utf8'));
+    } finally { await file.close(); }
 }
 
 /** Exclusive creation checks the real directory and handles simultaneous exports. */

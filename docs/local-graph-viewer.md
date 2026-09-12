@@ -196,7 +196,20 @@ when one wasn't explicitly provided.
 The destination belongs to the result: Studio reruns retain that project, and
 switching to an older result preserves its destination even after querying a
 different project. Schema and newly opened views use the last project remembered
-for their database. If no project is known, exports fall back to `~/Downloads`.
+for their database. The bridge can also recover the destination from a recent
+Neovim request when the browser has not remembered it yet.
+
+Open **Snaps ▾** beside the save buttons to see the actual destination. Expand
+**Project folder…** to select another project: paste an absolute path or `~/…`
+pointing to the project root, its `temp` folder, or a file directly inside
+`temp` (such as `schema_pts-tour3.tql`), then click **Use folder** or press Enter.
+This creates `temp/snaps/<database>/` immediately and remembers the destination
+for that database. On a result tab it updates that result's destination; other
+existing results keep theirs.
+
+If no project is known, saving opens this setting. Missing server connections,
+unwritable folders and other save errors are reported; files never silently
+fall back to Downloads. The directory is **`snaps`**, plural.
 
 The filename uses distinct entity and relation type names from the query attached
 to the displayed result, in query order: for example,
@@ -214,9 +227,10 @@ After updating, reload `~/.config/nvim/plugin/ftype/typedb_graph.lua`, restart t
 viewer (`:TypeDBGraphStop`, then `:TypeDBGraphStart`), reload the browser, and run
 one query from the project to establish the destination.
 
-Ordinary Studio hosting without the local bridge uses browser downloads and a
-counter remembered in local storage; only the local server can check actual
-files in the destination directory.
+These project saves require the local viewer at `http://localhost:1430`.
+Serving Angular directly or opening hosted Studio does not provide access to
+project folders. The UI gives an explicit message if the bridge needs starting
+or restarting.
 
 ## Saving and reopening graph snaps
 
@@ -238,8 +252,16 @@ A snap contains:
   path, for reference. Expansions made before this update still survive as graph
   data even when their query text was not recorded.
 
-Use the **folder button (Open snap)** to select a file. It opens `/snap`, a saved
-view using the same graph canvas, finder and styling controls. It restores the
+Expand **Snaps ▾** to browse saved snaps for this project and database, newest
+first. The list reads real `.snap.json` files from the destination folder, so
+previously saved snaps appear too. Saving updates an open list; **Refresh list**
+picks up files added outside Studio. Click a snap to restore it directly—no file
+selection dialog. **Import snap file…** remains available for files elsewhere.
+The destination is remembered in this browser across reloads; after changing
+browser/origin, run a query from Neovim or select the project again.
+
+Opening a snap navigates to `/snap`, a saved view using the same graph canvas,
+finder and styling controls. It restores the
 graph directly without querying TypeDB and leaves the layout stopped. You can
 inspect saved node values, change the selection, pan/zoom, and deliberately
 redraw if you want to experiment. Restoring appearance does not overwrite your
@@ -257,7 +279,7 @@ window or dock arrangement can reveal a different amount of the graph, and
 fonts or future renderer changes can affect pixels. The stored viewport size
 provides a reference; the PNG button remains the way to save an exact image.
 A snap is a saved visualization, not a database backup or a write to authored
-`pos-x` / `pos-y` attributes. Reopen the file after a browser refresh if needed.
+`pos-x` / `pos-y` attributes. Select the snap from the list after a browser refresh if needed.
 
 A tested nine-node graph with Explorer-added attributes occupied about 27 KB;
 storing coordinates is a small part of that. The current file format is version
@@ -434,3 +456,11 @@ pnpm build:viewer
 Tests cover transport, replay, validation, origin checks, static serving, proxying,
 and query preparation. Also verify a real query while fullscreen, Explorer
 selection, context options, and returning to the editor after a new result.
+
+
+The local bridge also exposes `GET /api/viewer/snaps` (list) and
+`GET /api/viewer/snap` (open by `filename`), scoped by `database` and
+`projectTempDirectory`. `POST /api/viewer/project` accepts `database` and `path`
+query parameters, resolves the project and creates the destination. Explicit
+project metadata wins over the last project received for that database. The
+`snapLibrary: true` health capability identifies a server with these endpoints.

@@ -3,6 +3,8 @@ import { BehaviorSubject } from "rxjs";
 import { GraphSnap, parseGraphSnap } from "../framework/util/graph-snap";
 
 export interface GraphSnapshotContext { database: string; projectTempDirectory: string; }
+export interface SavedGraphSnap { filename: string; modifiedAt: string; bytes: number; }
+export interface GraphSnapLibrary extends GraphSnapshotContext { directory: string; files: SavedGraphSnap[]; }
 const STORAGE_KEY = "typedb-studio-snapshot-projects";
 
 /** Remember the last source project per database for schema and manually opened views. */
@@ -13,6 +15,36 @@ export class GraphSnapshotService {
     async open(file: File): Promise<void> {
         if (file.size > 64 * 1024 * 1024) throw new Error("Snap exceeds 64 MiB.");
         this.opened$.next(parseGraphSnap(await file.text()));
+    }
+
+    async request<T>(endpoint: string, params: Record<string, string>, options?: RequestInit): Promise<T> {
+        let response: Response;
+        try { response = await fetch(`/api/viewer/${endpoint}?${new URLSearchParams(params)}`, options); }
+        catch { throw new Error("Cannot reach the local viewer. Start it in Neovim and open http://localhost:1430."); }
+        if (response.status === 404 || !response.headers.get("Content-Type")?.includes("application/json")) {
+            throw new Error("Start or restart the local viewer server in Neovim, then open http://localhost:1430.");
+        }
+        const result = await response.json();
+        if (!response.ok) throw new Error(result.error || "Could not access the project snaps folder.");
+        return result as T;
+    }
+
+    async list(database: string, context?: GraphSnapshotContext): Promise<GraphSnapLibrary> {
+        const library = await this.request<GraphSnapLibrary>("snaps", { database, ...context });
+        this.remember(database, library.projectTempDirectory);
+        return library;
+    }
+
+    async selectProject(database: string, path: string): Promise<GraphSnapshotContext> {
+        const selected = await this.request<GraphSnapshotContext>("project", { database, path }, { method: "POST" });
+        return this.remember(database, selected.projectTempDirectory);
+    }
+
+    async openSaved(context: GraphSnapshotContext, filename: string): Promise<void> {
+        const snap = parseGraphSnap(JSON.stringify(await this.request("snap", { ...context, filename })));
+        // An archive moved into another project should continue saving beside that archive.
+        snap.project = context;
+        this.opened$.next(snap);
     }
 
     private projects = new Map<string, string>();

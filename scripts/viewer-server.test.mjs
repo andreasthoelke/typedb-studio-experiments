@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { once } from 'node:events';
-import { mkdtemp, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, writeFile, rm, mkdir, readdir, readFile, symlink } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { createServer, request as httpRequest } from 'node:http';
@@ -133,32 +133,35 @@ test('completed operation outcomes survive event delivery and invalid outcomes a
     }
 });
 
-test('PNG exports save to Downloads with filesystem-based, concurrent-safe counters', async t => {
+test('PNG exports save to a project folder with filesystem-based, concurrent-safe counters', async t => {
     const downloadsDirectory = await mkdtemp(join(tmpdir(), 'studio-downloads-'));
     t.after(() => rm(downloadsDirectory, { recursive: true, force: true }));
-    const { origin } = await start(t, { downloadsDirectory });
+    const { origin } = await start(t);
+    const context = new URLSearchParams({projectTempDirectory: downloadsDirectory, database: 'test-db'});
+    const directory = join(downloadsDirectory, 'snaps', 'test-db');
+    await mkdir(directory, {recursive:true});
     const { readFile, readdir } = await import('node:fs/promises');
     const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=', 'base64');
-    const save = (name = 'scene-take', headers = {}, body = png) => fetch(`${origin}/api/viewer/export?name=${encodeURIComponent(name)}`, {
+    const save = (name = 'scene-take', headers = {}, body = png) => fetch(`${origin}/api/viewer/export?name=${encodeURIComponent(name)}&${context}`, {
         method: 'POST', headers: {'Content-Type':'image/png', ...headers}, body,
     });
     assert.equal((await (await fetch(`${origin}/api/viewer/health`)).json()).pngExport, true);
-    await writeFile(join(downloadsDirectory, 'scene-take-00.png'), 'existing export');
+    await writeFile(join(directory, 'scene-take-00.png'), 'existing export');
     const results = await Promise.all([save(), save(), save()]);
     assert.ok(results.every(r => r.status === 201));
     const saved = await Promise.all(results.map(r => r.json()));
     assert.deepEqual(saved.map(s => s.filename).sort(), ['scene-take-01.png', 'scene-take-02.png', 'scene-take-03.png']);
-    assert.equal(await readFile(join(downloadsDirectory, 'scene-take-00.png'), 'utf8'), 'existing export');
+    assert.equal(await readFile(join(directory, 'scene-take-00.png'), 'utf8'), 'existing export');
     for (const item of saved) assert.deepEqual(await readFile(item.path), png);
     // A fresh server still reads the directory rather than an in-memory counter.
     const second = await start(t, { downloadsDirectory });
-    const next = await fetch(`${second.origin}/api/viewer/export?name=scene-take`, {method:'POST', headers:{'Content-Type':'image/png'}, body:png});
+    const next = await fetch(`${second.origin}/api/viewer/export?name=scene-take&${context}`, {method:'POST', headers:{'Content-Type':'image/png'}, body:png});
     assert.equal((await next.json()).filename, 'scene-take-04.png');
     assert.equal((await save('../escape')).status, 400);
     assert.equal((await save('scene', {'Origin':'https://example.com'})).status, 403);
     assert.equal((await save('scene', {'Content-Type':'text/plain'})).status, 415);
     assert.equal((await save('scene', {}, Buffer.from('not a PNG'))).status, 400);
-    assert.equal((await readdir(downloadsDirectory)).length, 5);
+    assert.equal((await readdir(directory)).length, 5);
 });
 
 test('project snapshot destinations travel with editor requests and isolate counters per project and database', async t => {
@@ -195,14 +198,62 @@ test('project snapshot destinations travel with editor requests and isolate coun
 test('data snaps save alongside PNGs with independent collision-safe names', async t => {
     const downloadsDirectory = await mkdtemp(join(tmpdir(), 'studio-data-snaps-'));
     t.after(() => rm(downloadsDirectory, { recursive: true, force: true }));
-    const { origin } = await start(t, { downloadsDirectory });
+    const { origin } = await start(t);
+    const context = new URLSearchParams({projectTempDirectory: downloadsDirectory, database: 'test-db'});
+    const directory = join(downloadsDirectory, 'snaps', 'test-db');
+    await mkdir(directory, {recursive:true});
     const value = {format:'typedb-studio-graph-snap',version:1,query:'stored text',graph:{nodes:[],edges:[]},view:{}};
-    const save = body => fetch(`${origin}/api/viewer/snap?name=motivation`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
-    await writeFile(join(downloadsDirectory,'motivation-00.png'),'image');
+    const save = body => fetch(`${origin}/api/viewer/snap?name=motivation&${context}`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    await writeFile(join(directory,'motivation-00.png'),'image');
     const first = await save(value);assert.equal(first.status,201);
     assert.equal((await first.json()).filename,'motivation-00.snap.json');
     assert.equal((await (await save(value)).json()).filename,'motivation-01.snap.json');
     assert.equal((await save({...value,version:2})).status,400);
     const { readFile } = await import('node:fs/promises');
-    assert.deepEqual(JSON.parse(await readFile(join(downloadsDirectory,'motivation-00.snap.json'),'utf8')),value);
+    assert.deepEqual(JSON.parse(await readFile(join(directory,'motivation-00.snap.json'),'utf8')),value);
+});
+
+
+test('project selection creates the real folder; snap listing and reopening survive server restart', async t => {
+    const root = await mkdtemp(join(tmpdir(), 'studio-library-'));
+    t.after(() => rm(root, {recursive:true,force:true}));
+    await mkdir(join(root, 'temp'));
+    const schemaFile = join(root, 'temp', 'schema_test-db.tql');
+    await writeFile(schemaFile, '');
+    const { origin, post } = await start(t);
+    const context = new URLSearchParams({projectTempDirectory:join(root,'temp'),database:'test-db'});
+    const directory = join(root,'temp','snaps','test-db');
+    for (const path of [root, join(root,'temp'), schemaFile]) {
+        const selected = await fetch(`${origin}/api/viewer/project?${new URLSearchParams({path,database:'test-db'})}`, {method:'POST'});
+        assert.equal(selected.status,200);
+        assert.equal((await selected.json()).directory,directory);
+        assert.deepEqual(await readdir(directory),[]);
+    }
+    const invalid = await fetch(`${origin}/api/viewer/project?${new URLSearchParams({path:root,database:'../escape'})}`, {method:'POST'});
+    assert.equal(invalid.status,400);
+    const value = {format:'typedb-studio-graph-snap',version:1,query:'stored text',graph:{nodes:[],edges:[]},view:{}};
+    const saved = await fetch(`${origin}/api/viewer/snap?name=scene&${context}`, {method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)});
+    assert.equal(saved.status,201);
+    const {filename} = await saved.json();
+    await writeFile(join(directory,'unrelated.png'),'not a snap');
+    await symlink(schemaFile,join(directory,'linked.snap.json'));
+    const second = await start(t);
+    const list = await (await fetch(`${second.origin}/api/viewer/snaps?${context}`)).json();
+    assert.deepEqual(list.files.map(f=>f.filename),[filename]);
+    assert.equal(list.directory,directory);
+    assert.ok(list.files[0].bytes>0);
+    const open = name => fetch(`${second.origin}/api/viewer/snap?${context}&filename=${encodeURIComponent(name)}`);
+    assert.deepEqual(await (await open(filename)).json(),value);
+    for (const bad of ['../escape.snap.json','linked.snap.json','unrelated.png']) assert.equal((await open(bad)).status,400);
+    assert.equal((await fetch(`${second.origin}/api/viewer/snaps?${context}`,{headers:{Origin:'https://example.com'}})).status,403);
+    // No editor metadata or selection means a clear error, never a Downloads fallback.
+    assert.equal((await fetch(`${second.origin}/api/viewer/snaps?database=test-db`)).status,400);
+    assert.equal((await fetch(`${second.origin}/api/viewer/snap?name=scene&database=test-db`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(value)})).status,400);
+    // A recent Neovim request also supplies the project when the browser does not know it.
+    await post({query:'stored text',database:'test-db',projectTempDirectory:join(root,'temp')});
+    const inferred = await (await fetch(`${origin}/api/viewer/snaps?database=test-db`)).json();
+    assert.equal(inferred.directory,directory);
+    assert.deepEqual(inferred.files.map(f=>f.filename),[filename]);
+    const other = await (await fetch(`${origin}/api/viewer/snaps?${new URLSearchParams({projectTempDirectory:join(root,'temp'),database:'other-db'})}`)).json();
+    assert.deepEqual(other.files,[]);
 });
