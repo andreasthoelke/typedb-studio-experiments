@@ -142,9 +142,11 @@
                        [selectionMode]="selectionMode ?? 'types'"
                        [showSelectionModeToggle]="selectionMode != null"
                        [schemaMode]="schemaMode"
-                       [snapshotMode]="snapshotMode"
+                       [snapshotMode]="inspectionPreview"
                        [initialTypeFilter]="loadedSnap?.view?.typeFilter ?? ''"
                        [snapsTemplate]="snaps"
+                       [canExplorePreview]="!!restoreSavedView && !!inlineSnap"
+                       (explorePreview)="explorePreview()"
                        (selectionModeChange)="selectionModeChange.emit($event)"/>
 </ng-template>
 
@@ -160,7 +162,7 @@
     @if (shortcutHelpOpen) {
       <div class="shortcut-help">
         <p><kbd>h</kbd> previous snap · <kbd>l</kbd> next snap<br>
-          <kbd>Backspace</kbd> live view · <kbd>s</kbd> save snap<br>
+          <kbd>Backspace</kbd> close preview · <kbd>s</kbd> save snap<br>
           <kbd>Enter</kbd> focus selection · <kbd>/</kbd> find nodes · <kbd>?</kbd> this help</p>
         <p><kbd>Shift-click</kbd> toggles a node and its periphery in the shared selection. Overlapping groups keep their shared nodes.</p>
         <p>Works across the graph view, outside text fields. Click the graph after editing.</p>
@@ -188,6 +190,10 @@
         } @empty { <p>No {{ snapKind }} snaps saved here yet.</p> }
       </div>
     }
+    @if (inlineSnap && restoreSavedView) {
+      <button class="highlight-action-button" (click)="explorePreview()">Explore live</button>
+    }
+    @if (loadedSnap && !snapshotMode) { <p>Restored snap · exploring {{ schemaMode ? 'schema' : 'current data' }}. Save to create a new snap.</p> }
     @if (inlineSnap?.query) {
       <details class="snap-query"><summary>Saved query</summary><pre>{{ inlineSnap?.query }}</pre>
         @for (query of inlineSnap?.expansionQueries ?? []; track $index) { <pre>{{ query }}</pre> }

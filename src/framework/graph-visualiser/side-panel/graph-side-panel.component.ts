@@ -59,6 +59,8 @@ export class GraphSidePanelComponent implements OnChanges, OnDestroy, DoCheck {
      *  passed to the type explorer so it hides instance-oriented UI. */
     @Input() schemaMode = false;
     @Input() snapshotMode = false;
+    @Input() canExplorePreview = false;
+    @Output() explorePreview = new EventEmitter<void>();
     @Input() initialTypeFilter = "";
     @Input() snapsTemplate: TemplateRef<unknown> | null = null;
     inspectorTab: "explorer" | "snaps" = "snaps";

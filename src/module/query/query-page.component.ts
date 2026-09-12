@@ -6,7 +6,7 @@
 
 import { CodeEditor } from "@acrodata/code-editor";
 import { AsyncPipe } from "@angular/common";
-import { AfterViewChecked, AfterViewInit, Component, ElementRef, inject, OnDestroy, OnInit, QueryList, ViewChild, ViewChildren } from "@angular/core";
+import { AfterViewChecked, AfterViewInit, ChangeDetectorRef, Component, ElementRef, inject, OnDestroy, OnInit, QueryList, ViewChild, ViewChildren } from "@angular/core";
 import { FormsModule, ReactiveFormsModule } from "@angular/forms";
 import { MatButtonModule } from "@angular/material/button";
 import { MatButtonToggleModule } from "@angular/material/button-toggle";
@@ -23,6 +23,8 @@ import { ActivatedRoute, Router, RouterLink } from "@angular/router";
 import { Prec } from "@codemirror/state";
 import { ResizableDirective } from "@hhangular/resizable";
 import { map, skip, startWith, Subscription } from "rxjs";
+import { GraphSnap } from "../../framework/util/graph-snap";
+import { GraphSnapshotService } from "../../service/graph-snapshot.service";
 import { NvimQueryBridge } from "../../service/nvim-query-bridge.service";
 import { NvimQueryControlsComponent } from "./nvim-query-controls.component";
 import { CodeEditorComponent } from "../../framework/code-editor/code-editor.component";
@@ -81,6 +83,14 @@ export class QueryPageComponent implements OnInit, AfterViewInit, AfterViewCheck
 
     state = inject(QueryPageState);
     bridge = inject(NvimQueryBridge);
+    private snapshots = inject(GraphSnapshotService);
+    private cdr = inject(ChangeDetectorRef);
+    restoreSavedView = (snap: GraphSnap): void => {
+        this.state.restoreSnap(snap);
+        this.bridge.useRestoredSource(snap.query, snap.database!, snap.project?.projectTempDirectory);
+        this.snapshots.notifySchemaContext(snap);
+        this.cdr.detectChanges();
+    };
     private route = inject(ActivatedRoute);
     private bridgeRouteSubscription?: Subscription;
     driver = inject(DriverState);

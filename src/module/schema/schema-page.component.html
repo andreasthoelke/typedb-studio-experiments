@@ -46,6 +46,8 @@
                          [status]="state.visualiser.status"
                          [schemaMode]="true"
                          [contextQuery]="contextQuery"
+                         [restoreSavedView]="restoreSavedView"
+                         [loadedSnap]="restoredSnap"
                          [graphPercent]="panelSizes[2]" (graphPercentChange)="onPanelResize(2, $event)"
                          [stylesPanePercent]="panelSizes[3]" (stylesPanePercentChange)="onPanelResize(3, $event)"
                          [(maximised)]="graphMaximised"

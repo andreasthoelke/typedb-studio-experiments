@@ -86,7 +86,8 @@ Selected types share the existing finder/Elements selection; remaining schema
 nodes are dimmed and remain available. Enter focuses your edited selection.
 A fresh layout gets a short settling period before automatic framing. A background
 tab frames when it can render. Changing the selection cancels a pending automatic
-frame. New received context returns an inline snap to live view.
+frame. New received context replaces a restored schema view with a fresh full
+schema before focusing; it also closes any offline preview.
 
 A completed schema-operation notification refreshes the schema before focusing,
 including when the operation failed (surviving types can still explain the error).
@@ -318,12 +319,37 @@ without a confirmation dialog. Other snaps and PNGs are unaffected. Deleting the
 snap currently on screen removes its chip but keeps the loaded graph visible.
 Deletion failures are shown and leave the chip available for retry.
 
-The saved graph includes its positions, camera, highlights and styling. It
-loads without querying TypeDB and keeps its layout stopped. **Saved query** in
-the Snaps tab shows its query and recorded expansions. The Explorer uses cached
-values while inspecting a saved view. **Live view** returns to the original
-query result or schema graph; running another query also returns to live output.
-The original graph and its style service are kept separate while a snap is open.
+When connected to the snap's database, opening a chip restores an **editable graph
+run**. Query puts the saved query into the current query tab and replaces its
+unpinned result; a pinned result is retained, and a pinned query tab causes a new
+query tab to be created. The source query is not executed during restoration.
+Saved positions, camera, labels, highlights, and styling provide the starting view.
+There is no separate previous-live-view overlay to return to in this mode.
+
+Click a node to use the normal Explorer: **here**, **every '<type>'**, display
+attributes, **Add all to graph**, individual relation/attribute additions, and
+**Hide / Show**. Expansions read current database data and use the normal gentle
+layout update. Thus a saved graph can include older captured nodes alongside
+newly fetched data; it is not a historical database transaction. Types or instances
+that no longer exist may have no current details or expansion results.
+
+Already-open **following Schema tabs** receive the restored Query source as a
+schema-context notification. Other Query tabs do not execute it. The Neovim menu
+in the restoring Query tab also adopts the source, so its explicit augmentation
+controls work from that query. Schema snaps restore directly as editable schema
+views; a later Neovim event reloads the full schema before focusing new context.
+
+Pin the restored result if you want to keep exploring it after the next query.
+**Snap** saves a new numbered file including subsequent expansions and view edits;
+opening or editing a snap never overwrites its original file.
+
+Without a connection to the matching database (or while its schema is loading),
+the graph opens as an isolated **preview** using saved values. The preview keeps
+the previous live graph underneath; **Live view / Backspace** closes it. After
+connecting/selecting the database, **Explore live** promotes it to an editable run.
+**Saved query** displays preview provenance. Switching a restored run to a different
+database, or disconnecting, limits its inspector to cached values until the matching
+database is connected again.
 
 The library reads real `.snap.json` files, so existing snaps appear too.
 **Refresh** picks up files added outside Studio. **Project folder…** contains
@@ -420,7 +446,7 @@ Explorer without replacing an explicit selection.
 | Key | Action |
 | --- | --- |
 | `h` / `l` | Previous / next snap in the displayed route-specific list, wrapping at the ends |
-| `Backspace` | Return from a saved view to the preserved live view |
+| `Backspace` | Close an offline preview and return to the preserved live view; editable restored runs are already live |
 | `Enter` | Smoothly focus the current shared selection or ordinary highlights |
 | `s` | Save a snap |
 | `/` | Focus the fuzzy finder |

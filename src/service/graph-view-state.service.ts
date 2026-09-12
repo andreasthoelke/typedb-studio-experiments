@@ -250,7 +250,7 @@ export class GraphViewState {
                     // way the first frame the user sees already has the
                     // best-attribute labels resolved.
                     const rowLimit = this.appData.preferences.queryRowLimit();
-                    const instancesRes = await this.runQuery(kindInstancesQuery(tab.rootKind), rowLimit);
+                    const instancesRes = await this.runQuery(kindInstancesQuery(tab.rootKind), rowLimit, run);
                     if (!isApiErrorResponse(instancesRes)) {
                         const iids = this.extractIids(instancesRes, "x");
                         if (iids.length > 0) {
@@ -265,7 +265,7 @@ export class GraphViewState {
                 } else {
                     const ownerVar = this.instanceVar(type);
                     const rowLimit = this.appData.preferences.queryRowLimit();
-                    const instancesRes = await this.runQuery(`match $${ownerVar} isa ${type.label};`, rowLimit);
+                    const instancesRes = await this.runQuery(`match $${ownerVar} isa ${type.label};`, rowLimit, run);
                     if (!isApiErrorResponse(instancesRes)) {
                         const iids = this.extractIids(instancesRes, ownerVar);
                         if (iids.length > 0) {
@@ -417,7 +417,7 @@ export class GraphViewState {
     async fetchInstancesOfType(run: RunOutputState, type: SchemaConcept): Promise<string[]> {
         const rowLimit = this.appData.preferences.queryRowLimit();
         const query = `match $${this.instanceVar(type)} isa ${type.label};`;
-        const res = await this.runQuery(query, rowLimit);
+        const res = await this.runQuery(query, rowLimit, run);
         if (isApiErrorResponse(res)) return [];
         this.pushSafely(run, res);
         return this.extractIids(res, this.instanceVar(type));
@@ -631,7 +631,7 @@ export class GraphViewState {
         await Promise.all(batches.map(async batch => {
             const branches = batch.map(iid => `{ $${instanceVar} iid ${iid}; }`).join(" or ");
             const query = buildQuery(branches);
-            const res = await this.runQuery(query, rowLimit);
+            const res = await this.runQuery(query, rowLimit, run);
             if (isApiErrorResponse(res)) return;
             if (res.ok.answerType === "conceptRows") {
                 for (const answer of (res.ok as any).answers) {
@@ -682,7 +682,7 @@ export class GraphViewState {
 
     private async runAndPush(run: RunOutputState, query: string, rowLimit: number): Promise<void> {
         try {
-            const res = await this.runQuery(query, rowLimit);
+            const res = await this.runQuery(query, rowLimit, run);
             if (!isApiErrorResponse(res)) {
                 (run.expansionQueries ??= []).push(query);
                 this.pushSafely(run, res);
@@ -692,13 +692,19 @@ export class GraphViewState {
         }
     }
 
-    private runQuery(query: string, rowLimit: number): Promise<ApiResponse<QueryResponse>> {
+    private runQuery(query: string, rowLimit: number, run?: RunOutputState): Promise<ApiResponse<QueryResponse>> {
         return new Promise((resolve, reject) => {
             // `includeQueryStructure` is required so the response carries the
             // AnalyzedPipeline that the graph builder pipeline consumes.
             // Without it, `handleQueryResult` sees `res.ok.query == null` and
             // silently skips the build, leaving the graph unchanged.
-            this.driver.query(query, { answerCountLimit: rowLimit, includeQueryStructure: true }).subscribe({
+            if (run?.restoredSnap && (run.graph.destroyed || run.graph.database !== this.driver.database$.value?.name)) {
+                reject(new Error("Select the restored snap's database before expanding its graph."));
+                return;
+            }
+            const options = { answerCountLimit: rowLimit, includeQueryStructure: true };
+            const response = run?.restoredSnap ? this.driver.queryReadOnly(query, run.graph.database!, options) : this.driver.query(query, options);
+            response.subscribe({
                 next: (res) => resolve(res),
                 error: (err) => reject(err),
             });
@@ -741,7 +747,7 @@ export class GraphViewState {
      */
     async fetchInstancesOfKind(run: RunOutputState, rootKind: RootKind): Promise<string[]> {
         const rowLimit = this.appData.preferences.queryRowLimit();
-        const res = await this.runQuery(kindInstancesQuery(rootKind), rowLimit);
+        const res = await this.runQuery(kindInstancesQuery(rootKind), rowLimit, run);
         if (isApiErrorResponse(res)) return [];
         this.pushSafely(run, res);
         return this.extractIids(res, "x");
@@ -780,7 +786,7 @@ export class GraphViewState {
             const branches = batch.map(iid => `{ $${ownerVar} iid ${iid}; }`).join(" or ");
             const query = `match ${branches}; $${ownerVar} has $a;`;
             try {
-                const res = await this.runQuery(query, rowLimit * 50);
+                const res = await this.runQuery(query, rowLimit * 50, run);
                 // `run.graph` buffers when the visualiser doesn't exist yet
                 // (display attrs are typically fetched before the first push),
                 // so the records survive until the visualiser is constructed.

@@ -77,10 +77,10 @@ try {
  assert.equal(snap.query,'match $item isa goal;');assert.equal(snap.schemaMode,true);
  assert.equal(snap.project.projectTempDirectory,projectTempDirectory);
  await schema.evaluate(filename=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).openSavedSnap(filename),saved.filename);
- assert.ok(await schema.evaluate(()=>!!window.ng.getComponent(document.querySelector('ts-graph-canvas')).inlineSnap));
+ assert.ok(await schema.evaluate(()=>!!window.ng.getComponent(document.querySelector('ts-schema-page')).restoredSnap));
  source='relation scene-take relates scene, relates take; entity scene plays scene-take:scene;';
  await waitSchema(await send(source,{kind:'schema',status:'success'}));
- assert.equal(await schema.evaluate(()=>!!window.ng.getComponent(document.querySelector('ts-graph-canvas')).inlineSnap),false);
+ assert.equal(await schema.evaluate(()=>!!window.ng.getComponent(document.querySelector('ts-schema-page')).restoredSnap),false);
  selected=await selection();for(const label of ['scene','scene-take','take']) assert.ok(selected.includes(label),label);
  // An unknown/dynamic type cannot be inferred from source alone; preserve useful context.
  await waitSchema(await send('match $item isa missing-schema-focus-test;'));

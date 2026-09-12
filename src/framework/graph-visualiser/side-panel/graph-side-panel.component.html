@@ -68,7 +68,8 @@
           </div>
           @for (attr of snapshotAttributes; track attr[0]) { <p>{{ attr[0] }}: {{ attr[1] }}</p> }
         } @else { <p>Select a node to inspect its saved values.</p> }
-        <p>Saved graph. Open the query in Studio to explore live data.</p>
+        <p>Saved graph preview. Connect to its database to explore current data.</p>
+        @if (canExplorePreview) { <button class="highlight-action-button" (click)="explorePreview.emit()">Explore live</button> }
       </div>
     } @else if (selectionMode === 'types') {
       <ts-graph-type-explorer

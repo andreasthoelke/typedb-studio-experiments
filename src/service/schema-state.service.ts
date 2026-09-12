@@ -11,6 +11,7 @@ import {
 } from "@typedb/driver-http";
 import { BehaviorSubject, combineLatest, distinctUntilChanged, finalize, first, map } from "rxjs";
 import Sigma, { Camera } from "sigma";
+import { GraphSnap } from "../framework/util/graph-snap";
 import { GraphVisualiser } from "../framework/graph-visualiser/engine";
 import { createSigmaRenderer, defaultSigmaSettings } from "../framework/graph-visualiser/engine/sigma-settings";
 import { newGraph } from "../framework/graph-visualiser/engine/graph";
@@ -449,6 +450,24 @@ export class VisualiserState {
                 this.restoreState(this.savedState, sigma);
             }
         });
+    }
+
+    restoreSnapshot(snap: GraphSnap): void {
+        const container = this.canvasEl$.value;
+        if (!container) throw new Error("Wait for the schema canvas to be ready.");
+        this.destroy();
+        this.dropSavedState();
+        this.styleService.applyCapturedPreset(snap.style);
+        const graph = newGraph();
+        graph.import(structuredClone(snap.graph));
+        const sigma = createSigmaRenderer(container, defaultSigmaSettings as any, graph);
+        this.visualiser = new GraphVisualiser(graph, sigma, Layouts.createD3ForceSupervisor(graph), this.styleService);
+        for (const node of snap.graph.nodes) graph.replaceNodeAttributes(node.key, structuredClone(node.attributes!));
+        for (const edge of snap.graph.edges) graph.replaceEdgeAttributes(edge.key!, structuredClone(edge.attributes!));
+        this.visualiser.restoreSnapView(snap);
+        if (snap.view.selectedNode) this.visualiser.interactionHandler.focusType(snap.view.selectedNode);
+        this.database = snap.database;
+        this.status = "ok";
     }
 
     push(res: ApiResponse<QueryResponse>) {

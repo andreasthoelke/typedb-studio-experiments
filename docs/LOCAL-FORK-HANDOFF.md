@@ -76,7 +76,9 @@ Manual checks when modifying live graph lifecycle:
 1. Submit a read from Neovim and inspect the same query tab in fullscreen.
 2. Save a snap with expansions, hidden nodes, selection, theme, and camera changes.
 3. Open it from a chip; verify the route stays `/query` or `/schema` and only that
-   route's snap kind appears. Return to live; its graph and theme should be intact.
+   route's snap kind appears. Connected snaps become editable runs/views. Query
+   restores its source into the editor, with the normal Explorer and no source rerun.
+   Offline previews remain isolated and can return to the preserved live view.
 4. Repeat with the panel docked below the graph; resizing/docking remounts canvases.
 5. Submit a new Neovim query while viewing a snap; the new live result should appear.
 6. Check the two actual project directories and delete a throwaway snap with ×.
@@ -122,11 +124,17 @@ Project context inferred from a Neovim schema file can be overridden in Snaps.
 
 ## Preserve these invariants
 
-- **Live and saved views are separate renderers.** Opening a chip creates an inline
-  overlay in the shared canvas, with its own graph and child `GraphStyleService`
-  injector. Never apply saved styles to the root live service. Closing it destroys
-  the overlay/injector and exposes the original live graph. The old `/snap` route
-  remains available for standalone imports/testing; chips must not navigate there.
+- **Connected snaps restore as ordinary editable views.** QueryPageState creates
+  a normal run from the saved graph, replaces an unpinned result, preserves pinned
+  results, and creates a new query tab when the current tab is pinned. Root styles
+  adopt the saved preset, as for live Studio styling. The source query is inserted
+  but never executed. Run `restoredSnap` marks provenance and enables ordinary
+  instance/type Explorer controls. Schema uses `VisualiserState.restoreSnapshot`.
+- **Offline previews still use a separate renderer.** The canvas falls back to the
+  child style injector/inline overlay when disconnected, on another database, or
+  awaiting schema. Explore live promotes the preview after the connection is ready.
+  Backspace/Live view closes only previews. Keep `/snap` for standalone imports/tests;
+  chips stay on their existing route.
 - **Remounting is not a new query.** Docking or fullscreen changes may replace DOM
   containers. Reattach both renderers; do not discard a snap simply because the
   live canvas is rebuilding. Schema also handles the canvas-rebuilt event. Returning
@@ -138,7 +146,8 @@ Project context inferred from a Neovim schema file can be overridden in Snaps.
 - **Snapshots contain rendered data.** Query and expansion strings are provenance;
   restoring does not rerun them. Graph attributes, node positions, styles,
   display-attribute cache, selection, camera, and viewport are recorded. Explorer
-  reads cached data in a snap. Exact pixels can vary with browser/window/fonts.
+  reads cached data in previews and current data in editable restored views. Exact
+  pixels can vary with browser/window/fonts.
 - **Inspection and explicit selection are separate.** Plain click selects the
   inspected node/periphery; finder/type chips/Explorer selection controls share
   `GraphElementSelection`. An active explicit set takes priority in reducers.
@@ -170,7 +179,7 @@ intent or guarantee useful context after every failed write. Preserve the origin
 Neovim execution and make the separate graph query visible/editable. Explorer
 expansions often offer better choices than asking the user to type relation names.
 
-Current shortcuts: h/l browse, Backspace live, Enter focus, s save, / finder, ? help.
+Current shortcuts: h/l browse, Backspace close preview, Enter focus, s save, / finder, ? help.
 See the workflow guide for selection semantics and Vimium instructions. No hover
 preview or tooltip is attached to snap chips; × deletes immediately, without a dialog.
 
@@ -197,3 +206,36 @@ Automatic schema framing waits up to 60 visible animation frames for a running
 layout, and cancels when the user changes selection, opens a snap, pauses following,
 or replaces/destroys the renderer. Avoid freezing a freshly loaded graph at its
 initial random positions, especially in the second/background tab.
+
+## Editable snap runs
+
+`node scripts/viewer-live-snap.browser.mjs` exercises the full read-only workflow
+against the same local specimen as the schema test: exact saved graph/camera/query
+restoration; normal here/every inspectors; attribute and relation expansion;
+hide/show; docking; a new expanded snap with provenance; source file immutability;
+and pinned-run reuse after a subsequent Neovim query. The standalone shortcut smoke
+test remains a preview/offline test. No database writes are used in these tests.
+
+Query restoration lives in `QueryPageState.restoreSnap` and
+`GraphOutputState.restoreSnapshot`. The mutable graph must be imported from a
+**separate deep clone** of `_restoredView.graph`: Graphology reuses imported node
+attribute objects, and constructor/style/label passes would otherwise corrupt the
+saved restoration values. After constructor passes, restore captured attributes,
+display-label cache, camera, and selection. Emit an inspected-node selection too,
+so clicking the already-selected saved node does not leave Explorer empty.
+
+Restored runs use the interactive D3 supervisor on reattachment, and capture their
+current view/cache at detach. Expansion results push through the same GraphOutputState
+as live runs; `onGraphUpdated` loads label values. GraphViewState routes restored-run
+expansions through independent reads for their database, rejects database mismatches,
+and destroyed outputs ignore late pushes. Cached inspector mode is used after a
+connection/database mismatch. Saving takes the live run's expansionQueries rather
+than the origin snap's older list.
+
+`GraphSnapshotService` uses the same-origin BroadcastChannel
+`typedb-studio-schema-context` to notify already-open following Schema tabs of a
+restored Query source. NvimQueryBridge only consumes those messages in schema mode;
+Query tabs do not execute them. The restoring Query bridge adopts the source with
+pending=false. These are browser context notifications, not new Neovim/SSE requests;
+new/reloaded tabs still receive the helper's latest Neovim event. Offline preview
+restoration sends no context notification. The snap-file format remains version 1.

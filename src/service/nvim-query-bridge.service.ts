@@ -1,5 +1,6 @@
 import { Injectable, NgZone } from "@angular/core";
 import { combineLatest, Subscription } from "rxjs";
+import { GraphSnapshotService } from "./graph-snapshot.service";
 import { DriverState } from "./driver-state.service";
 import { QueryPageState } from "./query-page-state.service";
 import { QueryTabsState } from "./query-tabs-state.service";
@@ -43,7 +44,7 @@ export class NvimQueryBridge {
     private reapplyTimer?: ReturnType<typeof setTimeout>;
 
     constructor(private driver: DriverState, private state: QueryPageState, private tabs: QueryTabsState,
-        private schema: SchemaState, private zone: NgZone, private snackbar: SnackbarService) {
+        private schema: SchemaState, private snapshots: GraphSnapshotService, private zone: NgZone, private snackbar: SnackbarService) {
         try {
             this.enabled = sessionStorage.getItem(ENABLED_KEY) === "1";
             const saved = JSON.parse(localStorage.getItem(OPTIONS_KEY) ?? "null");
@@ -75,6 +76,11 @@ export class NvimQueryBridge {
             this.busy = busy;
             this.schedule();
         });
+        if (schemaFocus) this.subscriptions.add(this.snapshots.schemaContext$.subscribe(request => this.zone.run(() => {
+            this.lastRequest = request;
+            this.pending = true;
+            this.schedule();
+        })));
         this.events = new EventSource("/api/viewer/events");
         this.events.onopen = () => this.zone.run(() => { this.connected = true; });
         this.events.onerror = () => this.zone.run(() => { this.connected = false; });
@@ -85,6 +91,15 @@ export class NvimQueryBridge {
             this.pending = true;
             this.schedule();
         }));
+    }
+
+    /** Keep Query controls in sync with a restored result without scheduling execution. */
+    useRestoredSource(query: string, database: string, projectTempDirectory?: string): void {
+        clearTimeout(this.reapplyTimer);
+        this.pending = false;
+        this.lastRequest = { id: crypto.randomUUID(), query, database, projectTempDirectory, limit: 1000 };
+        this.note = "Restored saved graph; Explorer additions read current database data.";
+        this.message = `Exploring a restored snap in ${database}.`;
     }
 
     private saveOptions(): void {

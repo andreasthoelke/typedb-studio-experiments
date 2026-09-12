@@ -1,5 +1,5 @@
 import { Injectable } from "@angular/core";
-import { BehaviorSubject } from "rxjs";
+import { BehaviorSubject, Subject } from "rxjs";
 import { GraphSnap, parseGraphSnap } from "../framework/util/graph-snap";
 
 export interface GraphSnapshotContext { database: string; projectTempDirectory: string; }
@@ -10,6 +10,16 @@ const STORAGE_KEY = "typedb-studio-snapshot-projects";
 /** Remember the last source project per database for schema and manually opened views. */
 @Injectable({ providedIn: "root" })
 export class GraphSnapshotService {
+    readonly schemaContext$ = new Subject<{ id: string; query: string; database: string; limit: number; projectTempDirectory?: string }>();
+    private contextChannel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("typedb-studio-schema-context");
+
+    notifySchemaContext(snap: GraphSnap): void {
+        if (snap.database && snap.query.trim()) this.contextChannel?.postMessage({
+            id: crypto.randomUUID(), query: snap.query, database: snap.database, limit: 1000,
+            projectTempDirectory: snap.project?.projectTempDirectory,
+        });
+    }
+
     readonly opened$ = new BehaviorSubject<GraphSnap | null>(null);
     activeFile: (GraphSnapshotContext & { filename: string }) | null = null;
 
@@ -51,6 +61,10 @@ export class GraphSnapshotService {
     private projects = new Map<string, string>();
 
     constructor() {
+        if (this.contextChannel) this.contextChannel.onmessage = event => {
+            const value = event.data;
+            if (value && typeof value.id === "string" && typeof value.query === "string" && typeof value.database === "string") this.schemaContext$.next(value);
+        };
         try {
             const saved: unknown = JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]");
             if (Array.isArray(saved)) for (const entry of saved) {

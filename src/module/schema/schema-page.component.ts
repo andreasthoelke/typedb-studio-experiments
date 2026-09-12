@@ -27,6 +27,7 @@ import { DatabaseSelectDialogComponent } from "../database/select-dialog/databas
 import { PageScaffoldComponent } from "../scaffold/page/page-scaffold.component";
 import { SchemaToolWindowComponent } from "./tool-window/schema-tool-window.component";
 import { NvimQueryBridge, EditorRequest } from "../../service/nvim-query-bridge.service";
+import { GraphSnap } from "../../framework/util/graph-snap";
 import { GraphSnapshotService } from "../../service/graph-snapshot.service";
 import { Schema } from "../../service/schema-state.service";
 import { GraphVisualiser } from "../../framework/graph-visualiser/engine";
@@ -55,6 +56,17 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
     panelSizes = [...SchemaPageComponent.DEFAULT_PANEL_SIZES];
     graphMaximised = false;
     contextQuery = "";
+    restoredSnap: GraphSnap | null = null;
+    restoreSavedView = (snap: GraphSnap): void => {
+        if (this.state.isRefreshing || !this.state.value$.value) throw new Error("Wait for the database schema to load before exploring a snap.");
+        if (snap.database !== this.driver.database$.value?.name) throw new Error(`Select database '${snap.database}' to explore this snap.`);
+        if (this.driver.transactionOpen) throw new Error("Close the current transaction before exploring a snap.");
+        cancelAnimationFrame(this.focusFrame);
+        this.state.visualiser.restoreSnapshot(snap);
+        this.restoredSnap = snap;
+        this.contextQuery = snap.query;
+        this.cdr.detectChanges();
+    };
     private focusFrame = 0;
     readonly localViewer = ["localhost", "127.0.0.1"].includes(location.hostname);
 
@@ -63,6 +75,11 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
     }
 
     private focusEditorSchema = (request: EditorRequest, schema: Schema): boolean => {
+        if (this.restoredSnap) {
+            this.restoredSnap = null;
+            this.state.refresh();
+            return false;
+        }
         const visualiser = this.state.visualiser.visualiser;
         const canvas = this.graphCanvasComponents?.first;
         if (!visualiser || !canvas) return false;
@@ -136,7 +153,7 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
             this.bridge.attach(params.get("nvim"), this.focusEditorSchema);
         });
         this.driver.database$.pipe(map(db => db?.name), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
-            .subscribe(() => { this.contextQuery = ""; });
+            .subscribe(() => { this.contextQuery = ""; this.restoredSnap = null; });
         const saved = this.appData.panelLayout.get("schema");
         if (saved && saved.length === SchemaPageComponent.DEFAULT_PANEL_SIZES.length) {
             this.panelSizes = saved;
@@ -171,6 +188,7 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
             filter(x => !!x),
             map(x => x!)
         ).subscribe((queryResponses) => {
+            this.restoredSnap = null;
             if (!this.state.visualiser.visualiser) {
                 queryResponses.forEach(x => this.state.visualiser.push(x));
             }

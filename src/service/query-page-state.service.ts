@@ -25,6 +25,7 @@ import { AppData, RowLimit } from "./app-data.service";
 import { GraphStyleService } from "./graph-style.service";
 import { GraphSnapshotService, GraphSnapshotContext } from "./graph-snapshot.service";
 import { GraphLabelService } from "./graph-label.service";
+import { GraphSnap } from "../framework/util/graph-snap";
 import { splitTypeQLQueries } from "../framework/util/typeql-split";
 
 export type OutputType = "raw" | "log" | "table" | "graph";
@@ -47,6 +48,7 @@ export interface RunOutputState {
     label: string;
     query: string;
     snapshotContext?: GraphSnapshotContext;
+    restoredSnap?: GraphSnap;
     expansionQueries?: string[];
     pinned: boolean;
     multiQuery: boolean;
@@ -480,6 +482,35 @@ export class QueryPageState {
             error: () => this._queryRunning$.next(false),
         });
         return result$;
+    }
+
+    /** Restore a saved result as an ordinary run. No source query is executed. */
+    restoreSnap(snap: GraphSnap): void {
+        if (this.schema.isRefreshing || !this.schema.value$.value) throw new Error("Wait for the database schema to load before exploring a snap.");
+        if (this._queryRunning$.value) throw new Error("Wait for the current query to finish before opening a snap for exploration.");
+        if (!snap.database || this.driver.database$.value?.name !== snap.database) throw new Error(`Select database '${snap.database || "of this snap"}' before exploring it.`);
+        if (this.driver.transactionOpen) throw new Error("Close the current transaction before exploring a snap.");
+        if (!this.queryTabs.currentTab || this.queryTabs.currentTab.pinned) this.queryTabs.newTab();
+        const tab = this.queryTabs.currentTab!;
+        const output = this.currentTabOutputState;
+        const old = currentRun(output);
+        old?.graph.detach();
+        const replace = old && !old.pinned ? output.selectedRunIndex : -1;
+        if (replace >= 0) old!.graph.destroy();
+        const run = createRunOutputState(`Snap ${++output.runCounter}`, snap.query, this.graphStyleService);
+        run.restoredSnap = snap;
+        run.expansionQueries = [...snap.expansionQueries];
+        run.snapshotContext = snap.project ?? this.snapshots.forDatabase(snap.database);
+        if (snap.project) this.snapshots.remember(snap.database, snap.project.projectTempDirectory);
+        this.graphStyleService.applyCapturedPreset(snap.style);
+        run.graph.restoreSnapshot(snap);
+        run.graph.onGraphUpdated = () => { void this.graphLabels.load(run.graph); };
+        if (replace >= 0) output.runs.splice(replace, 1, run);
+        else output.runs.push(run);
+        output.selectedRunIndex = replace >= 0 ? replace : output.runs.length - 1;
+        this.queryTabs.getTabControl(tab).setValue(snap.query);
+        output.outputTypeControl.setValue("graph");
+        if (this._graphCanvasEl) run.graph.attach(this._graphCanvasEl);
     }
 
     stopQuery() {
@@ -1200,6 +1231,7 @@ export class GraphOutputState {
     /** Preserve label overrides before creation and across renderer rebuilds. */
     private _pendingLabelOverrides: Map<string, string> | null = null;
     private _styleService: GraphStyleService;
+    private _restoredView: GraphSnap | null = null;
 
     constructor(styleService: GraphStyleService) {
         this._styleService = styleService;
@@ -1221,6 +1253,7 @@ export class GraphOutputState {
     }
 
     push(res: ApiResponse<QueryResponse>) {
+        if (this.destroyed) return;
         if (!this._canvasEl) {
             this._pendingResponses.push(res);
             return;
@@ -1314,6 +1347,17 @@ export class GraphOutputState {
         }
     }
 
+    restoreSnapshot(snap: GraphSnap): void {
+        this.database = snap.database;
+        this.query = snap.query;
+        this.schemaMode = snap.schemaMode;
+        this.independentRead = true;
+        this._restoredView = structuredClone(snap);
+        this._preservedGraph = newGraph();
+        this._preservedGraph.import(structuredClone(this._restoredView.graph));
+        this.status = "ok";
+    }
+
     resize() {
         this.visualiser?.sigma.resize();
         this.visualiser?.sigma.refresh();
@@ -1321,6 +1365,7 @@ export class GraphOutputState {
 
     detach(): void {
         if (this.visualiser) {
+            if (this._restoredView) this._restoredView = this.visualiser.captureSnap(this.query ?? "", this.schemaMode);
             this._pendingLabelOverrides = new Map(this.visualiser.labelOverridesByType);
             this._preservedGraph = this.visualiser.graph;
             const cam = this.visualiser.sigma.getCamera().getState();
@@ -1333,14 +1378,21 @@ export class GraphOutputState {
 
     attach(canvasEl: HTMLElement): void {
         this.canvasEl = canvasEl;
-        if (this._preservedGraph && this._preservedGraph.nodes().length > 0 && !this.visualiser) {
+        if (this._preservedGraph && (this._preservedGraph.nodes().length > 0 || this._restoredView) && !this.visualiser) {
             const sigma = createSigmaRenderer(canvasEl, defaultSigmaSettings as any, this._preservedGraph);
-            const layout = Layouts.createD3ForceStatic(this._preservedGraph);
+            const layout = this._restoredView ? Layouts.createD3ForceSupervisor(this._preservedGraph) : Layouts.createD3ForceStatic(this._preservedGraph);
             this.visualiser = new GraphVisualiser(this._preservedGraph, sigma, layout, this._styleService);
             for (const p of this._displayAttributeResponses) this.visualiser.recordDisplayAttributes(p.res, p.ownerVar, p.attrVar);
             if (this._pendingLabelOverrides) this.visualiser.applyLabelOverrides(this._pendingLabelOverrides);
             else this.visualiser.refreshLabels();
-            queueMicrotask(() => { if (!this.destroyed) this.onGraphUpdated?.(); });
+            if (this._restoredView) {
+                // Restore resolved labels/geometry after the constructor's style pass.
+                for (const node of this._restoredView.graph.nodes) this._preservedGraph.replaceNodeAttributes(node.key, structuredClone(node.attributes!));
+                for (const edge of this._restoredView.graph.edges) this._preservedGraph.replaceEdgeAttributes(edge.key!, structuredClone(edge.attributes!));
+                this.visualiser.restoreSnapView(this._restoredView);
+                const selected = this._restoredView.view.selectedNode;
+                if (selected) this.visualiser.interactionHandler.focusInstance(selected);
+            } else queueMicrotask(() => { if (!this.destroyed) this.onGraphUpdated?.(); });
             if (this._preservedCamera) {
                 this.visualiser.sigma.getCamera().setState(this._preservedCamera);
                 this._preservedCamera = null;
@@ -1356,6 +1408,7 @@ export class GraphOutputState {
         this.visualiser?.destroy();
         this.visualiser = null;
         this._preservedGraph = null;
+        this._restoredView = null;
     }
 }
 
