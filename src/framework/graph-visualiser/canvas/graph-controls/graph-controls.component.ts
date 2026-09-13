@@ -5,8 +5,6 @@ import { MatMenuModule } from "@angular/material/menu";
 import { GraphVisualiser } from "../../engine";
 import { LayoutDensity } from "../../engine/layout";
 
-const ZOOM_FACTOR = 0.7;
-
 @Component({
     selector: "ts-graph-controls",
     templateUrl: "graph-controls.component.html",
@@ -25,15 +23,11 @@ export class GraphControlsComponent {
     private cooldownTimer: ReturnType<typeof setTimeout> | null = null;
 
     zoomIn(): void {
-        const camera = this.visualiser?.sigma.getCamera();
-        if (!camera) return;
-        camera.animatedUnzoom({ duration: 150, factor: ZOOM_FACTOR });
+        this.visualiser?.zoom("in");
     }
 
     zoomOut(): void {
-        const camera = this.visualiser?.sigma.getCamera();
-        if (!camera) return;
-        camera.animatedZoom({ duration: 150, factor: ZOOM_FACTOR });
+        this.visualiser?.zoom("out");
     }
 
     /** When something is selected, frame it; otherwise reset to the global view. */

@@ -527,6 +527,14 @@ export class GraphVisualiser {
         this.settingCameraProgrammatically = false;
     }
 
+    /** Shared zoom step for the toolbar and keyboard, centered on the camera. */
+    zoom(direction: "in" | "out"): void {
+        const camera = this.sigma.getCamera();
+        const options = { duration: 150, factor: 0.7 };
+        if (direction === "in") camera.animatedUnzoom(options);
+        else camera.animatedZoom(options);
+    }
+
     reheat(opts?: { soft?: boolean; preserveCamera?: boolean }): void {
         if (opts?.preserveCamera) {
             // Force off — without this, an already-true `autoZoomEnabled`

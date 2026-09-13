@@ -62,12 +62,12 @@ try {
         const worker=context.serviceWorkers()[0]??await context.waitForEvent('serviceworker');
         await page.waitForTimeout(700);await page.keyboard.press('l');await page.waitForTimeout(200);
         assert.equal(await page.locator('.snap-chip-open[aria-pressed="true"]').count(),0,'Vimium should consume l before the page receives it');
-        await worker.evaluate(async origin=>{await Settings.onLoaded();await Settings.set('exclusionRules',[{pattern:origin+'/*',passKeys:'hlsr/?'}]);},origin);
+        await worker.evaluate(async origin=>{await Settings.onLoaded();await Settings.set('exclusionRules',[{pattern:origin+'/*',passKeys:'hlsr/?+-'}]);},origin);
         await page.reload();await page.waitForSelector('ts-graph-canvas');
         await page.evaluate(()=>{const c=window.ng.getComponent(document.querySelector('ts-graph-canvas'));Object.defineProperty(c,'snapshotDatabase',{get:()=> 'shortcut-test'});window.ng.applyChanges(c);});
         await page.waitForFunction(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).snapFiles.length===3);
         await page.waitForTimeout(700);
-        console.log('PASS real Vimium blocks default l; configured per-site hlsr/? in isolated profile');
+        console.log('PASS real Vimium blocks default l; configured per-site hlsr/?+- in isolated profile');
     }
     const names=await page.locator('.snap-chip-open').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-label')));
     // Focus is on the graph/body, never a chip: this was the original focus restriction.
@@ -114,7 +114,17 @@ try {
     await page.evaluate(()=>{const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;v.stopLayout();v.sigma.getCamera().setState({x:0,y:0,ratio:4});});
     await page.keyboard.press('Enter');
     await page.waitForFunction(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.sigma.getCamera().getState().ratio!==4);
+    await page.waitForTimeout(350);
+    const cameraRatio=()=>page.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.sigma.getCamera().ratio);
+    const originalRatio=await cameraRatio();
+    await page.keyboard.press('+');await page.waitForTimeout(200);
+    assert.ok(Math.abs(await cameraRatio()-originalRatio*0.7)<1e-6,'+ zooms in by the toolbar factor');
+    await page.keyboard.press('-');await page.waitForTimeout(200);
+    assert.ok(Math.abs(await cameraRatio()-originalRatio)<1e-6,'- zooms back out');
     await page.keyboard.press('/');assert.equal(await page.locator('input[aria-label="Find types or labels"]').evaluate(el=>document.activeElement===el),true);
+    const editingRatio=await cameraRatio();
+    await page.keyboard.type('+-');assert.equal(await page.locator('input[aria-label="Find types or labels"]').inputValue(),'+-');assert.equal(await cameraRatio(),editingRatio);
+    await page.locator('input[aria-label="Find types or labels"]').fill('');
     await page.keyboard.type('hls');await page.keyboard.press('Backspace');assert.equal(await page.locator('input[aria-label="Find types or labels"]').inputValue(),'hl');assert.equal(await active(),names.at(-1));
     await page.locator('.canvas-element').last().click({position:{x:450,y:350}});
     await page.keyboard.press('?');await page.getByText('Last shortcut: ? → help',{exact:true}).waitFor();
@@ -188,7 +198,7 @@ try {
     await page.waitForFunction(()=>!window.ng.getComponent(document.querySelector('ts-graph-canvas')).snapsBusy);
     assert.equal(await page.evaluate(()=>!!window.ng.getComponent(document.querySelector('ts-graph-canvas')).inlineSnap),false);
     assert.deepEqual(errors,[]);
-    console.log('PASS r restart from current positions, real Command-click, working subset UI and original context/camera restoration; Shift-click overlap, Enter focus, saved group restoration; h/l from graph focus, order/wrap, / finder, text editing protection, ? help, s real save, Backspace live without navigation, cancellation of pending snap load');
+    console.log('PASS +/- camera zoom and input protection, r restart from current positions, real Command-click, working subset UI and original context/camera restoration; Shift-click overlap, Enter focus, saved group restoration; h/l from graph focus, order/wrap, / finder, text editing protection, ? help, s real save, Backspace live without navigation, cancellation of pending snap load');
 } catch(error) {
     console.error(errors);console.error(await page?.locator("body").innerText());throw error;
 } finally {

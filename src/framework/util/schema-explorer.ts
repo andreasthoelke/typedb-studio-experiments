@@ -6,6 +6,16 @@ export interface SchemaExplorerSection {
     types: SchemaExplorerType[];
 }
 
+/** A role chip expands its relation, including the other roles and players.
+ * Resolve against the current schema; don't retain stale inspector objects. */
+export function schemaExplorerSeeds(schema: Schema, types: SchemaExplorerType[]): SchemaConcept[] {
+    const concepts = { ...schema.entities, ...schema.relations, ...schema.attributes };
+    const selected = types.flatMap(type => type.kind === "roleType"
+        ? Object.values(schema.relations).filter(relation => relation.relatedRoles.some(role => role.label === type.label))
+        : concepts[type.label] ? [concepts[type.label]] : []);
+    return [...new Map(selected.map(type => [type.label, type])).values()];
+}
+
 /** Connections from the loaded schema, including inherited owns/plays/relates. */
 export function schemaExplorerSections(schema: Schema, selected: SchemaExplorerType): SchemaExplorerSection[] {
     const sections: SchemaExplorerSection[] = [];

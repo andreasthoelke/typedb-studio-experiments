@@ -88,6 +88,8 @@ export class GraphTypeExplorerComponent implements DoCheck {
     private appData = inject(AppData);
 
     schemaSections: SchemaExplorerSection[] = [];
+    schemaLoading = false;
+    schemaLoadError = "";
     private schemaNodeKeys = new Map<string, string>();
     private lastVisualiser: GraphVisualiser | null = null;
     private lastSchema: Schema | null = null;
@@ -165,6 +167,10 @@ export class GraphTypeExplorerComponent implements DoCheck {
         return key && this.visualiser?.graph.hasNode(key) ? key : undefined;
     }
 
+    get canExpandSchema(): boolean {
+        return !!this.run && this.run.graph.visualiser === this.visualiser && this.graphViewState.canExpandSchema(this.run);
+    }
+
     get isInGraphSelection(): boolean {
         const key = this.schemaNodeKey(this.selectedType);
         return key != null && !!this.visualiser?.isNodeInSelection(key);
@@ -199,15 +205,49 @@ export class GraphTypeExplorerComponent implements DoCheck {
         if (keys.length) this.visualiser?.revealNodes(keys);
     }
 
-    revealSchemaGroup(section: SchemaExplorerSection): void {
+    async revealSchemaGroup(section: SchemaExplorerSection): Promise<void> {
+        if (this.canExpandSchema) {
+            await this.loadSchemaTypes(section.types);
+            return;
+        }
         this.revealSchemaTypes(this.selectedType ? [this.selectedType, ...section.types] : section.types);
     }
 
-    exploreSchemaType(type: SchemaExplorerType): void {
+    async exploreSchemaType(type: SchemaExplorerType): Promise<void> {
+        if (this.canExpandSchema) {
+            await this.loadSchemaTypes([type]);
+            return;
+        }
         const key = this.schemaNodeKey(type);
         if (key == null) return;
         this.revealSchemaTypes([type]);
         this.visualiser?.interactionHandler.focusType(key);
+    }
+
+    private async loadSchemaTypes(types: SchemaExplorerType[]): Promise<void> {
+        const run = this.run, visualiser = this.visualiser, schema = this.schemaState.value$.value;
+        if (this.schemaLoading || !run || !visualiser || !schema) return;
+        this.schemaLoading = true;
+        this.schemaLoadError = "";
+        const order = visualiser.graph.order, size = visualiser.graph.size;
+        visualiser.freezeViewport();
+        try {
+            await this.graphViewState.fetchSchemaTypes(run, types, schema);
+            if (run.graph.destroyed || this.visualiser !== visualiser || run.graph.visualiser !== visualiser) return;
+            // Refresh chip keys immediately, before Angular's next check. Keep
+            // the source inspected so several connections can be added in turn.
+            this.ngDoCheck();
+            const keys = types.flatMap(type => { const key = this.schemaNodeKey(type); return key ? [key] : []; });
+            for (const key of keys) visualiser.setNodeAppearance(key, "viewHidden", false);
+            if (visualiser.graph.order !== order || visualiser.graph.size !== size) {
+                visualiser.reheat({ soft: true, preserveCamera: true });
+            } else if (keys.length) visualiser.revealNodes(keys);
+            visualiser.interactionHandler.recomputeHighlightSet();
+        } catch (error) {
+            this.schemaLoadError = error instanceof Error ? error.message : JSON.stringify(error);
+        } finally {
+            this.schemaLoading = false;
+        }
     }
 
     private refreshChips(): void {

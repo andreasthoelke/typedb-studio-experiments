@@ -311,3 +311,42 @@ four shape programs, straight/curved edge rendering, snap restoration, and PNG
 export in a synthetic database-free fixture. It writes a gallery and PNG to the
 OS temporary directory. The shortcut browser suite checks two actual r presses,
 including the coordinates passed into a replacement running simulation.
+
+## Schema Explorer additions in Query
+
+The schema Explorer originally navigated only nodes already in the graph, which
+disabled missing connections in the bounded Query results produced after `gep`
+schema operations. With an attached schema-mode `RunOutputState`, connection
+chips now call `GraphViewState.fetchSchemaTypes`; the full Schema route retains
+its existing navigation behavior. Offline previews navigate only loaded nodes.
+
+`schemaExplorerSeeds` resolves chips against the current loaded schema, maps role
+chips to relations that relate those roles (including inherited roles), and
+deduplicates. `schemaContextForTypes` is the existing editor schema-context builder
+extracted for reuse. Reads use an independent read transaction, 50-seed batches
+to preserve query structure, and the same 100000-row ceiling as schema loading.
+Database/destroyed-run checks discard stale results. Successful responses push
+through GraphOutputState and record expansionQueries, so shared selection,
+deduplication, working graphs, and snap preservation use existing machinery.
+
+Explorer keeps the source inspected for successive additions. Topology changes
+get a soft reheat with preserved camera; an already-complete neighborhood is
+revealed without another layout. Loading disables connection chips and errors
+remain visible. Query's snap-kind filter now follows schemaMode, allowing these
+schema-context snaps to appear and restore in Query, rather than requiring the
+Schema route. The full Schema route still lists only schema snaps.
+
+Validation: 55 unit/server tests, local viewer build, existing live-snap browser
+test, and `node scripts/viewer-schema-expand.browser.mjs`. The latter reads the
+live pts-tour3 schema before sending a synthetic completed-definition notice;
+it never executes the definition. It clicks take → take-includes, checks roles
+and player types, unchanged source/run/camera, duplicate suppression, reloading
+after removal through a role chip, and section expansion after restoring a snap.
+Test servers and saved files use ephemeral ports and temporary project folders.
+
+The shared graph keyboard handler also maps literal `+` / `-` to zoom in/out.
+`GraphVisualiser.zoom` shares the existing toolbar factor (0.7) and 150ms camera
+animation with both controls. No modifier chord is required (Shift may produce
+the literal `+`); editor/input protections and browser zoom chords remain intact.
+Vimium pass-through keys are now `hlsr/?+-`. The shortcut browser suite verifies
+actual camera ratios and that typing these characters in the finder does not zoom.

@@ -5,11 +5,13 @@
  */
 
 import { Injectable, inject } from "@angular/core";
-import { BehaviorSubject } from "rxjs";
+import { BehaviorSubject, firstValueFrom } from "rxjs";
 import { ApiResponse, isApiErrorResponse, QueryResponse } from "@typedb/driver-http";
 import { DriverState } from "./driver-state.service";
 import { SnackbarService } from "./snackbar.service";
-import { SchemaConcept } from "./schema-state.service";
+import { Schema, SchemaConcept } from "./schema-state.service";
+import { schemaExplorerSeeds, SchemaExplorerType } from "../framework/util/schema-explorer";
+import { schemaContextForTypes } from "../framework/util/operation-context";
 import { GraphStyleService } from "./graph-style.service";
 import { AppData } from "./app-data.service";
 import { createRunOutputState, GraphOutputStatus, RunOutputState } from "./query-page-state.service";
@@ -122,6 +124,32 @@ export class GraphViewState {
             },
         });
         return false;
+    }
+
+    canExpandSchema(run: RunOutputState): boolean {
+        return run.graph.schemaMode && !run.graph.destroyed && !!run.graph.database
+            && run.graph.database === this.driver.database$.value?.name;
+    }
+
+    /** Add a bounded schema neighborhood to a Query result, including restored runs.
+     * Independent reads match the editor's schema-context reads and never rerun its source. */
+    async fetchSchemaTypes(run: RunOutputState, types: SchemaExplorerType[], schema: Schema): Promise<void> {
+        if (!this.canExpandSchema(run)) throw new Error("Connect to this graph's database before expanding its schema.");
+        const selected = schemaExplorerSeeds(schema, types);
+        if (!selected.length) throw new Error("These types are no longer present in the loaded schema.");
+        // Keep disjunctions below the server's query-structure branch limit,
+        // including large "add all" subtype/owner sections.
+        for (let i = 0; i < selected.length; i += GraphViewState.IID_BATCH_SIZE) {
+            if (!this.canExpandSchema(run)) return;
+            const query = schemaContextForTypes(selected.slice(i, i + GraphViewState.IID_BATCH_SIZE), { neighbours: true }, schema).query;
+            const res = await firstValueFrom(this.driver.queryReadOnly(query, run.graph.database!, {
+                answerCountLimit: 100000, includeQueryStructure: true,
+            }));
+            if (isApiErrorResponse(res)) throw res;
+            if (!this.canExpandSchema(run)) return;
+            run.graph.push(res);
+            (run.expansionQueries ??= []).push(query);
+        }
     }
 
     /** Re-run the initial load for any tab currently showing the

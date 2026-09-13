@@ -83,6 +83,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         this.lastShortcut = `${event.key} → ${action}`;
         if (action === "help") { this.shortcutHelpOpen = !this.shortcutHelpOpen; this.showSnapsTab(); }
         else if (action === "relayout") { if (!this.queryRunning) this.visualiser?.reLayout(); }
+        else if (action === "zoomIn" || action === "zoomOut") { this.visualiser?.zoom(action === "zoomIn" ? "in" : "out"); }
         else if (action === "focus") { this.visualiser?.focusHighlightedNodes(); }
         else if (action === "live") { if (this.inlineSnap || this.snapsBusy) this.closeInlineSnap(); }
         else if (action === "find") {
@@ -507,7 +508,9 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
 
     get snapKind(): "data" | "schema" {
         const path = this.router.url.split(/[?#]/)[0];
-        return path === "/schema" ? "schema" : path === "/query" ? "data" : this.schemaMode ? "schema" : "data";
+        // Query also hosts schema-context runs from editor definitions. Their
+        // snaps must be listed and restored here without a route change.
+        return path === "/schema" || this.schemaMode ? "schema" : "data";
     }
 
     get snapFiles(): SavedGraphSnap[] { return this.snapLibrary?.files.filter(file => file.kind === this.snapKind) ?? []; }

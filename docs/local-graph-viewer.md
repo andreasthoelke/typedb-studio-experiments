@@ -158,6 +158,14 @@ stays open. The original statement is never executed by the browser.
 
 - **Schema changes:** focus the declared types, with optional attributes, roles,
   related types and hierarchy. This Query result uses the schema Explorer.
+  Its connection chips add types and their immediate schema neighborhood to the
+  current graph, including types not yet drawn. For example, select `take` and
+  click `take-includes` under Relations to load that relation, its roles and
+  player types. A role chip loads its relation's neighborhood; **\*** adds the
+  whole section. The source stays selected for successive additions, with a
+  gentle layout update and preserved camera. Repeated loads deduplicate nodes
+  and edges; chips can also bring removed types back. The editor retains the
+  original context query and snaps record the separate expansion queries.
 - **Data changes:** show existing instances of the referenced types, using
   literal attribute filters where available. Identifier-like attributes (such
   as `scene-id`) take precedence over other literal attributes, so a duplicate
@@ -305,9 +313,11 @@ lower Elements / Themes / Customise tabs. With no node selected, Snaps is active
 Selecting a graph node activates Explorer; clearing that selection returns to
 Snaps. You can also choose Snaps while a node is selected.
 
-The **query route shows data snaps**, and the **schema route shows schema snaps**,
-newest first. Clicking a chip restores the saved graph directly inside the
+The **query route shows snaps matching the current graph**: data snaps for data
+results, schema snaps for schema-context results. The **schema route shows schema
+snaps**, newest first. Clicking a chip restores the saved graph directly inside the
 current canvas. The URL stays on the same route, including in full-screen mode.
+Restored schema-context Query snaps support the same Explorer additions as a fresh run.
 
 Chips show two-letter abbreviations of the distinct node type names, splitting
 hyphenated names into words: `mental-state`, `goal`, `source` become
@@ -493,6 +503,7 @@ that influence. None of these view edits execute the original query or modify da
 | `h` / `l` | Previous / next snap in the displayed route-specific list, wrapping at the ends |
 | `Backspace` | Close an offline preview and return to the preserved live view; editable restored runs are already live |
 | `r` | Re-layout; if already running, stop and restart from current positions |
+| `+` / `-` | Smoothly zoom in / out around the current camera center |
 | `Enter` | Smoothly focus the current shared selection or ordinary highlights |
 | `s` | Save a snap |
 | `/` | Focus the fuzzy finder |
@@ -505,7 +516,7 @@ shortcuts. Enter inside either search field keeps that field's existing behavior
 The Snaps **Keys** button shows help and the last shortcut Studio received.
 
 **Vimium setup:** in Vimium's popup/options, add an exclusion rule with pattern
-`http://localhost:1430/*` and excluded/pass-through keys `hlsr/?`, then save.
+`http://localhost:1430/*` and excluded/pass-through keys `hlsr/?+-`, then save.
 Use your actual port if different. Leave the keys field empty to disable Vimium
 entirely for this site, or press `i` for temporary pass-through (Escape ends it).
 Default Vimium does not map Enter or Backspace. Custom mappings for those keys
@@ -663,4 +674,4 @@ an animation queue: an active layout is stopped and replaced from its current
 positions. A request after settling performs the usual fresh redraw. The same
 behavior applies to the redraw buttons. Holding the key does not auto-repeat;
 text inputs and browser modifier shortcuts keep their normal behavior. With
-Vimium, add `r` to the site's pass-through keys (`hlsr/?`).
+Vimium, add `r` to the site's pass-through keys (`hlsr/?+-`).

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { schemaExplorerSections } from '../src/framework/util/schema-explorer.ts';
+import { schemaExplorerSections, schemaExplorerSeeds } from '../src/framework/util/schema-explorer.ts';
 
 const name = { kind: 'attributeType', label: 'name', valueType: 'string', subtypes: [] };
 const driver = { kind: 'roleType', label: 'motivation:driver' };
@@ -26,4 +26,13 @@ test('attribute owners and scoped role players can be explored in reverse', () =
     assert.deepEqual(sections(driver), { Relations: ['motivation'], 'Role players': ['feeling', 'state'] });
     assert.deepEqual(sections({ ...driver, label: 'other:driver' }), {});
     assert.deepEqual(sections(motivation), { Attributes: ['name'], 'Relates roles': ['motivation:driver', 'motivation:target'] });
+});
+
+test('schema expansion resolves live concepts and maps scoped roles to their relations', () => {
+    assert.deepEqual(schemaExplorerSeeds(schema, [driver, target, motivation]), [motivation]);
+    assert.deepEqual(schemaExplorerSeeds(schema, [{ ...state, ownedAttributes: [] }, name]), [state, name]);
+    assert.deepEqual(schemaExplorerSeeds(schema, [{ ...driver, label: 'other:driver' }, { ...name, label: 'removed' }]), []);
+    const inherited = { ...motivation, label: 'special-motivation' };
+    const extended = { ...schema, relations: { motivation, 'special-motivation': inherited } };
+    assert.deepEqual(schemaExplorerSeeds(extended, [driver]), [motivation, inherited]);
 });

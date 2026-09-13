@@ -59,6 +59,11 @@ export function prepareSchemaContext(source: string, options: GraphQueryOptions,
     const selected = [...new Map((declarations.length ? declarations : all.flatMap(t =>
         t.kind === "word" && types[t.text] ? [types[t.text]] : [])).map(t => [t.label, t])).values()];
     if (!selected.length) throw new Error("No referenced types exist in the current schema. The previous graph is kept; see the Neovim result for the original error.");
+    return schemaContextForTypes(selected, options, schema);
+}
+
+/** Shared by editor context and additive schema Explorer reads. */
+export function schemaContextForTypes(selected: SchemaConcept[], options: GraphQueryOptions, schema: Schema): OperationContext {
     let query = `match\n${selected.map(t => `{ $type label ${t.label}; }`).join(" or\n")};`;
     if (options.neighbours) {
         const owners = selected.filter(t => t.kind !== "attributeType");
