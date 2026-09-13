@@ -1,6 +1,7 @@
+import { withEdgeDashes } from "./dashed-edge-program";
 import { createEdgeCurveProgram } from "@sigma/edge-curve";
 import Sigma from "sigma";
-import { drawStraightEdgeLabel } from "sigma/rendering";
+import { EdgeRectangleProgram, drawStraightEdgeLabel } from "sigma/rendering";
 import { EDGE_CURVATURE } from "./graph-builder";
 import { Settings as SigmaSettings } from "sigma/settings";
 import MultiGraph from "graphology";
@@ -99,7 +100,8 @@ export const defaultSigmaSettings: Partial<SigmaSettings> = {
         ellipse: NodeEllipseProgram,
     },
     edgeProgramClasses: {
-        curved: ScaledEdgeCurveProgram,
+        line: withEdgeDashes(EdgeRectangleProgram, false),
+        curved: withEdgeDashes(ScaledEdgeCurveProgram as unknown as typeof EdgeRectangleProgram, true),
     },
 };
 

@@ -34,7 +34,7 @@ const fixture = index => ({
 for (let i=0;i<3;i++) await writeFile(join(directory,`example-0${i}.snap.json`),JSON.stringify(fixture(i)));
 const server=createViewerServer();server.listen(0,'127.0.0.1');await once(server,'listening');
 const origin=`http://localhost:${server.address().port}`;
-let browser,context;
+let browser,context,page;const errors=[];
 try {
     if(process.env.VIMIUM_PATH) {
         assert.ok(process.env.CHROMIUM_PATH,'Set CHROMIUM_PATH to an extension-capable Chromium executable.');
@@ -44,7 +44,7 @@ try {
         browser=await chromium.launch(process.env.CHROMIUM_PATH?{executablePath:process.env.CHROMIUM_PATH,headless:true}:{channel:'chrome',headless:true});
         context=await browser.newContext({viewport:{width:1450,height:950}});
     }
-    const page=await context.newPage();const errors=[];page.on('pageerror',error=>errors.push(error.stack || error.message));
+    page=await context.newPage();page.on('pageerror',error=>errors.push(error.stack || error.message));
 
     // The legacy standalone surface mounts the shared canvas without a database connection.
     // Query/schema in-place restoration is covered by the live workflow described in the handoff.
@@ -62,12 +62,12 @@ try {
         const worker=context.serviceWorkers()[0]??await context.waitForEvent('serviceworker');
         await page.waitForTimeout(700);await page.keyboard.press('l');await page.waitForTimeout(200);
         assert.equal(await page.locator('.snap-chip-open[aria-pressed="true"]').count(),0,'Vimium should consume l before the page receives it');
-        await worker.evaluate(async origin=>{await Settings.onLoaded();await Settings.set('exclusionRules',[{pattern:origin+'/*',passKeys:'hls/?'}]);},origin);
+        await worker.evaluate(async origin=>{await Settings.onLoaded();await Settings.set('exclusionRules',[{pattern:origin+'/*',passKeys:'hlsr/?'}]);},origin);
         await page.reload();await page.waitForSelector('ts-graph-canvas');
         await page.evaluate(()=>{const c=window.ng.getComponent(document.querySelector('ts-graph-canvas'));Object.defineProperty(c,'snapshotDatabase',{get:()=> 'shortcut-test'});window.ng.applyChanges(c);});
         await page.waitForFunction(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).snapFiles.length===3);
         await page.waitForTimeout(700);
-        console.log('PASS real Vimium blocks default l; configured per-site hls/? in isolated profile');
+        console.log('PASS real Vimium blocks default l; configured per-site hlsr/? in isolated profile');
     }
     const names=await page.locator('.snap-chip-open').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-label')));
     // Focus is on the graph/body, never a chip: this was the original focus restriction.
@@ -95,6 +95,23 @@ try {
         if(v.sigma.getSetting('nodeReducer')('unrelated',graph.getNodeAttributes('unrelated')).zIndex!==0) throw new Error('Unselected node not faded');
         v.sigma.getCamera().setState({x:0,y:0,ratio:4});
     });
+    await page.evaluate(()=>{
+        const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;
+        window.layoutStarts=[];
+        const redraw=v.reLayout.bind(v), start=v.layout.startOrRedraw.bind(v.layout);
+        v.reLayout=()=>{
+            window.beforeRestart={running:v.isLayoutRunning,positions:v.graph.nodes().map(key=>[key,v.graph.getNodeAttribute(key,'x'),v.graph.getNodeAttribute(key,'y')])};
+            redraw();
+        };
+        v.layout.startOrRedraw=()=>{
+            const positions=v.graph.nodes().map(key=>[key,v.graph.getNodeAttribute(key,'x'),v.graph.getNodeAttribute(key,'y')]);
+            if(window.beforeRestart.running&&JSON.stringify(positions)!==JSON.stringify(window.beforeRestart.positions)) throw new Error('Running re-layout randomized positions');
+            window.layoutStarts.push(window.beforeRestart.running);start();
+        };
+    });
+    await page.keyboard.press('r');await page.keyboard.press('r');
+    assert.deepEqual(await page.evaluate(()=>window.layoutStarts),[false,true],'r starts once then interrupts the active layout');
+    await page.evaluate(()=>{const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;v.stopLayout();v.sigma.getCamera().setState({x:0,y:0,ratio:4});});
     await page.keyboard.press('Enter');
     await page.waitForFunction(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.sigma.getCamera().getState().ratio!==4);
     await page.keyboard.press('/');assert.equal(await page.locator('input[aria-label="Find types or labels"]').evaluate(el=>document.activeElement===el),true);
@@ -171,7 +188,9 @@ try {
     await page.waitForFunction(()=>!window.ng.getComponent(document.querySelector('ts-graph-canvas')).snapsBusy);
     assert.equal(await page.evaluate(()=>!!window.ng.getComponent(document.querySelector('ts-graph-canvas')).inlineSnap),false);
     assert.deepEqual(errors,[]);
-    console.log('PASS real Command-click, working subset UI and original context/camera restoration; Shift-click overlap, Enter focus, saved group restoration; h/l from graph focus, order/wrap, / finder, text editing protection, ? help, s real save, Backspace live without navigation, cancellation of pending snap load');
+    console.log('PASS r restart from current positions, real Command-click, working subset UI and original context/camera restoration; Shift-click overlap, Enter focus, saved group restoration; h/l from graph focus, order/wrap, / finder, text editing protection, ? help, s real save, Backspace live without navigation, cancellation of pending snap load');
+} catch(error) {
+    console.error(errors);console.error(await page?.locator("body").innerText());throw error;
 } finally {
     await context?.close();await browser?.close();server.closeViewers();server.closeAllConnections();server.close();await rm(root,{recursive:true,force:true});
 }

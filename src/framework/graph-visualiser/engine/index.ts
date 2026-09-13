@@ -229,6 +229,7 @@ export class GraphVisualiser {
             // elevated zIndex propagates to the body draw order, the label
             // draw order (renderLabels sorts by the same nodeIndices), and to
             // picking — keeping the dragged node the hovered one throughout.
+            data = { ...data, lineStyle: this.styleService.getNodeLineStyle(data["metadata"].concept.kind, getTypeLabel(data["metadata"].concept as any)) };
             if (node === state.draggedNode) return { ...data, zIndex: 2 };
             let shouldFade = false;
             let isPreviewFade = false;
@@ -288,6 +289,7 @@ export class GraphVisualiser {
         });
 
         this.sigma.setSetting("edgeReducer", (edge, data) => {
+            data = { ...data, lineStyle: this.styleService.getEdgeLineStyle(data["metadata"]?.dataEdge?.tag ?? data["label"]) };
             const endpoints = this.graph.extremities(edge).map(node => this.graph.getNodeAttributes(node));
             if (endpoints.some(node => node["viewHidden"])) return { ...data, hidden: true, label: "" };
             const state = this.interactionHandler.state;
@@ -434,17 +436,18 @@ export class GraphVisualiser {
     }
 
     reLayout(): void {
+        const restartFromCurrent = this.layout.isRunning;
         this.layout.stop();
         this.autoZoomEnabled = true;
         this.peakCameraRatio = 0;
         this.pinnedCameraWorld = null;
         this.unfreezeViewport();
-        this.graph.nodes().forEach(node => {
+        if (!restartFromCurrent) this.graph.nodes().forEach(node => {
             this.graph.setNodeAttribute(node, "x", Math.random());
             this.graph.setNodeAttribute(node, "y", Math.random());
         });
-        // Positions are now random — drop the "settled" set so the simulation
-        // starts fresh and doesn't try to anchor new nodes to stale data.
+        // Release old settling/pin constraints. During a running layout, the
+        // current coordinates become the starting point of the replacement simulation.
         this.layout.forgetSettled();
         this.layout.startOrRedraw();
         this.centerCamera();

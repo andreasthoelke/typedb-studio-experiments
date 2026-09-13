@@ -82,6 +82,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         event.stopImmediatePropagation();
         this.lastShortcut = `${event.key} → ${action}`;
         if (action === "help") { this.shortcutHelpOpen = !this.shortcutHelpOpen; this.showSnapsTab(); }
+        else if (action === "relayout") { if (!this.queryRunning) this.visualiser?.reLayout(); }
         else if (action === "focus") { this.visualiser?.focusHighlightedNodes(); }
         else if (action === "live") { if (this.inlineSnap || this.snapsBusy) this.closeInlineSnap(); }
         else if (action === "find") {

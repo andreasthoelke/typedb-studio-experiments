@@ -37,3 +37,17 @@ test('rejects malformed or unsafe imports before a collection can be merged', ()
     for (const input of invalids) assert.throws(() => parseGraphPresets(JSON.stringify(input)));
     assert.throws(() => parseGraphPresets('x'.repeat(1024 * 1024 + 1)));
 });
+
+
+test('dash styles round-trip at kind, type, default-edge and per-edge scopes', () => {
+ const preset=parseGraphPresets(inkText)[0];
+ preset.kindStyles.entity.lineStyle='dotted';
+ preset.typeStyles.scene={lineStyle:'long-dash'};
+ preset.defaultEdgeLineStyle='short-dash';
+ preset.edgeLineStyles={owns:'dash-dot',links:'solid'};
+ assert.deepEqual(parseGraphPresets(exportGraphPresets([preset])),[preset]);
+ for(const invalid of [{...preset,defaultEdgeLineStyle:'invalid'},
+   {...preset,edgeLineStyles:{owns:[1,2]}}, {...preset,typeStyles:{scene:{lineStyle:'bad'}}}]) {
+  assert.throws(()=>parseGraphPresets(JSON.stringify(invalid)));
+ }
+});

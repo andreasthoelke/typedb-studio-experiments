@@ -1,3 +1,4 @@
+import type { LineStyle } from "../framework/util/line-style";
 import { Injectable, OnDestroy } from "@angular/core";
 import { BehaviorSubject, Subscription } from "rxjs";
 import chroma from "chroma-js";
@@ -7,6 +8,7 @@ import { ThemeService } from "./theme.service";
 import { exportGraphPresets, mergeGraphPresets, parseGraphPresets } from "../framework/util/graph-presets";
 
 export interface NodeStyle {
+    lineStyle: LineStyle;
     color: string;
     fillColor: string;
     shape: string;
@@ -14,7 +16,7 @@ export interface NodeStyle {
     height: number;
 }
 
-export type PartialNodeStyle = Partial<Pick<NodeStyle, "color" | "shape" | "width" | "height">>;
+export type PartialNodeStyle = Partial<Pick<NodeStyle, "color" | "shape" | "width" | "height" | "lineStyle">>;
 
 const STORAGE_KEY = "typedb-studio-graph-styles";
 const CUSTOM_PRESETS_KEY = "typedb-studio-custom-presets";
@@ -80,6 +82,8 @@ export interface CustomPreset {
     kindStyles: Record<string, PartialNodeStyle>;
     typeStyles: Record<string, PartialNodeStyle>;
     edgeLabelColors: Record<string, string>;
+    edgeLineStyles?: Record<string, LineStyle>;
+    defaultEdgeLineStyle?: LineStyle;
     /** Optional: colour for edges without a per-label override. */
     defaultEdgeColor?: string | null;
     colorEdgesByConstraint: boolean;
@@ -133,6 +137,8 @@ export class GraphStyleService implements OnDestroy {
     private _kindStyles: Record<string, PartialNodeStyle> = {};
     private _typeStyles: Record<string, PartialNodeStyle> = {};
     private _edgeLabelColors: Record<string, string> = {};
+    private _edgeLineStyles: Record<string, LineStyle> = {};
+    private _defaultEdgeLineStyle: LineStyle = "solid";
     /** User override for the colour of every edge that has no per-label colour
      *  of its own. Null → fall back to the built-in default edge colour. */
     private _defaultEdgeColor: string | null = null;
@@ -196,6 +202,7 @@ export class GraphStyleService implements OnDestroy {
         return {
             color,
             fillColor: this.deriveFill(color),
+            lineStyle: "solid",
             shape: defaultQueryStyleParams.vertexShapes[kind],
             width: defaultQueryStyleParams.vertexWidths[kind],
             height: defaultQueryStyleParams.vertexHeights[kind],
@@ -209,6 +216,7 @@ export class GraphStyleService implements OnDestroy {
         return {
             color,
             fillColor: this.deriveFill(color),
+            lineStyle: override?.lineStyle ?? base.lineStyle,
             shape: override?.shape ?? base.shape,
             width: override?.width ?? base.width,
             height: override?.height ?? base.height,
@@ -226,6 +234,7 @@ export class GraphStyleService implements OnDestroy {
         return {
             color,
             fillColor: this.deriveFill(color),
+            lineStyle: typeOverride.lineStyle ?? kindStyle.lineStyle,
             shape: typeOverride.shape ?? kindStyle.shape,
             width: typeOverride.width ?? kindStyle.width,
             height: typeOverride.height ?? kindStyle.height,
@@ -300,6 +309,26 @@ export class GraphStyleService implements OnDestroy {
             return luminance < 0.5; // dark bg → border color; light bg → fixed
         }
         return this._labelColorMode === "border";
+    }
+
+    getNodeLineStyle(kind: string, typeLabel?: string): LineStyle {
+        return (typeLabel ? this._typeStyles[typeLabel]?.lineStyle : undefined) ?? this._kindStyles[kind]?.lineStyle ?? "solid";
+    }
+    clearTypeLineStyle(typeLabel: string): void {
+        if (this._typeStyles[typeLabel]) {
+            delete this._typeStyles[typeLabel].lineStyle;
+            if (!Object.keys(this._typeStyles[typeLabel]).length) delete this._typeStyles[typeLabel];
+        }
+        this.save(); this.styles$.next();
+    }
+
+    getEdgeLineStyle(tag?: string): LineStyle { return (tag ? this._edgeLineStyles[tag] : undefined) ?? this._defaultEdgeLineStyle; }
+    hasEdgeLineStyle(tag: string): boolean { return this._edgeLineStyles[tag] !== undefined; }
+    setEdgeLineStyle(style: LineStyle | null, tag?: string): void {
+        if (!tag) this._defaultEdgeLineStyle = style ?? "solid";
+        else if (style === null) delete this._edgeLineStyles[tag];
+        else this._edgeLineStyles[tag] = style;
+        this.save(); this.styles$.next();
     }
 
     // -- Edge label colors --
@@ -696,6 +725,8 @@ export class GraphStyleService implements OnDestroy {
         this._kindStyles = {};
         this._typeStyles = {};
         this._edgeLabelColors = {};
+        this._edgeLineStyles = {};
+        this._defaultEdgeLineStyle = "solid";
         this._defaultEdgeColor = null;
         this._labelColorMode = "auto";
         this._colorEdgesByConstraint = false;
@@ -740,6 +771,8 @@ export class GraphStyleService implements OnDestroy {
             kindStyles: structuredClone(this._kindStyles),
             typeStyles: structuredClone(this._typeStyles),
             edgeLabelColors: { ...this._edgeLabelColors },
+            edgeLineStyles: { ...this._edgeLineStyles },
+            defaultEdgeLineStyle: this._defaultEdgeLineStyle,
             defaultEdgeColor: this._defaultEdgeColor,
             colorEdgesByConstraint: this._colorEdgesByConstraint,
             labelColorMode: this._labelColorMode,
@@ -774,6 +807,8 @@ export class GraphStyleService implements OnDestroy {
         this._kindStyles = structuredClone(preset.kindStyles);
         this._typeStyles = structuredClone(preset.typeStyles);
         this._edgeLabelColors = { ...preset.edgeLabelColors };
+        this._edgeLineStyles = { ...preset.edgeLineStyles };
+        this._defaultEdgeLineStyle = preset.defaultEdgeLineStyle ?? "solid";
         this._defaultEdgeColor = preset.defaultEdgeColor ?? null;
         this._colorEdgesByConstraint = preset.colorEdgesByConstraint;
         this._labelColorMode = preset.labelColorMode ?? (preset.labelUseBorderColor ? "auto" : "fixed");
@@ -837,6 +872,8 @@ export class GraphStyleService implements OnDestroy {
                 kindStyles: this._kindStyles,
                 typeStyles: this._typeStyles,
                 edgeLabelColors: this._edgeLabelColors,
+                edgeLineStyles: this._edgeLineStyles,
+                defaultEdgeLineStyle: this._defaultEdgeLineStyle,
                 defaultEdgeColor: this._defaultEdgeColor,
                 colorEdgesByConstraint: this._colorEdgesByConstraint,
                 labelColorMode: this._labelColorMode,
@@ -864,6 +901,8 @@ export class GraphStyleService implements OnDestroy {
                 this._kindStyles = migrateStyles(data.kindStyles ?? {});
                 this._typeStyles = migrateStyles(data.typeStyles ?? {});
                 this._edgeLabelColors = data.edgeLabelColors ?? {};
+                this._edgeLineStyles = data.edgeLineStyles ?? {};
+                this._defaultEdgeLineStyle = data.defaultEdgeLineStyle ?? "solid";
                 this._defaultEdgeColor = data.defaultEdgeColor ?? null;
                 this._colorEdgesByConstraint = data.colorEdgesByConstraint ?? false;
                 this._labelColorMode = data.labelColorMode ?? (data.labelUseBorderColor === false ? "fixed" : "auto");

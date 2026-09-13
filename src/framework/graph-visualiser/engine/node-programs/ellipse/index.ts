@@ -1,3 +1,4 @@
+import { lineStyleIndex } from "../../../../util/line-style";
 import { Attributes } from "graphology-types";
 import { NodeProgram, ProgramInfo } from "sigma/rendering";
 import { NodeDisplayData, RenderParams } from "sigma/types";
@@ -35,6 +36,7 @@ export class NodeEllipseProgram<
                 { name: "a_color", size: 4, type: UNSIGNED_BYTE, normalized: true },
                 { name: "a_borderColor", size: 4, type: UNSIGNED_BYTE, normalized: true },
                 { name: "a_id", size: 4, type: UNSIGNED_BYTE, normalized: true },
+                { name: "a_lineStyle", size: 1, type: FLOAT },
             ],
             CONSTANT_ATTRIBUTES: [{ name: "a_offset", size: 2, type: FLOAT }],
             CONSTANT_DATA: [
@@ -58,6 +60,7 @@ export class NodeEllipseProgram<
         array[startIndex++] = color;
         array[startIndex++] = borderColor;
         array[startIndex++] = nodeIndex;
+        array[startIndex++] = lineStyleIndex((data as any).lineStyle);
     }
 
     setUniforms(params: RenderParams, { gl, uniformLocations }: ProgramInfo): void {

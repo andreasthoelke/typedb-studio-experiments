@@ -1,3 +1,4 @@
+import { outlineDashGLSL } from "../outline-dashes";
 // language=GLSL
 const SHADER_SOURCE = /*glsl*/ `
 precision highp float;
@@ -25,6 +26,7 @@ float sdHexagon(vec2 p, float r) {
   return length(p) * sign(p.y);
 }
 
+${outlineDashGLSL("hexagon")}
 void main(void) {
   float u = log2(max(u_sizeRatio, 1.0));
   float borderScale = clamp(1.0 + u * (0.96 + u * (-0.75 + 0.29 * u)), 1.0, 5.0);
@@ -45,14 +47,16 @@ void main(void) {
   else
     gl_FragColor = v_color;
   #else
+  float mask = 1.0;
+  if (v_lineStyle > 0.5) mask = dashMask(outlinePosition(v_uv) * v_size * 2.0 / u_sizeRatio, v_lineStyle);
   if (dist > aaWidth) {
     gl_FragColor = transparent;
   } else if (dist > 0.0) {
     float t = dist / aaWidth;
-    gl_FragColor = mix(v_borderColor, transparent, t);
+    gl_FragColor = mix(v_borderColor * mask, transparent, t);
   } else if (dist > -bw) {
     float innerT = smoothstep(-bw, -bw + aaWidth, dist);
-    gl_FragColor = mix(v_color, v_borderColor, innerT);
+    gl_FragColor = mix(v_color, v_borderColor, innerT * mask);
   } else {
     gl_FragColor = v_color;
   }

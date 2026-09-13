@@ -98,6 +98,16 @@
               }
             </div>
             <div class="style-controls">
+              <span class="dim-label">Dashed</span>
+              <mat-form-field class="footer-select-field" subscriptSizing="dynamic">
+                <mat-select [value]="styleService.getKindStyle(row.kind).lineStyle" (selectionChange)="styleService.setKindStyle(row.kind, {lineStyle: $event.value})"
+                            [aria-label]="'Outline dash for ' + row.label" panelClass="graph-style-select-panel">
+
+                  @for (style of lineStyles; track style.value) { <mat-option [value]="style.value">{{ style.label }}</mat-option> }
+                </mat-select>
+              </mat-form-field>
+            </div>
+            <div class="style-controls">
               <span matTooltip="Color" [matTooltipShowDelay]="500">
                 <input type="color" class="color-input"
                        [value]="getKindColor(row.kind)"
@@ -170,6 +180,16 @@
               }
             </div>
             <div class="style-controls">
+              <span class="dim-label">Dashed</span>
+              <mat-form-field class="footer-select-field" subscriptSizing="dynamic">
+                <mat-select [value]="getTypeLineStyle(row.typeLabel)" (selectionChange)="setTypeLineStyle(row.typeLabel, $event.value)"
+                            [aria-label]="'Outline dash for ' + row.typeLabel" panelClass="graph-style-select-panel">
+                  <mat-option value="inherit">Inherit</mat-option>
+                  @for (style of lineStyles; track style.value) { <mat-option [value]="style.value">{{ style.label }}</mat-option> }
+                </mat-select>
+              </mat-form-field>
+            </div>
+            <div class="style-controls">
               <span matTooltip="Color" [matTooltipShowDelay]="500">
                 <input type="color" class="color-input"
                        [value]="getTypeColor(row.typeLabel, row.kind)"
@@ -229,6 +249,16 @@
             }
           </div>
           <div class="style-controls">
+              <span class="dim-label">Dashed</span>
+              <mat-form-field class="footer-select-field" subscriptSizing="dynamic">
+                <mat-select [value]="styleService.getEdgeLineStyle()" (selectionChange)="setEdgeLineStyle($event.value)"
+                            [aria-label]="'Dash for all edges'" panelClass="graph-style-select-panel">
+
+                  @for (style of lineStyles; track style.value) { <mat-option [value]="style.value">{{ style.label }}</mat-option> }
+                </mat-select>
+              </mat-form-field>
+            </div>
+            <div class="style-controls">
             <span matTooltip="Color for all edges without their own colour" [matTooltipShowDelay]="500">
               <input type="color" class="color-input"
                      [value]="getDefaultEdgeColor()"
@@ -245,6 +275,16 @@
                   <i class="fa-light fa-arrow-u-turn-up-left"></i>
                 </button>
               }
+            </div>
+            <div class="style-controls">
+              <span class="dim-label">Dashed</span>
+              <mat-form-field class="footer-select-field" subscriptSizing="dynamic">
+                <mat-select [value]="styleService.hasEdgeLineStyle(row.tag) ? styleService.getEdgeLineStyle(row.tag) : 'inherit'" (selectionChange)="setEdgeLineStyle($event.value, row.tag)"
+                            [aria-label]="'Edge dash for ' + row.displayLabel" panelClass="graph-style-select-panel">
+                  <mat-option value="inherit">Inherit</mat-option>
+                  @for (style of lineStyles; track style.value) { <mat-option [value]="style.value">{{ style.label }}</mat-option> }
+                </mat-select>
+              </mat-form-field>
             </div>
             <div class="style-controls">
               <span matTooltip="Color" [matTooltipShowDelay]="500">

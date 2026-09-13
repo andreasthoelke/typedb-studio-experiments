@@ -1,3 +1,4 @@
+import { LINE_STYLE_OPTIONS, LineStyle } from "../../util/line-style";
 import { Component, inject, Input, OnChanges, SimpleChanges } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { MatSelectModule } from "@angular/material/select";
@@ -72,6 +73,15 @@ export class CustomiseTabComponent implements OnChanges {
     @Input() visualiser: GraphVisualiser | null = null;
 
     styleService = inject(GraphStyleService);
+    readonly lineStyles = LINE_STYLE_OPTIONS;
+    getTypeLineStyle(typeLabel: string): string { return this.styleService.typeStyles[typeLabel]?.lineStyle ?? "inherit"; }
+    setTypeLineStyle(typeLabel: string, style: LineStyle | "inherit"): void {
+        if (style === "inherit") this.styleService.clearTypeLineStyle(typeLabel);
+        else this.styleService.setTypeStyle(typeLabel, { lineStyle: style });
+    }
+    setEdgeLineStyle(style: LineStyle | "inherit", tag?: string): void {
+        this.styleService.setEdgeLineStyle(style === "inherit" ? null : style, tag);
+    }
     activeTab: "graph" | "background" = "graph";
 
     settingsCollapsed = false;
@@ -256,11 +266,12 @@ export class CustomiseTabComponent implements OnChanges {
     }
 
     hasEdgeLabelOverride(tag: string): boolean {
-        return !!this.styleService.edgeLabelColors[tag];
+        return !!this.styleService.edgeLabelColors[tag] || this.styleService.hasEdgeLineStyle(tag);
     }
 
     clearEdgeLabelOverride(tag: string): void {
         this.styleService.removeEdgeLabelColor(tag);
+        this.styleService.setEdgeLineStyle(null, tag);
         this.visualiser?.applyEdgeStyleUpdate();
     }
 
@@ -277,11 +288,12 @@ export class CustomiseTabComponent implements OnChanges {
     }
 
     get hasDefaultEdgeColorOverride(): boolean {
-        return this.styleService.hasDefaultEdgeColorOverride;
+        return this.styleService.hasDefaultEdgeColorOverride || this.styleService.getEdgeLineStyle() !== "solid";
     }
 
     clearDefaultEdgeColor(): void {
         this.styleService.clearDefaultEdgeColor();
+        this.styleService.setEdgeLineStyle(null);
         this.visualiser?.applyEdgeStyleUpdate();
     }
 

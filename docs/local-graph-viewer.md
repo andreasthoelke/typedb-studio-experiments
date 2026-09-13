@@ -492,6 +492,7 @@ that influence. None of these view edits execute the original query or modify da
 | --- | --- |
 | `h` / `l` | Previous / next snap in the displayed route-specific list, wrapping at the ends |
 | `Backspace` | Close an offline preview and return to the preserved live view; editable restored runs are already live |
+| `r` | Re-layout; if already running, stop and restart from current positions |
 | `Enter` | Smoothly focus the current shared selection or ordinary highlights |
 | `s` | Save a snap |
 | `/` | Focus the fuzzy finder |
@@ -504,7 +505,7 @@ shortcuts. Enter inside either search field keeps that field's existing behavior
 The Snaps **Keys** button shows help and the last shortcut Studio received.
 
 **Vimium setup:** in Vimium's popup/options, add an exclusion rule with pattern
-`http://localhost:1430/*` and excluded/pass-through keys `hls/?`, then save.
+`http://localhost:1430/*` and excluded/pass-through keys `hlsr/?`, then save.
 Use your actual port if different. Leave the keys field empty to disable Vimium
 entirely for this site, or press `i` for temporary pass-through (Escape ends it).
 Default Vimium does not map Enter or Backspace. Custom mappings for those keys
@@ -642,3 +643,24 @@ project metadata wins over the last project received for that database. The
 `kind` (data/schema/unknown), `nodeCount` and a compact `abbreviation` when readable,
 and both destination paths. `DELETE /api/viewer/snap` uses the same project/DB
 parameters and `filename` to remove one snap; it rejects traversal and non-snap filenames.
+
+
+## Outline and edge dashes
+
+In **Customise → Graph**, the Kinds, Types, and Edges sections have a **Dashed**
+dropdown: Solid, Dotted, Short dash, Long dash, and Dash-dot. Kind settings apply
+to all nodes of that kind; Types can override them or choose **Inherit**. **All
+edges** supplies the default edge pattern, with individual edge categories such
+as `has`, `links`, and `owns` able to override it or inherit.
+
+Patterns apply to all four node outlines and both straight and curved edges.
+They are drawn by WebGL, follow camera movements, and appear in PNG exports.
+They are included in local style persistence, preset import/export, and snaps;
+older presets start solid. Labels, fills, and click targets stay intact.
+
+Press **r** with the graph focused to re-layout. Repeated requests do not build up
+an animation queue: an active layout is stopped and replaced from its current
+positions. A request after settling performs the usual fresh redraw. The same
+behavior applies to the redraw buttons. Holding the key does not auto-repeat;
+text inputs and browser modifier shortcuts keep their normal behavior. With
+Vimium, add `r` to the site's pass-through keys (`hlsr/?`).

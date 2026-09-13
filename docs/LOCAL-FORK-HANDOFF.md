@@ -161,7 +161,7 @@ Project context inferred from a Neovim schema file can be overridden in Snaps.
   Track pointer/focus ownership when multiple graphs exist. Remove listeners on
   destroy. Enter in search inputs remains handled by those inputs.
 - **Vimium runs earlier.** Tested 2.4.2 consumes h/l before page listeners. Use the
-  per-site pass keys `hls/?` at `http://localhost:1430/*`, or disable it for the site.
+  per-site pass keys `hlsr/?` at `http://localhost:1430/*`, or disable it for the site.
   The Keys panel's last-received diagnostic helps distinguish interception from
   app state. Do not try to modify a user's active browser profile behind their back.
 - **Labels and attribute nodes are independent.** Loading display attribute values
@@ -181,7 +181,7 @@ intent or guarantee useful context after every failed write. Preserve the origin
 Neovim execution and make the separate graph query visible/editable. Explorer
 expansions often offer better choices than asking the user to type relation names.
 
-Current shortcuts: h/l browse, Backspace close preview, Enter focus, s save, / finder, ? help.
+Current shortcuts: h/l browse, Backspace close preview, Enter focus, r re-layout, s save, / finder, ? help.
 See the workflow guide for selection semantics and Vimium instructions. No hover
 preview or tooltip is attached to snap chips; × deletes immediately, without a dialog.
 
@@ -285,3 +285,29 @@ browser profile changes are involved.
 `handleQueryResponse` includes newly loaded graph keys in an active shared selection.
 `includeAddedNodes` preserves neighborhood groups and exact exclusions; ordinary
 inspection still recomputes its own periphery when explicit selection is inactive.
+
+
+## Dash styles and interruptible re-layout
+
+`r` uses the shared graph shortcut handler and `GraphVisualiser.reLayout`. Running
+D3 simulations stop before a replacement starts from current positions; settled
+redraws randomize as before. No unbounded queue or deferred callbacks. All existing
+reLayout callers get this behavior. Native key repeat and editable/overlay targets
+are ignored; update the Vimium pass-through rule to include r.
+
+`lineStyle` on node styles inherits type → kind → solid. Edge styles use
+`edgeLineStyles` and `defaultEdgeLineStyle`, with optional fields for backwards
+compatibility. GraphStyleService persists/captures them and graph-presets validates
+the enum. Reducers resolve current styles for new nodes/edges and PNG rendering.
+Four node programs share outline-dashes GLSL and line-style.ts's dash mask.
+`withEdgeDashes` extends the pinned Sigma 3 rectangle/curve programs; it adds an
+instanced attribute and fragment mask without changing their picking surface.
+Curved patterns use the existing nearest Bezier parameter plus Simpson arc-length
+approximation. The wrapper depends on the pinned upstream shader declarations;
+recheck its insertion points when upgrading Sigma or @sigma/edge-curve.
+
+`node scripts/viewer-dashes.browser.mjs` tests actual dropdown inheritance, the
+four shape programs, straight/curved edge rendering, snap restoration, and PNG
+export in a synthetic database-free fixture. It writes a gallery and PNG to the
+OS temporary directory. The shortcut browser suite checks two actual r presses,
+including the coordinates passed into a replacement running simulation.

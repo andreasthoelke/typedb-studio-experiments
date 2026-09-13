@@ -1,3 +1,4 @@
+import type { LineStyle } from "../../util/line-style";
 import { EdgeKind } from "@typedb/driver-http";
 import { MultiGraph } from "graphology";
 import { DataConstraintAny } from "@typedb/graph-utils";
@@ -12,6 +13,7 @@ export interface VertexMetadata {
 }
 
 export interface VertexAttributes {
+    lineStyle?: LineStyle;
     /** Transient appearance within one graph result; never part of a style preset. */
     viewHidden?: boolean;
     viewDimmed?: boolean;
@@ -34,6 +36,7 @@ export interface EdgeMetadata {
 }
 
 export interface EdgeAttributes {
+    lineStyle?: LineStyle;
     label: string;
     color: string;
     size: number;
