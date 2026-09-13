@@ -443,6 +443,51 @@ Removing the last group selects **None**; **Clear** restores ordinary highlighti
 Neighborhood groups survive snap save/restore. Ordinary clicking still opens the
 Explorer without replacing an explicit selection.
 
+**Command-click** (or Ctrl-click) toggles only the clicked node. Unlike removing
+a Shift-click group, this exact edit wins over overlap and the original selection.
+It can exclude an original node or a shared attribute, and a second Command-click
+adds it back. Explorer's **Add to selection / Remove from selection** uses the same
+operation, including when you started with ordinary node inspection. These exact
+exclusions survive snaps and future Shift-click additions. Finder/type/kind edits
+start a new base, as before; Clear or All also resets these exclusions.
+
+### Stable focus and a working graph
+
+Selection edits only change highlighting. **Enter**, **Focus**, and the lower-right
+target button frame the same effective selection without changing node positions.
+
+**Elements → Isolate & layout** makes the highlighted nodes the actual working
+graph. Only edges whose two endpoints remain selected participate in its new force
+layout. Excluded nodes do not repel, attract, or anchor anything. This works in
+Query, Schema, and saved views; the displayed query remains provenance, not a
+rewritten query for the subset. An empty selection does nothing.
+
+For the shared `title` example: use **Kinds → All**, then turn off the attribute
+kind (or exclude just `title` using its type chip / Command-click), and choose
+**Isolate & layout**. Alternatively build a smaller entity/relation selection first.
+For schema graphs, keep the role nodes connecting the relation types to their
+players if you want those connections in the reduced layout.
+
+- Explorer **Remove from graph** removes the selected node and incident edges
+  from the working data, without changing the database. It preserves the remaining
+  positions and camera. **Redraw graph** then lays out the remaining graph.
+- Explorer expansions still add current data with the existing gentle settling
+  and camera preservation. Newly loaded nodes join an active selection, so they
+  are highlighted immediately. You can isolate the extended selection again.
+- **Restore context**, available in Elements and as a back-arrow above the graph
+  controls, restores the original graph's nodes, edges, positions, and camera.
+  Newly explored nodes are retained. It keeps your current selection and styling.
+  Repeated reductions share one original context; this is not a multi-step undo.
+- Saving a snap records both the working subset and its restorable context.
+  Opening it restores the reduced view; Restore context still works after opening
+  or moving the panel. The extra context can make the snap file larger.
+- A new Neovim/snap source in the following Schema tab first restores the original
+  full schema arrangement, then changes its highlights and camera as usual.
+
+**Hide** remains a visual-only option for compatibility: hidden nodes still affect
+layout. Use selection plus **Isolate & layout**, or **Remove from graph**, to remove
+that influence. None of these view edits execute the original query or modify data.
+
 | Key | Action |
 | --- | --- |
 | `h` / `l` | Previous / next snap in the displayed route-specific list, wrapping at the ends |

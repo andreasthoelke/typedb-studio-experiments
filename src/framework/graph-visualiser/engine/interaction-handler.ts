@@ -285,8 +285,13 @@ export class InteractionHandler {
             this.state.didDrag = false;
             return;
         }
-        this.visualiser?.clearSearch();
         const node = event.node;
+        const original = event.event?.original as MouseEvent | undefined;
+        if ((original?.metaKey || original?.ctrlKey) && this.visualiser) {
+            this.visualiser.toggleNodeSelection(node);
+            return;
+        }
+        this.visualiser?.clearSearch();
         if ((event.event?.original as MouseEvent | undefined)?.shiftKey && this.visualiser) {
             // Use the same graph-aware periphery as ordinary inspection (including
             // relation role players), and keep inspection independent of selection.
@@ -555,6 +560,7 @@ export class InteractionHandler {
      * node set without having to change the selection.
      */
     recomputeHighlightSet(): void {
+        for (const anchor of this.secondaryAnchors) if (!this.graph.hasNode(anchor)) this.secondaryAnchors.delete(anchor);
         if (this.state.selectedNode == null && this.secondaryAnchors.size === 0 && this.selectedTypeLabel == null) {
             this.state.selectedNeighbors = null;
             this.renderer.refresh();

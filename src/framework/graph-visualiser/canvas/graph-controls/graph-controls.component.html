@@ -1,4 +1,10 @@
 <div class="zoom-controls">
+  @if (visualiser?.hasWorkingContext) {
+    <button class="zoom-button" (click)="visualiser?.restoreContext()" aria-label="Restore context"
+            matTooltip="Restore original context and positions" matTooltipPosition="left" [matTooltipShowDelay]="500">
+      <i class="fa-light fa-arrow-left"></i>
+    </button>
+  }
   <div class="zoom-pair">
     @if (queryRunning || visualiser?.isLayoutRunning) {
       <button class="zoom-button stop-button" (click)="stopLayout()" [disabled]="queryRunning" matTooltip="Stop simulation" matTooltipPosition="left" [matTooltipShowDelay]="500">
@@ -44,7 +50,7 @@
   @let selection = visualiser?.interactionHandler?.selection$ | async;
   <button class="zoom-button reset-button"
           (click)="resetOrFocus()"
-          [matTooltip]="selection ? 'Focus selection' : 'Reset view'"
+          [matTooltip]="visualiser?.elementSelection?.active || selection ? 'Focus selection (Enter)' : 'Focus highlighted nodes / reset view'"
           matTooltipPosition="left"
           [matTooltipShowDelay]="500">
     <i class="fa-light fa-crosshairs"></i>

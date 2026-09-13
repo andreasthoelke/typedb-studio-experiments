@@ -300,13 +300,17 @@ export function colorEdgesByConstraintIndex(
 ): void {
     graph.edges().forEach(edgeKey => {
         if (reset) {
-            const tag = graph.getEdgeAttributes(edgeKey).metadata.dataEdge.tag;
+            const attributes = graph.getEdgeAttributes(edgeKey);
+            // Imported views can contain rendered edges without query-analysis metadata.
+            const tag = attributes.metadata?.dataEdge?.tag ?? attributes.label;
             const color = styleParams.edgeLabelColors?.[tag] ?? styleParams.edgeColor.hex();
             graph.setEdgeAttribute(edgeKey, "color", color);
         } else {
             const attributes = graph.getEdgeAttributes(edgeKey);
-            const constraintIndex = attributes.metadata.dataEdge.queryCoordinates.constraint;
-            const branchIndex = attributes.metadata.dataEdge.queryCoordinates.branch;
+            const coordinates = attributes.metadata?.dataEdge?.queryCoordinates;
+            if (!coordinates) return;
+            const constraintIndex = coordinates.constraint;
+            const branchIndex = coordinates.branch;
             const color = getColorForConstraintIndex(branchIndex, constraintIndex);
             graph.setEdgeAttribute(edgeKey, "color", color.hex());
         }

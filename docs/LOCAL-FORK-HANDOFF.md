@@ -1,6 +1,6 @@
 # Local Studio fork: maintainer handoff
 
-Updated 2026-09-12. Read this first, then [the workflow guide](local-graph-viewer.md).
+Updated 2026-09-13. Read this first, then [the workflow guide](local-graph-viewer.md).
 This is a personal, evolving graph exploration tool integrated with Neovim.
 An upstream PR is not a goal. Keep working in this repository and reuse Studio's
 existing components where helpful; improve the design as actual use suggests.
@@ -151,7 +151,9 @@ Project context inferred from a Neovim schema file can be overridden in Snaps.
 - **Inspection and explicit selection are separate.** Plain click selects the
   inspected node/periphery; finder/type chips/Explorer selection controls share
   `GraphElementSelection`. An active explicit set takes priority in reducers.
-  Shift-click unions neighborhood groups and retains overlap. Explicit checkbox
+  Shift-click unions neighborhood groups and retains overlap. Command/Ctrl-click and
+  Explorer exact toggles use `toggleSingle`: exclusions win over the base and groups,
+  including future Shift additions. Explicit checkbox
   edits reset group bookkeeping to a new base. Groups serialize with selection.
   None is an active empty selection; Clear restores ordinary highlighting.
 - **Keyboard ownership belongs to the visible graph.** Capture listeners ignore
@@ -239,3 +241,47 @@ Query tabs do not execute them. The restoring Query bridge adopts the source wit
 pending=false. These are browser context notifications, not new Neovim/SSE requests;
 new/reloaded tabs still receive the helper's latest Neovim event. Offline preview
 restoration sends no context notification. The snap-file format remains version 1.
+
+
+## Reversible working graphs
+
+`GraphVisualiser.isolateSelection()` uses the same effective highlighted set as
+Enter/Focus. It checkpoints topology, coordinates, bbox, and camera; physically
+removes unselected nodes/incident edges; then redraws the induced graph. D3 needs
+no second filtering path: omitted nodes cannot influence the simulation. Explorer
+`removeFromGraph` and existing connection unloads share the reversible checkpoint;
+removing one node stops layout and holds positions/camera, while existing bulk
+unload callers may perform their normal gentle reheat.
+
+`graph.attributes.workingContext` contains one `GraphWorkingContext` (nodes, edges,
+bbox, camera), without graph attributes or nested contexts. The helper in
+`src/framework/util/graph-working-context.ts` deep clones before saving/importing.
+Restore brings back missing original nodes and edges, resets original node positions,
+and retains new nodes/edges and current selection/styles. It is one return point,
+not an undo stack. Context uses snap-format v1's extensible graph attributes; parser
+validation checks parked graph geometry/topology before it can be restored.
+
+The graph attribute survives normal run preservation, schema remounts, and snap
+capture. Source and expansion queries remain provenance; isolation does not rewrite
+or run TypeQL. No database mutation occurs. Incoming known schema source context
+calls `restoreContext()` before computing node keys, preserving the stable full
+schema's positions after local isolation. New schema source following a restored
+schema snap still uses the existing full-schema refresh path.
+
+Selection overrides are serialized in `elementSelection.neighborhoods.excluded`.
+Exact toggles seed from the *effective* ordinary highlight when explicit selection
+is inactive. Finder/type edits reset group bookkeeping; Clear/All resets exclusions.
+Inspecting remains separate. Selection reductions clear missing inspected nodes and
+prune secondary anchors, preventing absent node keys in highlights and saved views.
+The toolbar target now uses the same highlight set as Enter, not just inspection.
+
+Validation: 53 unit/server tests; expanded shortcut browser test checks exact edits,
+UI isolation, induced edges, and original camera/position restoration. Live snap test
+checks Explorer expansion of a one-node subset, saved working context, remount and
+restoration. Parallel-schema browser test checks full topology and every original
+coordinate after a new source exits a working subset. No writes or production
+browser profile changes are involved.
+
+`handleQueryResponse` includes newly loaded graph keys in an active shared selection.
+`includeAddedNodes` preserves neighborhood groups and exact exclusions; ordinary
+inspection still recomputes its own periphery when explicit selection is inactive.

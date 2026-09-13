@@ -111,6 +111,51 @@ try {
         v.interactionHandler.onClickNode({node:'other',event:{original:new MouseEvent('click',{shiftKey:true})}});
         if(v.elementSelection.nodes.size!==0) throw new Error('Saved neighborhood did not toggle off after restoration');
     });
+    // Exercise a real Command-click through Sigma's mouse captor, not only handler calls.
+    await page.evaluate(()=>{
+        const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;
+        v.stopLayout();v.graph.nodes().forEach((key,index)=>v.graph.mergeNodeAttributes(key,{x:index*300,y:0}));
+        v.elementSelection.replace(v.graph.nodes());v.sigma.setCustomBBox(null);v.focusHighlightedNodes();
+    });
+    await page.waitForTimeout(350);
+    const point=await page.evaluate(()=>{
+        const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;
+        const p=v.sigma.graphToViewport(v.graph.getNodeAttributes('shared'));
+        const r=v.sigma.getContainer().getBoundingClientRect();return {x:r.x+p.x,y:r.y+p.y};
+    });
+    await page.keyboard.down('Meta');await page.mouse.click(point.x,point.y);await page.keyboard.up('Meta');
+    assert.equal(await page.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.elementSelection.nodes.has('shared')),false,'Real Command-click subtracts the clicked node');
+    // Exact edits must remove nodes from an original explicit set and from overlapping groups.
+    await page.evaluate(()=>{
+        const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;
+        v.elementSelection.replace(v.graph.nodes());
+        v.interactionHandler.onClickNode({node:'shared',event:{original:new MouseEvent('click',{metaKey:true})}});
+        if(v.elementSelection.nodes.has('shared')) throw new Error('Command-click did not remove original node');
+        window.workingOriginal=structuredClone(v.graph.export());
+        window.workingCamera={...v.sigma.getCamera().getState()};
+    });
+    await page.getByRole('button',{name:'Elements',exact:true}).click();
+    await page.getByRole('button',{name:'Isolate & layout',exact:true}).click();
+    await page.evaluate(()=>{
+        const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;
+        v.stopLayout();
+        if(v.graph.hasNode('shared')||v.graph.size!==0) throw new Error('Excluded shared attribute still constrains the working layout');
+        if(!v.hasWorkingContext) throw new Error('Missing original context');
+        v.removeFromGraph('n');
+        if(v.interactionHandler.state.selectedNode==='n') throw new Error('Removed node still inspected');
+    });
+    await page.screenshot({path:join(tmpdir(),'studio-working-subset.png')});
+    await page.getByRole('button',{name:'Restore context',exact:true}).first().click();
+    await page.evaluate(()=>{
+        const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;
+        if(v.hasWorkingContext||v.graph.order!==window.workingOriginal.nodes.length) throw new Error('Context not restored');
+        for(const node of window.workingOriginal.nodes){
+            const current=v.graph.getNodeAttributes(node.key);
+            if(current.x!==node.attributes.x||current.y!==node.attributes.y) throw new Error('Original positions lost');
+        }
+        if(JSON.stringify(v.sigma.getCamera().getState())!==JSON.stringify(window.workingCamera)) throw new Error('Original camera lost: '+JSON.stringify({now:v.sigma.getCamera().getState(),original:window.workingCamera}));
+    });
+    await page.locator('.canvas-element').last().click({position:{x:450,y:350}});
     const url=page.url();await page.keyboard.press('Backspace');await page.waitForFunction(()=>!window.ng.getComponent(document.querySelector('ts-graph-canvas')).inlineSnap).catch(async error=>{
         console.error(errors);
         console.error(await page.evaluate(()=>{const c=window.ng.getComponent(document.querySelector('ts-graph-canvas'));return {last:c.lastShortcut,active:document.activeElement?.outerHTML,visible:c.isKeyboardVisible(),busy:c.snapsBusy};}));
@@ -126,7 +171,7 @@ try {
     await page.waitForFunction(()=>!window.ng.getComponent(document.querySelector('ts-graph-canvas')).snapsBusy);
     assert.equal(await page.evaluate(()=>!!window.ng.getComponent(document.querySelector('ts-graph-canvas')).inlineSnap),false);
     assert.deepEqual(errors,[]);
-    console.log('PASS Shift-click overlap, Enter focus, saved group restoration; h/l from graph focus, order/wrap, / finder, text editing protection, ? help, s real save, Backspace live without navigation, cancellation of pending snap load');
+    console.log('PASS real Command-click, working subset UI and original context/camera restoration; Shift-click overlap, Enter focus, saved group restoration; h/l from graph focus, order/wrap, / finder, text editing protection, ? help, s real save, Backspace live without navigation, cancellation of pending snap load');
 } finally {
     await context?.close();await browser?.close();server.closeViewers();server.closeAllConnections();server.close();await rm(root,{recursive:true,force:true});
 }

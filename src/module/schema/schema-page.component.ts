@@ -88,6 +88,8 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
             this.bridge.message = "No explicit type names from this statement exist in the current schema; the previous view is kept.";
             return true;
         }
+        // A new source returns to the stable full schema after a local working subset.
+        visualiser.restoreContext();
         const keys = visualiser.graph.nodes().filter(key => {
             const concept = visualiser.graph.getNodeAttribute(key, "metadata").concept;
             return "label" in concept && focus.labels.has(concept.label);

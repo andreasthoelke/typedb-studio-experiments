@@ -104,8 +104,31 @@ try {
  await query.waitForFunction(()=>!!window.ng.getComponent(document.querySelector('ts-query-page')).currentRun.graph.visualiser);
  assert.equal(await query.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).snapshotMode),false);
  assert.equal(await query.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.graph.order),next.graph.nodes.length);
+ // A working subset remains an expandable normal run, including after save and remount.
+ const whole=await query.evaluate(key=>{
+  const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;
+  v.stopLayout();const saved=structuredClone(v.graph.export());
+  v.elementSelection.replace([key]);v.isolateSelection();v.stopLayout();
+  return saved;
+ },inspected);
+ await query.getByRole('tab',{name:'Explorer',exact:true}).click();
+ await query.waitForFunction(()=>{const e=window.ng.getComponent(document.querySelector('ts-graph-instance-explorer'));return e?.hasSelection&&!e.state.loading;});
+ await explorer.locator('.detail-section').filter({has:query.getByRole('heading',{name:'Attributes',exact:true})}).getByRole('button',{name:'Add all to graph',exact:true}).click();
+ await query.waitForFunction(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.graph.order>1);
+ assert.equal(await query.evaluate(()=>{const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;return v.graph.nodes().every(key=>v.elementSelection.nodes.has(key));}),true,'New Explorer nodes join the working selection');
+ const workingFile=await save();
+ await query.evaluate(filename=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).openSavedSnap(filename),workingFile.filename);
+ assert.equal(await query.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.hasWorkingContext),true);
+ await query.locator('.dock-kebab').click();await query.getByRole('menuitem',{name:'Dock to right',exact:true}).click();
+ await query.waitForTimeout(300);
+ await query.getByRole('button',{name:'Restore context',exact:true}).first().click();
+ const fullAgain=await query.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.graph.export());
+ for(const node of whole.nodes){
+  const current=fullAgain.nodes.find(n=>n.key===node.key);assert.ok(current,'Original node restored');
+  assert.equal(current.attributes.x,node.attributes.x);assert.equal(current.attributes.y,node.attributes.y);
+ }
  assert.deepEqual(errors,[]);
- console.log('PASS live snap restores exact graph/camera/query without rerunning, updates Schema, exposes here/every, expands attributes and relations, hides/shows, survives docking, saves a separate expanded snap, and remains available as a pinned run after the next Neovim query');
+ console.log('PASS working subset expansion, save/open, remount and context restoration; live snap restores exact graph/camera/query without rerunning, updates Schema, exposes here/every, expands attributes and relations, hides/shows, survives docking, saves a separate expanded snap, and remains available as a pinned run after the next Neovim query');
 } catch(error) {
  console.error(errors);console.error(await query.locator('body').innerText());throw error;
 } finally {

@@ -1,7 +1,7 @@
 export interface GraphSelectionSnapshot {
     active: boolean;
     nodes: string[];
-    neighborhoods?: { base: string[]; groups: [string, string[]][] };
+    neighborhoods?: { base: string[]; groups: [string, string[]][]; excluded?: string[] };
 }
 
 /** One result-local node selection, shared by finder, type chips, and Explorer. */
@@ -22,7 +22,8 @@ export class GraphElementSelection {
         if (groups && Array.isArray(groups.base) && groups.base.every(key => typeof key === "string") &&
             Array.isArray(groups.groups) && groups.groups.every(entry => Array.isArray(entry) &&
                 typeof entry[0] === "string" && Array.isArray(entry[1]) && entry[1].every(key => typeof key === "string"))) {
-            this.neighborhoods = { base: [...groups.base], groups: groups.groups.map(([anchor, keys]) => [anchor, [...keys]]) };
+            this.neighborhoods = { base: [...groups.base], groups: groups.groups.map(([anchor, keys]) => [anchor, [...keys]]),
+                excluded: Array.isArray(groups.excluded) ? groups.excluded.filter(key => typeof key === "string") : [] };
         }
     }
 
@@ -32,6 +33,15 @@ export class GraphElementSelection {
     }
 
     toggle(keys: string[]): void { this.set(keys, this.status(keys) !== "all"); }
+
+    /** Newly loaded context joins an active selection without losing group/exclusion edits. */
+    includeAddedNodes(keys: string[]): void {
+        if (!this.active || !keys.length) return;
+        if (this.neighborhoods) {
+            this.neighborhoods.base = [...new Set([...this.neighborhoods.base, ...keys])];
+            this.rebuildNeighborhoods();
+        } else this.set(keys, true);
+    }
 
     set(keys: string[], selected: boolean): void {
         this.neighborhoods = undefined;
@@ -64,8 +74,28 @@ export class GraphElementSelection {
         if (groups.has(anchor)) groups.delete(anchor);
         else groups.set(anchor, [...new Set([anchor, ...keys])]);
         this.neighborhoods.groups = [...groups];
+        this.rebuildNeighborhoods();
+    }
+
+    /** An exact node edit wins over overlapping neighborhoods, including future additions. */
+    toggleSingle(key: string, initial: string[] = []): void {
+        this.neighborhoods ??= { base: this.active ? [...this.nodes] : [...initial], groups: [] };
+        const selected = this.active ? this.nodes.has(key) : initial.includes(key);
+        const excluded = new Set(this.neighborhoods.excluded);
+        if (selected) excluded.add(key);
+        else {
+            excluded.delete(key);
+            if (!this.neighborhoods.base.includes(key)) this.neighborhoods.base.push(key);
+        }
+        this.neighborhoods.excluded = [...excluded];
+        this.rebuildNeighborhoods();
+    }
+
+    private rebuildNeighborhoods(): void {
+        const { base, groups, excluded = [] } = this.neighborhoods!;
         this.nodes.clear();
-        for (const key of [...this.neighborhoods.base, ...[...groups.values()].flat()]) this.nodes.add(key);
+        for (const key of [...base, ...groups.flatMap(([, keys]) => keys)]) this.nodes.add(key);
+        for (const key of excluded) this.nodes.delete(key);
         this.active = true;
         this.publish();
     }
@@ -76,6 +106,7 @@ export class GraphElementSelection {
         if (this.neighborhoods) snapshot.neighborhoods = {
             base: [...this.neighborhoods.base],
             groups: this.neighborhoods.groups.map(([anchor, keys]) => [anchor, [...keys]]),
+            excluded: [...(this.neighborhoods.excluded ?? [])],
         };
         this.changed(snapshot);
     }

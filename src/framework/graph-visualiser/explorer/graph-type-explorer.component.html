@@ -44,6 +44,8 @@
                     [disabled]="!schemaNodeKey(selectedType)" [attr.aria-pressed]="isInGraphSelection">
               {{ isInGraphSelection ? 'Remove from selection' : 'Add to selection' }}
             </button>
+            <button class="open-details-button" (click)="removeFromGraph()" [disabled]="!schemaNodeKey(selectedType)"
+                    matTooltip="Remove from this graph and its layout. Restore context brings it back; the schema is unchanged.">Remove from graph</button>
           </div>
           @for (section of schemaSections; track section.title) {
             <div class="detail-section schema-connections">

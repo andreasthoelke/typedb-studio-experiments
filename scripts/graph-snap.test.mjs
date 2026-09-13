@@ -25,3 +25,40 @@ test('invalid or future snaps are rejected before rendering',()=>{
  }
  assert.throws(()=>parseGraphSnap('{"__proto__":{}}'));
 });
+
+
+import { MultiGraph } from 'graphology';
+import { rememberWorkingContext, restoreWorkingContext } from '../src/framework/util/graph-working-context.ts';
+
+test('working subsets restore topology and original positions, preserve additions and do not nest', () => {
+ const graph = new MultiGraph();
+ const original = snap();
+ graph.import(original.graph);
+ graph.addNode('title', {...structuredClone(original.graph.nodes[0].attributes), x:100});
+ graph.addEdgeWithKey('owns', 'n', 'title', {type:'line', color:'#112233', size:1});
+ rememberWorkingContext(graph, original.view);
+ graph.dropNode('title');
+ graph.setNodeAttribute('n', 'x', 800);
+ graph.addNode('new', {...structuredClone(original.graph.nodes[0].attributes), x:500});
+ graph.addEdgeWithKey('new-edge', 'n', 'new', {type:'line', color:'#112233', size:1});
+ rememberWorkingContext(graph, {...original.view, camera:{...original.view.camera, ratio:4}});
+ assert.equal(graph.getAttribute('workingContext').nodes.length, 2, 'repeated reductions keep one original context');
+ const reduced = {...original, graph:graph.export()};
+ const restored = new MultiGraph();
+ restored.import(parseGraphSnap(JSON.stringify(reduced)).graph);
+ assert.equal(restored.hasNode('title'), false, 'excluded nodes are not in the graph used by the force layout');
+ const context = restoreWorkingContext(restored);
+ assert.deepEqual(context.camera, original.view.camera);
+ assert.equal(restored.getNodeAttribute('n','x'),12);
+ assert.equal(restored.getNodeAttribute('new','x'),500);
+ assert.deepEqual(restored.edges().sort(),['new-edge','owns']);
+ assert.equal(restored.hasAttribute('workingContext'),false);
+ assert.equal(graph.hasNode('title'),false,'restoration must not mutate its source snap');
+});
+
+test('invalid parked context is rejected before it can later enter the renderer', () => {
+ const value=snap();
+ value.graph.attributes.workingContext={nodes:structuredClone(value.graph.nodes),edges:[],camera:value.view.camera,bbox:value.view.bbox};
+ value.graph.attributes.workingContext.nodes[0].attributes.x=null;
+ assert.throws(()=>parseGraphSnap(JSON.stringify(value)));
+});

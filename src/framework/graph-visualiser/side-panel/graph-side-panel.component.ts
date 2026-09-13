@@ -90,8 +90,8 @@ export class GraphSidePanelComponent implements OnChanges, OnDestroy, DoCheck {
         const key = this.snapshotNodeKey;
         return key ? this.visualiser!.savedNodeAttributes(key).map(([label, values]) => [label, values.map(v => String(v)).join(", ")]) : [];
     }
-    toggleSnapshotSelection(): void { if (this.snapshotNodeKey) this.visualiser?.elementSelection.toggle([this.snapshotNodeKey]); }
-    get snapshotSelected(): boolean { return !!this.snapshotNodeKey && !!this.visualiser?.elementSelection.nodes.has(this.snapshotNodeKey); }
+    toggleSnapshotSelection(): void { if (this.snapshotNodeKey) this.visualiser?.toggleNodeSelection(this.snapshotNodeKey); }
+    get snapshotSelected(): boolean { return !!this.snapshotNodeKey && !!this.visualiser?.isNodeInSelection(this.snapshotNodeKey); }
 
 
     /** Emitted when the user flips the inspector-header mode toggle. The host

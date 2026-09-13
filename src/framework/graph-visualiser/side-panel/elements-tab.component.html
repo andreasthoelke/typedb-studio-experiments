@@ -6,6 +6,18 @@
       <button class="highlight-action-button" (click)="clearSelection()" title="Clear the selection and restore normal highlighting">Clear</button>
     </div>
   </div>
+  <div class="highlight-group-header">
+    <span class="highlight-group-label">{{ visualiser?.hasWorkingContext ? 'Working graph' : 'Layout' }}</span>
+    <div class="highlight-group-actions">
+      <button class="highlight-action-button" (click)="visualiser?.isolateSelection()"
+              [disabled]="!visualiser?.highlightedNodeKeys()?.length"
+              title="Lay out only highlighted nodes and their connecting edges. The original context is kept for restoration.">Isolate &amp; layout</button>
+      @if (visualiser?.hasWorkingContext) {
+        <button class="highlight-action-button" (click)="visualiser?.restoreContext()"
+                title="Bring back the original context and positions, keeping additions">Restore context</button>
+      }
+    </div>
+  </div>
   <div class="highlight-group" role="group" aria-label="Kinds">
     <div class="highlight-group-header">
       <span class="highlight-group-label">Kinds</span>

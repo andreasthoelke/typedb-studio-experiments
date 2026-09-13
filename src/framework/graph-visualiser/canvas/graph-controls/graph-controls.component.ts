@@ -38,8 +38,8 @@ export class GraphControlsComponent {
 
     /** When something is selected, frame it; otherwise reset to the global view. */
     resetOrFocus(): void {
-        if (this.visualiser?.interactionHandler?.state?.selectedNode != null) {
-            this.visualiser.focusSelection();
+        if (this.visualiser && (this.visualiser.elementSelection.active || this.visualiser.highlightedNodeKeys().length)) {
+            this.visualiser.focusHighlightedNodes();
         } else {
             this.visualiser?.centerCamera();
         }

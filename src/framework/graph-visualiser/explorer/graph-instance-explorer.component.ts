@@ -291,12 +291,17 @@ export class GraphInstanceExplorerComponent implements OnChanges {
 
     get isInGraphSelection(): boolean {
         const key = this.selfNodeKey;
-        return key != null && !!this.visualiser?.elementSelection.nodes.has(key);
+        return key != null && !!this.visualiser?.isNodeInSelection(key);
     }
 
     toggleGraphSelection(): void {
         const key = this.selfNodeKey;
-        if (key != null) this.visualiser?.elementSelection.toggle([key]);
+        if (key != null) this.visualiser?.toggleNodeSelection(key);
+    }
+
+    removeFromGraph(): void {
+        const key = this.selfNodeKey;
+        if (key != null) this.visualiser?.removeFromGraph(key);
     }
 
     appearanceEnabled(flag: "viewHidden" | "viewDimmed"): boolean {

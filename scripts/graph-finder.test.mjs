@@ -82,3 +82,38 @@ test('neighborhood groups survive snaps and preserve independently selected node
  restored.toggleNeighborhood('z', []);
  assert.deepEqual([...restored.nodes], ['z']);
 });
+
+
+test('exact node edits override original and overlapping neighborhoods, including after a snap', () => {
+ let saved;
+ const selection = new GraphElementSelection(undefined, state => saved = state);
+ selection.toggleSingle('title', ['scene', 'title']);
+ assert.deepEqual([...selection.nodes], ['scene'], 'can subtract from ordinary inspection');
+ selection.toggleNeighborhood('depiction', ['title', 'scene']);
+ assert.equal(selection.nodes.has('title'), false, 'a later group cannot undo the exact exclusion');
+ selection.toggleSingle('scene');
+ assert.equal(selection.nodes.has('scene'), false, 'can subtract an original base node shared by a group');
+ const restored = new GraphElementSelection(JSON.parse(JSON.stringify(saved)));
+ restored.toggleNeighborhood('slot', ['scene', 'title']);
+ assert.deepEqual([...restored.nodes].sort(), ['depiction', 'slot']);
+ restored.toggleSingle('title');
+ assert.equal(restored.nodes.has('title'), true, 'exact toggle re-adds just that node');
+ restored.toggleSingle('title');
+ assert.equal(restored.nodes.has('title'), false);
+ restored.replace(['title']);
+ assert.deepEqual([...restored.nodes], ['title'], 'All/None/type/finder edits deliberately establish a new selection');
+});
+
+
+test('new Explorer nodes join an active selection without discarding exclusions or groups', () => {
+ const selection=new GraphElementSelection();
+ selection.toggleNeighborhood('scene',['title']);selection.toggleSingle('title');
+ selection.includeAddedNodes(['depiction']);
+ assert.deepEqual([...selection.nodes].sort(),['depiction','scene']);
+ selection.toggleNeighborhood('scene',['title']);
+ assert.deepEqual([...selection.nodes],['depiction']);
+ selection.toggleNeighborhood('slot',['title']);
+ assert.equal(selection.nodes.has('title'),false);
+ selection.clear();selection.includeAddedNodes(['title']);
+ assert.equal(selection.active,false,'ordinary inspection continues to handle expansion highlighting');
+});

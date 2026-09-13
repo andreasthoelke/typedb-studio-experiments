@@ -161,17 +161,23 @@ export class GraphTypeExplorerComponent implements DoCheck {
     }
 
     schemaNodeKey(type: SchemaExplorerType | null): string | undefined {
-        return type ? this.schemaNodeKeys.get(type.label) : undefined;
+        const key = type ? this.schemaNodeKeys.get(type.label) : undefined;
+        return key && this.visualiser?.graph.hasNode(key) ? key : undefined;
     }
 
     get isInGraphSelection(): boolean {
         const key = this.schemaNodeKey(this.selectedType);
-        return key != null && !!this.visualiser?.elementSelection.nodes.has(key);
+        return key != null && !!this.visualiser?.isNodeInSelection(key);
     }
 
     toggleGraphSelection(): void {
         const key = this.schemaNodeKey(this.selectedType);
-        if (key != null) this.visualiser?.elementSelection.toggle([key]);
+        if (key != null) this.visualiser?.toggleNodeSelection(key);
+    }
+
+    removeFromGraph(): void {
+        const key = this.schemaNodeKey(this.selectedType);
+        if (key != null) this.visualiser?.removeFromGraph(key);
     }
 
     schemaAppearance(flag: "viewHidden" | "viewDimmed", type = this.selectedType): boolean {

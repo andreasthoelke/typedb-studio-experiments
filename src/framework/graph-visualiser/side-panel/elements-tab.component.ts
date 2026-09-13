@@ -237,6 +237,8 @@ export class ElementsTabComponent implements OnChanges, DoCheck {
     }
 
     focusSelection(event?: Event): void {
+        // Enter in the filter frames the selection; native buttons keep their own activation.
+        if (event?.target instanceof Element && event.target.closest("button")) return;
         event?.preventDefault();
         event?.stopPropagation();
         this.visualiser?.focusHighlightedNodes();

@@ -5,6 +5,7 @@ import {
 } from "@typedb/driver-http";
 import type { GraphSnap } from "../../util/graph-snap";
 import { GraphElementSelection } from "../../util/graph-element-selection";
+import { rememberWorkingContext, restoreWorkingContext } from "../../util/graph-working-context";
 import type { GraphFinderEntry } from "../../util/graph-finder";
 import chroma from "chroma-js";
 import Sigma from "sigma";
@@ -433,6 +434,7 @@ export class GraphVisualiser {
     }
 
     reLayout(): void {
+        this.layout.stop();
         this.autoZoomEnabled = true;
         this.peakCameraRatio = 0;
         this.pinnedCameraWorld = null;
@@ -641,8 +643,10 @@ export class GraphVisualiser {
             // alone so the user's focused view isn't yanked away. The
             // inspector kicks its own `reheat({ preserveCamera })` after.
             const wasEmpty = this.graph.order === 0;
+            const previousNodes = this.elementSelection.active ? new Set(this.graph.nodes()) : null;
             this.state.activeQueryDatabase = database;
             this.handleQueryResult(res);
+            if (previousNodes) this.elementSelection.includeAddedNodes(this.graph.nodes().filter(key => !previousNodes.has(key)));
             if (this.styleService.degreeScaling) this.applyStyleUpdate();
             if (wasEmpty && this.graph.order > 0) {
                 this.autoZoomEnabled = true;
@@ -1011,11 +1015,16 @@ export class GraphVisualiser {
      *  highlight set. Does NOT reheat — the caller reheats once after a batch of
      *  unloads (see the context menu's `unloadConnections`). */
     private dropNodes(nodeKeys: Iterable<string>): void {
+        const keys = [...nodeKeys].filter(key => this.graph.hasNode(key));
+        if (!keys.length) return;
+        this.rememberContext();
         let dropped = 0;
-        for (const key of nodeKeys) {
+        for (const key of keys) {
             if (this.graph.hasNode(key)) { this.graph.dropNode(key); dropped++; }
         }
         if (dropped > 0) {
+            const inspected = this.interactionHandler.state.selectedNode;
+            if (inspected && !this.graph.hasNode(inspected)) this.interactionHandler.clearSelection();
             const removed = [...this.elementSelection.nodes].filter(key => !this.graph.hasNode(key));
             if (removed.length) this.elementSelection.set(removed, false);
             this.interactionHandler.recomputeHighlightSet();
@@ -1172,18 +1181,74 @@ export class GraphVisualiser {
     }
 
     focusHighlightedNodes(): void {
+        const keys = this.highlightedNodeKeys();
         if (this.elementSelection.active) {
-            const keys = [...this.elementSelection.nodes].filter(key => this.graph.hasNode(key));
             for (const key of keys) this.setNodeAppearance(key, "viewHidden", false);
-            this.focusNodesSmoothly(keys);
-            return;
         }
+        this.focusNodesSmoothly(keys);
+    }
+
+    /** The same effective set for Enter, exact selection edits, and isolation. */
+    highlightedNodeKeys(): string[] {
+        if (this.elementSelection.active) return [...this.elementSelection.nodes].filter(key => this.graph.hasNode(key));
         const reducer = this.sigma.getSetting("nodeReducer")!;
-        const keys = this.graph.nodes().filter(key => {
+        return this.graph.nodes().filter(key => {
             const data = reducer(key, this.graph.getNodeAttributes(key));
             return !data.hidden && (data.zIndex ?? 0) > 0;
         });
-        this.focusNodesSmoothly(keys);
+    }
+
+    isNodeInSelection(key: string): boolean {
+        return this.elementSelection.active ? this.elementSelection.nodes.has(key) : this.highlightedNodeKeys().includes(key);
+    }
+
+    toggleNodeSelection(key: string): void {
+        this.elementSelection.toggleSingle(key, this.highlightedNodeKeys());
+    }
+
+    get hasWorkingContext(): boolean { return !!this.graph.getAttribute("workingContext"); }
+
+    private rememberContext(): void {
+        this.layout.stop();
+        rememberWorkingContext(this.graph, { camera: this.sigma.getCamera().getState(),
+            bbox: this.sigma.getCustomBBox() ?? this.sigma.getBBox() });
+    }
+
+    /** Only these nodes and their induced edges participate in the new force layout. */
+    isolateSelection(): void {
+        const keys = this.highlightedNodeKeys();
+        if (!keys.length) return;
+        this.rememberContext();
+        const keep = new Set(keys);
+        this.dropNodes(this.graph.nodes().filter(key => !keep.has(key)));
+        for (const key of keys) this.setNodeAppearance(key, "viewHidden", false);
+        this.elementSelection.replace(keys);
+        this.reLayout();
+    }
+
+    /** Removing loaded data is a view edit, never a database deletion or an automatic layout. */
+    removeFromGraph(key: string): void {
+        if (!this.graph.hasNode(key)) return;
+        this.rememberContext();
+        this.freezeViewport();
+        this.dropNodes([key]);
+        this.sigma.refresh();
+    }
+
+    restoreContext(): void {
+        if (!this.hasWorkingContext) return;
+        this.layout.stop();
+        this.autoZoomEnabled = false;
+        this.pinnedCameraWorld = null;
+        const context = restoreWorkingContext(this.graph)!;
+        this.layout.forgetSettled();
+        this.applyStyleUpdate();
+        this.applyEdgeStyleUpdate();
+        refreshInstanceLabels(this.graph, this.displayAttributes, this.labelOverridesByType);
+        this.interactionHandler.recomputeHighlightSet();
+        this.sigma.setCustomBBox(context.bbox);
+        this.sigma.refresh();
+        this.sigma.getCamera().setState(context.camera);
     }
 
     focusSearchMatches(): void {

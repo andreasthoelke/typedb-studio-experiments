@@ -81,5 +81,15 @@ export function parseGraphSnap(text: string): GraphSnap {
     if (snap.database !== undefined && typeof snap.database !== "string") fail();
     if (snap.project && (typeof snap.project.database !== "string" || typeof snap.project.projectTempDirectory !== "string")) fail();
     snap.style = parseGraphPresets(JSON.stringify(snap.style))[0];
+    const context = snap.graph.attributes?.workingContext;
+    if (context) {
+        // Validate the parked topology with the same rules before it can be restored.
+        // Context contains no graph attributes, so validation cannot recurse into another context.
+        parseGraphSnap(JSON.stringify({ ...snap,
+            graph: { attributes: {}, nodes: context.nodes, edges: context.edges },
+            view: { ...v, camera: context.camera, bbox: context.bbox, selectedNode: null,
+                selectedNeighbors: [], finderMatches: null },
+        }));
+    }
     return snap;
 }

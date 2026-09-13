@@ -58,6 +58,8 @@
                       [attr.aria-pressed]="isInGraphSelection">
                 {{ isInGraphSelection ? 'Remove from selection' : 'Add to selection' }}
               </button>
+              <button class="open-details-button" (click)="removeFromGraph()" [disabled]="!selfNodeKey"
+                      matTooltip="Remove from this graph and its layout. Restore context brings it back; the database is unchanged.">Remove from graph</button>
             </div>
           </div>
 

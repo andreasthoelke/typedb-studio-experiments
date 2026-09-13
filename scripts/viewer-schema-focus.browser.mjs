@@ -64,6 +64,23 @@ try {
  assert.equal(await schema.evaluate(()=>localStorage.getItem('typedb-studio-nvim-options')),otherTabOptions,'Schema refocus must not overwrite data augmentation preferences');
  await schema.waitForFunction(()=>!window.ng.getComponent(document.querySelector('ts-schema-page')).bridge.pending);
  assert.deepEqual(await selection(),selected);
+ const stableSchema=await schema.evaluate(()=>{
+  const v=window.ng.getComponent(document.querySelector('ts-schema-page')).state.visualiser.visualiser;
+  v.stopLayout();const saved=structuredClone(v.graph.export());v.isolateSelection();v.stopLayout();
+  if(!v.hasWorkingContext||v.graph.order>=saved.nodes.length) throw new Error('Schema was not reduced');
+  return saved;
+ });
+ await waitSchema(await send(source));
+ const restoredSchema=await schema.evaluate(()=>{
+  const v=window.ng.getComponent(document.querySelector('ts-schema-page')).state.visualiser.visualiser;
+  if(v.hasWorkingContext) throw new Error('New source did not restore the stable schema context');
+  return v.graph.export();
+ });
+ assert.equal(restoredSchema.nodes.length,stableSchema.nodes.length);
+ for(const node of stableSchema.nodes){
+  const current=restoredSchema.nodes.find(n=>n.key===node.key);
+  assert.equal(current.attributes.x,node.attributes.x);assert.equal(current.attributes.y,node.attributes.y);
+ }
  await schema.getByRole('button',{name:'Neovim · following',exact:true}).click();
  await schema.waitForURL('**/schema?nvim=0');
  await send('match $item isa goal;');
@@ -87,7 +104,7 @@ try {
  assert.deepEqual(await selection(),selected);
  assert.match(await schema.evaluate(()=>window.ng.getComponent(document.querySelector('ts-schema-page')).bridge.message),/No explicit type names/);
  assert.deepEqual(errors,[]);
- console.log('PASS parallel Query/Schema, roles and players, no data execution in Schema, docking and selection edits, pause/resume with replay, project snap provenance, schema refresh, saved-view exit, unknown-type fallback');
+ console.log('PASS full schema positions restored after working subset; parallel Query/Schema, roles and players, no data execution in Schema, docking and selection edits, pause/resume with replay, project snap provenance, schema refresh, saved-view exit, unknown-type fallback');
 } catch(error) {
  console.error(errors);
  console.error(await schema.locator('body').innerText());
