@@ -1,3 +1,4 @@
+import { checkRoleEdges } from "./role-edges.browser-checks.mjs";
 /** Live read-only smoke check: restore saved results, then expand them with the normal Explorer.
  * Requires a built local viewer and an existing TypeDB database containing motivation/goal/scene.
  * Set PLAYWRIGHT_MODULE, TYPEDB_TEST_CONNECTION, TYPEDB_TEST_DATABASE as needed.
@@ -10,6 +11,9 @@ import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createViewerServer } from './viewer-server.mjs';
+import { checkGraphNavigation } from './graph-navigation.browser-checks.mjs';
+import { checkGraphCustomise } from './graph-customise.browser-checks.mjs';
+import { checkEditorCaret } from './editor-caret.browser-checks.mjs';
 let playwright;
 if(process.env.PLAYWRIGHT_MODULE) playwright=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href);
 else {
@@ -127,6 +131,10 @@ try {
   const current=fullAgain.nodes.find(n=>n.key===node.key);assert.ok(current,'Original node restored');
   assert.equal(current.attributes.x,node.attributes.x);assert.equal(current.attributes.y,node.attributes.y);
  }
+ await checkGraphNavigation(query, 'query');
+    await checkGraphCustomise(query, 'query');
+ await checkEditorCaret(query,schema,database);
+ await checkRoleEdges(query,database);
  assert.deepEqual(errors,[]);
  console.log('PASS working subset expansion, save/open, remount and context restoration; live snap restores exact graph/camera/query without rerunning, updates Schema, exposes here/every, expands attributes and relations, hides/shows, survives docking, saves a separate expanded snap, and remains available as a pinned run after the next Neovim query');
 } catch(error) {

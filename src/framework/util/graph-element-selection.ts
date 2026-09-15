@@ -4,7 +4,7 @@ export interface GraphSelectionSnapshot {
     neighborhoods?: { base: string[]; groups: [string, string[]][]; excluded?: string[] };
 }
 
-/** One result-local node selection, shared by finder, type chips, and Explorer. */
+/** One result-local node selection, shared by modifier navigation, type chips, and Explorer. */
 export class GraphElementSelection {
     active: boolean;
     readonly nodes: Set<string>;
@@ -64,7 +64,7 @@ export class GraphElementSelection {
 
     /** Preserve overlap and pre-existing explicit selection when toggling a group off.
      * A plain inspected node can seed the first group when no explicit selection exists.
-     * Finder/type-chip edits deliberately establish a new base via set/replace/clear.
+     * Type-chip edits deliberately establish a new base via set/replace/clear.
      */
     toggleNeighborhood(anchor: string, keys: string[], initial?: [string, string[]]): void {
         if (!this.neighborhoods) {

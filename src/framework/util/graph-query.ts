@@ -158,9 +158,10 @@ export function prepareGraphQuery(source: string, options: GraphQueryOptions,
         return variable;
     };
     const player = fresh("player");
+    const role = fresh("role");
     if (seed.type.kind === "relationType") {
         if (!roleLabels(seed.type, "relatedRoles", !seed.exact).size) return { query, note: `${note} The seed relation has no roles to expand.` };
-        query += `\n\n# Graph context: role players of ${seed.variable}\nmatch\ntry {\n  ${seed.variable} links (${player});\n};`;
+        query += `\n\n# Graph context: role players of ${seed.variable}\nmatch\ntry {\n  ${seed.variable} links (${role}: ${player});\n};`;
         note = `Showing role players of ${seed.variable}. Relation filters apply to entity neighbours.`;
     } else {
         if (!roleLabels(seed.type, "playedRoles", !seed.exact).size) return { query, note: `${note} The seed type plays no relation roles.` };
@@ -171,7 +172,7 @@ export function prepareGraphQuery(source: string, options: GraphQueryOptions,
         }
         const relation = fresh("relation");
         const filter = relationLabels.length ? "\n  " + relationLabels.map(label => `{ ${relation} isa ${label}; }`).join(" or ") + ";" : "";
-        query += `\n\n# Graph context: one relation hop from ${seed.variable}\nmatch\ntry {\n  ${relation} links (${seed.variable});${filter}\n  ${relation} links (${player});\n};`;
+        query += `\n\n# Graph context: one relation hop from ${seed.variable}\nmatch\ntry {\n  ${relation} links (${role}: ${seed.variable});${filter}\n  ${relation} links (${fresh("other_role")}: ${player});\n};`;
         note = `Showing one relation hop from ${seed.variable}${relationLabels.length ? ` through ${relationLabels.join(", ")}` : ""}.`;
         if (excluded.length) note += ` Skipped incompatible relation types: ${excluded.join(", ")}.`;
     }

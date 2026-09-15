@@ -1,5 +1,6 @@
+import { edgeRoleLabel, edgeStyleKey } from "../../util/graph-edge";
 import { LINE_STYLE_OPTIONS, LineStyle } from "../../util/line-style";
-import { Component, inject, Input, OnChanges, SimpleChanges } from "@angular/core";
+import { AfterViewChecked, Component, DoCheck, ElementRef, inject, Input, OnChanges, OnDestroy, SimpleChanges } from "@angular/core";
 import { CommonModule } from "@angular/common";
 import { MatSelectModule } from "@angular/material/select";
 import { MatTooltipModule } from "@angular/material/tooltip";
@@ -9,6 +10,12 @@ import { MatSlideToggleModule } from "@angular/material/slide-toggle";
 import { GraphStyleService, GraphBackgroundType, DEFAULT_BACKGROUND } from "../../../service/graph-style.service";
 import { GraphVisualiser } from "../engine";
 import { VertexKind } from "@typedb/graph-utils";
+
+import { StorageService } from "../../../service/storage.service";
+
+type CustomiseSection = "settings" | "kinds" | "types" | "edges";
+const SECTION_DEFAULTS: Record<CustomiseSection, boolean> = { settings: false, kinds: false, types: true, edges: false };
+const SECTION_STORAGE_KEY = "graphCustomiseSections";
 
 interface KindRow {
     kind: VertexKind;
@@ -68,12 +75,14 @@ function kindOrder(kind: string): number { return KIND_ORDER[kind] ?? Infinity; 
         MatFormFieldModule, MatInputModule, MatSlideToggleModule,
     ],
 })
-export class CustomiseTabComponent implements OnChanges {
+export class CustomiseTabComponent implements OnChanges, OnDestroy, DoCheck, AfterViewChecked {
 
+    @Input() edgeStyleRequest = 0;
     @Input() visualiser: GraphVisualiser | null = null;
 
     styleService = inject(GraphStyleService);
     readonly lineStyles = LINE_STYLE_OPTIONS;
+    getTypeLineThickness(typeLabel: string): number | string { return this.styleService.typeStyles[typeLabel]?.lineThickness ?? ""; }
     getTypeLineStyle(typeLabel: string): string { return this.styleService.typeStyles[typeLabel]?.lineStyle ?? "inherit"; }
     setTypeLineStyle(typeLabel: string, style: LineStyle | "inherit"): void {
         if (style === "inherit") this.styleService.clearTypeLineStyle(typeLabel);
@@ -84,12 +93,88 @@ export class CustomiseTabComponent implements OnChanges {
     }
     activeTab: "graph" | "background" = "graph";
 
-    settingsCollapsed = false;
-    kindsCollapsed = false;
-    /** Default-collapsed: each row in this section is heavy (color + mat-select + two number
-     *  inputs), so on large schemas auto-expanding it freezes the app. */
-    typesCollapsed = true;
-    edgesCollapsed = false;
+    private storage = inject(StorageService);
+    private host = inject<ElementRef<HTMLElement>>(ElementRef);
+    // UI preferences stay separate from graph styling and captured presets.
+    private collapsed = this.storage.read(SECTION_STORAGE_KEY, raw => {
+        const result = { ...SECTION_DEFAULTS };
+        for (const section of Object.keys(result) as CustomiseSection[]) {
+            const value = (raw as Partial<typeof result> | null)?.[section];
+            if (typeof value === "boolean") result[section] = value;
+        }
+        return result;
+    });
+    get settingsCollapsed() { return this.collapsed.settings; }
+    get kindsCollapsed() { return this.collapsed.kinds; }
+    get typesCollapsed() { return this.collapsed.types; }
+    get edgesCollapsed() { return this.collapsed.edges; }
+
+    toggleSection(section: CustomiseSection): void {
+        this.collapsed[section] = !this.collapsed[section];
+        this.storage.write(SECTION_STORAGE_KEY, this.collapsed);
+        if (section === "types" && !this.typesCollapsed) {
+            this.refreshDiscoveredTypes(); this.revealCaretPending = true;
+        }
+    }
+
+    caretType: string | null = null;
+    private roleGraph: GraphVisualiser["graph"] | null = null;
+    private rolesDirty = true;
+    private markRolesDirty = () => { this.rolesDirty = true; };
+    ngOnDestroy(): void {
+        this.roleGraph?.off("edgeAdded", this.markRolesDirty);
+        this.roleGraph?.off("edgeDropped", this.markRolesDirty);
+        this.roleGraph?.off("edgesCleared", this.markRolesDirty);
+    }
+    private observedVisualiser: GraphVisualiser | null = null;
+    private observedCaret: string | null = null;
+    private observedOrder = -1;
+    private observedSize = -1;
+    private observedEdge: string | null = null;
+    inspectedEdgeStyle: string | null = null;
+    private revealCaretPending = false;
+
+    ngDoCheck(): void {
+        const v = this.visualiser, caret = v?.navigation.caret ?? null;
+        if (this.roleGraph !== (v?.graph ?? null)) {
+            this.ngOnDestroy(); this.roleGraph = v?.graph ?? null; this.rolesDirty = true;
+            this.roleGraph?.on("edgeAdded", this.markRolesDirty);
+            this.roleGraph?.on("edgeDropped", this.markRolesDirty);
+            this.roleGraph?.on("edgesCleared", this.markRolesDirty);
+        }
+        const edge = v?.interactionHandler.inspectedEdge ?? null;
+        const graphChanged = v !== this.observedVisualiser || (v?.graph.order ?? -1) !== this.observedOrder || (v?.graph.size ?? -1) !== this.observedSize;
+        if (graphChanged || this.rolesDirty || caret !== this.observedCaret || edge !== this.observedEdge) {
+            this.observedSize = v?.graph.size ?? -1; this.observedEdge = edge;
+            this.inspectedEdgeStyle = edge && v?.graph.hasEdge(edge) ? edgeStyleKey(v.graph.getEdgeAttributes(edge)) : null;
+            this.refreshRoleStyles(); this.rolesDirty = false;
+            this.observedVisualiser = v; this.observedOrder = v?.graph.order ?? -1; this.observedCaret = caret;
+            const concept = caret && v?.graph.hasNode(caret) ? v.graph.getNodeAttribute(caret, "metadata")?.concept : null;
+            this.caretType = concept && "type" in concept ? concept.type.label
+                : concept && "label" in concept && !["expression", "functionCall"].includes(concept.kind) ? concept.label : null;
+            if (graphChanged) this.refreshDiscoveredTypes();
+            else this.recomputeDisplayedTypes();
+            this.revealCaretPending = true;
+        }
+    }
+
+    revealCaretStyle(): void {
+        if (this.typesCollapsed) this.toggleSection("types");
+        this.activeTab = "graph";
+        this.revealCaretPending = true;
+    }
+
+    ngAfterViewChecked(): void {
+        if (!this.revealCaretPending || (this.inspectedEdgeStyle ? this.edgesCollapsed : this.typesCollapsed) || this.activeTab !== "graph") return;
+        this.revealCaretPending = false;
+        const row = this.host.nativeElement.querySelector<HTMLElement>(this.inspectedEdgeStyle ? ".style-row.inspected-edge-style" : ".style-row.caret-style");
+        const panel = this.host.nativeElement.closest<HTMLElement>(".panel-scroll");
+        if (!row || !panel) return;
+        // Scroll only this panel; scrollIntoView can also move the graph/page.
+        const rect = row.getBoundingClientRect(), box = panel.getBoundingClientRect();
+        if (rect.top < box.top) panel.scrollTop -= box.top - rect.top;
+        else if (rect.bottom > box.bottom) panel.scrollTop += Math.min(rect.bottom - box.bottom, rect.top - box.top);
+    }
 
     readonly displayKinds = DISPLAY_KINDS;
     readonly shapes = AVAILABLE_SHAPES;
@@ -106,14 +191,36 @@ export class CustomiseTabComponent implements OnChanges {
     displayedTypes: TypeRow[] = [];
     typeOverflow = 0;
 
+    roleFilter = "";
+    roleStyles: EdgeLabelRow[] = [];
+    get filteredRoleStyles(): EdgeLabelRow[] {
+        const filter = this.roleFilter.trim().toLocaleLowerCase();
+        return this.roleStyles.filter(row => row.tag === this.inspectedEdgeStyle || row.tag.toLocaleLowerCase().includes(filter));
+    }
+    get displayedRoleStyles(): EdgeLabelRow[] {
+        const rows = this.filteredRoleStyles, inspected = rows.find(row => row.tag === this.inspectedEdgeStyle);
+        return inspected ? [inspected, ...rows.filter(row => row !== inspected).slice(0, 99)] : rows.slice(0, 100);
+    }
+    get roleOverflow(): number { return Math.max(0, this.filteredRoleStyles.length - 100); }
+    private refreshRoleStyles(): void {
+        const roles = new Set<string>();
+        this.visualiser?.graph.forEachEdge((_edge, attrs) => { const role = edgeRoleLabel(attrs); if (role) roles.add(role); });
+        this.roleStyles = [...roles].sort().map(tag => ({ tag, displayLabel: tag }));
+    }
+
     ngOnChanges(changes: SimpleChanges): void {
+        if (changes["edgeStyleRequest"] && this.edgeStyleRequest && this.visualiser?.interactionHandler.inspectedEdge) {
+            this.activeTab = "graph"; this.roleFilter = "";
+            if (this.edgesCollapsed) this.toggleSection("edges");
+            this.revealCaretPending = true;
+        }
         if (changes["visualiser"]) {
-            this.refreshDiscoveredTypes();
+            this.refreshDiscoveredTypes(); this.refreshRoleStyles();
         }
     }
 
     refreshDiscoveredTypes(): void {
-        if (!this.visualiser) return;
+        if (!this.visualiser) { this.discoveredTypes = []; this.recomputeDisplayedTypes(); return; }
         const typeMap = new Map<string, VertexKind>();
         this.visualiser.graph.nodes().forEach(nodeKey => {
             const attrs = this.visualiser!.graph.getNodeAttributes(nodeKey);
@@ -136,13 +243,11 @@ export class CustomiseTabComponent implements OnChanges {
             ? this.discoveredTypes.filter(t => t.typeLabel.toLowerCase().includes(needle))
             : this.discoveredTypes;
         const limit = CustomiseTabComponent.TYPE_DISPLAY_LIMIT;
-        if (matches.length > limit) {
-            this.displayedTypes = matches.slice(0, limit);
-            this.typeOverflow = matches.length - limit;
-        } else {
-            this.displayedTypes = matches;
-            this.typeOverflow = 0;
-        }
+        const caret = this.discoveredTypes.find(row => row.typeLabel === this.caretType);
+        // Keep the caret's row reachable even beyond the cap or a manual filter.
+        const others = matches.filter(row => row !== caret);
+        this.displayedTypes = caret ? [caret, ...others.slice(0, limit - 1)] : others.slice(0, limit);
+        this.typeOverflow = Math.max(0, others.length - (limit - (caret ? 1 : 0)));
     }
 
     onTypeFilterInput(event: Event): void {
@@ -266,12 +371,13 @@ export class CustomiseTabComponent implements OnChanges {
     }
 
     hasEdgeLabelOverride(tag: string): boolean {
-        return !!this.styleService.edgeLabelColors[tag] || this.styleService.hasEdgeLineStyle(tag);
+        return !!this.styleService.edgeLabelColors[tag] || this.styleService.hasEdgeLineStyle(tag) || this.styleService.hasEdgeLineThickness(tag);
     }
 
     clearEdgeLabelOverride(tag: string): void {
         this.styleService.removeEdgeLabelColor(tag);
         this.styleService.setEdgeLineStyle(null, tag);
+        this.styleService.setEdgeLineThickness(null, tag);
         this.visualiser?.applyEdgeStyleUpdate();
     }
 
@@ -288,12 +394,13 @@ export class CustomiseTabComponent implements OnChanges {
     }
 
     get hasDefaultEdgeColorOverride(): boolean {
-        return this.styleService.hasDefaultEdgeColorOverride || this.styleService.getEdgeLineStyle() !== "solid";
+        return this.styleService.hasDefaultEdgeColorOverride || this.styleService.getEdgeLineStyle() !== "solid" || this.styleService.getEdgeLineThickness() !== 1;
     }
 
     clearDefaultEdgeColor(): void {
         this.styleService.clearDefaultEdgeColor();
         this.styleService.setEdgeLineStyle(null);
+        this.styleService.setEdgeLineThickness(null);
         this.visualiser?.applyEdgeStyleUpdate();
     }
 

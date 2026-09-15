@@ -1,9 +1,11 @@
+import { edgeStyleKey, inheritedEdgeStyle } from "../../util/graph-edge";
+import { graphSelectionEdit } from "../../util/graph-navigation";
 import type { GraphVisualiser } from "./index";
 import Sigma from "sigma";
 import MultiGraph from "graphology";
 import chroma from "chroma-js";
 import { BehaviorSubject, Subject } from "rxjs";
-import {SigmaEventPayload, SigmaNodeEventPayload, SigmaStageEventPayload} from "sigma/types";
+import {SigmaEventPayload, SigmaNodeEventPayload, SigmaStageEventPayload, SigmaEdgeEventPayload} from "sigma/types";
 import {GraphStyles} from "./styles";
 import {LayoutWrapper} from "./layout";
 import type {GraphStyleService} from "../../../service/graph-style.service";
@@ -60,6 +62,8 @@ interface InteractionState {
 
 export class InteractionHandler {
     state: InteractionState;
+    /** Inspection only: edge clicks leave the node caret and highlight set intact. */
+    inspectedEdge: string | null = null;
     layout: LayoutWrapper | null = null;
     visualiser: GraphVisualiser | null = null;
     selection$ = new BehaviorSubject<InspectableSelection | null>(null);
@@ -137,6 +141,8 @@ export class InteractionHandler {
         renderer.on(StudioSigmaEventType.downNode, (e) => this.onDownNode(e));
         renderer.on(StudioSigmaEventType.upStage, (e) => this.onUpStage(e));
         renderer.on(StudioSigmaEventType.upNode, (e) => this.onUpNode(e));
+        renderer.on(StudioSigmaEventType.clickEdge, e => this.onClickEdge(e));
+        renderer.on(StudioSigmaEventType.doubleClickEdge, e => { e.event.preventSigmaDefault(); this.onClickEdge(e); });
         renderer.on(StudioSigmaEventType.clickNode, (e) => this.onClickNode(e));
         renderer.on(StudioSigmaEventType.clickStage, () => this.onClickStage());
         renderer.on(StudioSigmaEventType.doubleClickNode, (e) => this.onDoubleClickNode(e));
@@ -280,6 +286,12 @@ export class InteractionHandler {
         }
     }
 
+    onClickEdge(event: SigmaEdgeEventPayload): void {
+        if (this.state.didDrag || !this.graph.hasEdge(event.edge)) return;
+        this.inspectedEdge = event.edge;
+        this.renderer.refresh();
+    }
+
     onClickNode(event: SigmaNodeEventPayload) {
         if (this.state.didDrag) {
             this.state.didDrag = false;
@@ -287,22 +299,8 @@ export class InteractionHandler {
         }
         const node = event.node;
         const original = event.event?.original as MouseEvent | undefined;
-        if ((original?.metaKey || original?.ctrlKey) && this.visualiser) {
-            this.visualiser.toggleNodeSelection(node);
-            return;
-        }
-        this.visualiser?.clearSearch();
-        if ((event.event?.original as MouseEvent | undefined)?.shiftKey && this.visualiser) {
-            // Use the same graph-aware periphery as ordinary inspection (including
-            // relation role players), and keep inspection independent of selection.
-            const primary = this.state.selectedNode;
-            this.visualiser.elementSelection.toggleNeighborhood(node,
-                [...this.collectHighlightedNeighbors(node)],
-                primary ? [primary, [...new Set([primary, ...(this.state.selectedNeighbors ?? [])])]] : undefined);
-            return;
-        }
-        if (this.selectionMode === "types") this.handleTypeSelectionClick(node);
-        else this.handleInstanceSelectionClick(node);
+        if (this.visualiser) this.visualiser.pointCaret(node, graphSelectionEdit(original ?? { shiftKey: false, altKey: false }));
+        else this.inspectKeyboardNode(node);
     }
 
     private handleInstanceSelectionClick(node: string) {
@@ -322,7 +320,7 @@ export class InteractionHandler {
         if (!ext) return;
         if (this.selectedTypeLabel === ext.typeLabel) return; // no-op re-click on same type
         this.lastSelectionWasFromHighlight = false;
-        this.state.selectedNode = node; // populated so the existing reducer fade path runs
+        this.state.selectedNode = node; // representative for the Explorer
         this.selectedTypeLabel = ext.typeLabel;
         this.recomputeHighlightSet();
         this.typeSelection$.next({ typeKind: ext.typeKind, typeLabel: ext.typeLabel });
@@ -472,12 +470,15 @@ export class InteractionHandler {
     }
 
     onClickStage() {
+        this.inspectedEdge = null;
+        this.visualiser?.endNavigation();
         if (this.state.selectedNode != null) {
             this.clearSelection();
         }
     }
 
     clearSelection() {
+        this.inspectedEdge = null;
         this.state.selectedNode = null;
         this.selectedTypeLabel = null;
         this.lastSelectionWasFromHighlight = false;
@@ -486,11 +487,22 @@ export class InteractionHandler {
         this.typeSelection$.next(null);
     }
 
+    /** Move the inspector without mouse-neighborhood selection or click toggles.
+     * Always update the representative node, including another instance of the
+     * same type. The existing here/every inspector preference is retained. */
+    inspectKeyboardNode(node: string): void {
+        this.inspectedEdge = null;
+        const concept = this.safeReadConcept(node);
+        if (!concept) return;
+        if (this.selectionMode === "types" || concept.kind.endsWith("Type")) this.focusType(node);
+        else this.focusInstance(node);
+    }
+
     /**
-     * Programmatically select a node — same effect as clicking it: highlight
-     * ring, neighbor fade, and selection$ emission for the Inspector.
+     * Update instance inspection and periphery metadata without changing highlights.
      */
     selectNode(node: string): void {
+        this.inspectedEdge = null;
         if (this.state.selectedNode === node) return;
         this.lastSelectionWasFromHighlight = false;
         this.state.selectedNode = node;
@@ -499,7 +511,7 @@ export class InteractionHandler {
     }
 
     /**
-     * Switch the highlight to a specific instance regardless of selection
+     * Inspect a specific instance regardless of selection
      * mode — used by the "load connections" flows (context menu, instance
      * inspector) so the just-touched instance becomes the focus even when
      * the panel is in type-selection mode. Clears any active type selection
@@ -507,6 +519,7 @@ export class InteractionHandler {
      * runs the instance-mode branch.
      */
     focusInstance(node: string): void {
+        this.inspectedEdge = null;
         const typeWasSet = this.selectedTypeLabel != null;
         this.lastSelectionWasFromHighlight = false;
         this.selectedTypeLabel = null;
@@ -517,14 +530,14 @@ export class InteractionHandler {
     }
 
     /**
-     * Highlight every instance of `node`'s type — the type-mode counterpart to
-     * `focusInstance`. Used after a context-menu "every '<type>'" load so the
-     * highlight covers all instances the connections were loaded for, not just
-     * the originally-clicked one. Works regardless of the current selection
+     * Inspect `node`'s type — the type-mode counterpart to `focusInstance`.
+     * Used after a context-menu "every '<type>'" load.
+     * Works regardless of the current selection
      * mode and clears any active instance selection. `node` is just a
      * representative used to read the concept's type.
      */
     focusType(node: string): void {
+        this.inspectedEdge = null;
         const concept = this.safeReadConcept(node);
         if (!concept) return;
         const ext = this.extractTypeFromConcept(concept);
@@ -552,8 +565,8 @@ export class InteractionHandler {
      * Rebuild `selectedNeighbors` as the union of:
      *   - the primary selection's highlighted neighbors, and
      *   - each secondary anchor (itself) and its highlighted neighbors.
-     * Leaves it null when nothing is selected and no anchors are set so the
-     * reducer treats the graph as un-highlighted (no fade).
+     * This legacy field records periphery/ancestor metadata for Explorer and
+     * snap compatibility. Reducers no longer use it to fade nodes or edges.
      *
      * Public so callers that mutate the graph (e.g. bulk-add fetches in the
      * Inspector) can ask for the highlight to re-evaluate against the new
@@ -596,17 +609,17 @@ export class InteractionHandler {
             all.add(anchor);
             this.collectHighlightedNeighbors(anchor).forEach(n => all.add(n));
         });
-        // Defensive: the primary selected node should always be in the
-        // highlight set. (In type-mode it's already covered by the iteration
-        // above; in instance-mode the reducer's `node === state.selectedNode`
-        // path covers it. Explicit add here in case either of those paths
-        // misses for an unexpected reason.)
+        // Keep the representative in the periphery metadata in both modes.
         if (this.state.selectedNode != null) all.add(this.state.selectedNode);
         this.state.selectedNeighbors = all;
         this.renderer.refresh();
     }
 
     onDoubleClickNode(event: SigmaNodeEventPayload) {
+        // Sigma converts a quick second click (even on another node) into this
+        // event. Keep the same exact selection semantics and avoid its zoom.
+        event.event.preventSigmaDefault();
+        this.onClickNode(event);
     }
 
     onRightClickNode(event: SigmaNodeEventPayload) {
@@ -643,9 +656,7 @@ export class InteractionHandler {
         this.graph.edges().forEach(edge => {
             const metadata = this.graph.getEdgeAttributes(edge)["metadata"];
             if (answerIndex == metadata.answerIndex) {
-                const tag = metadata.dataEdge.tag;
-                const color = this.styleParams.edgeLabelColors?.[tag]
-                    ?? this.styleParams.edgeColor.hex();
+                const color = inheritedEdgeStyle(this.styleParams.edgeLabelColors ?? {}, edgeStyleKey(this.graph.getEdgeAttributes(edge)), this.styleParams.edgeColor.hex());
                 this.graph.setEdgeAttribute(edge, "color", color);
             }
         })

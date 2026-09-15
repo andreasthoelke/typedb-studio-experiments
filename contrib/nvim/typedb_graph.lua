@@ -1,13 +1,37 @@
 -- Neovim 0.10+. The user's TypeDB plugin loads this module automatically.
 local M = {}
 local config = {
-  url = 'http://localhost:1430', limit = 1000, mapping = '<leader>tg',
+  url = 'http://localhost:1430', limit = 1000, mapping = '<leader>tg', control_prefix = '\\',
   repo = vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p:h:h:h'),
 }
 local starting = false
 local waiting = {}
 local sequence = 0
 local startGeneration = 0
+local projectTempDirectory
+local navigationQueue = {}
+local navigationSending = false
+
+local function sendNavigation(path, body, quiet)
+  table.insert(navigationQueue, { path = path, body = body, quiet = quiet })
+  if navigationSending then return end
+  local function nextRequest()
+    local item = table.remove(navigationQueue, 1)
+    if not item then navigationSending = false; return end
+    navigationSending = true
+    vim.system({ 'curl', '--silent', '--show-error', '--fail-with-body', '--max-time', '3',
+      '-H', 'Content-Type: application/json', '--data-binary', '@-', config.url .. item.path },
+      { stdin = vim.json.encode(item.body), text = true }, function(result)
+        vim.schedule(function()
+          if result.code ~= 0 and not item.quiet then
+            vim.notify('TypeDB viewer: restart the updated bridge (:TypeDBGraphStop, then :TypeDBGraphStart).', vim.log.levels.WARN)
+          end
+          nextRequest()
+        end)
+      end)
+  end
+  nextRequest()
+end
 
 local function notifyError(message)
   vim.notify('TypeDB Studio: ' .. message, vim.log.levels.WARN)
@@ -86,10 +110,80 @@ function M.stop_server()
   startGeneration = startGeneration + 1
   starting = false
   sequence = sequence + 1
+  navigationQueue = {}
   waiting = {}
   if vim.g.TypeDBStudioTermID then
     vim.fn.jobstop(vim.g.TypeDBStudioTermID)
     vim.g.TypeDBStudioTermID = nil
+  end
+end
+
+-- Only normal-mode navigation calls this. Capture the paragraph and cursor now;
+-- asynchronous HTTP callbacks must never re-read a different buffer or position.
+function M.caret(schemaOnly)
+  if not vim.api.nvim_buf_get_name(0):match('%.tqls?$') then return end
+  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+  local cursor = vim.api.nvim_win_get_cursor(0)
+  local first, last = cursor[1], cursor[1]
+  if not lines[first] or not lines[first]:find('%S') then return end
+  while first > 1 and lines[first - 1]:find('%S') do first = first - 1 end
+  while last < #lines and lines[last + 1]:find('%S') do last = last + 1 end
+  local paragraph = {}
+  for i = first, last do table.insert(paragraph, lines[i]) end
+  -- The two-result form is compatible with Neovim 0.10 and 0.11.
+  local _, utf16 = vim.str_utfindex(lines[cursor[1]], cursor[2])
+  local filename = vim.fn.expand('%:t')
+  local database = vim.b.typedb_database or filename:match('^schema_(.+)%.tql$')
+    or filename:match('^data_(.+)%.tql$') or vim.g.typedb_database or vim.g.typedb_active_schema
+  local body = { source = table.concat(paragraph, '\n'), line = cursor[1] - first,
+    column = utf16, schemaOnly = schemaOnly == true }
+  if database and database ~= '' then body.database = database end
+  -- A navigation gesture follows an already-running viewer; it doesn't start a
+  -- server or open a browser as a side effect of moving around a source file.
+  sendNavigation('/api/viewer/caret', body, schemaOnly)
+end
+
+function M.control(command)
+  if not vim.api.nvim_buf_get_name(0):match('%.tqls?$') then return end
+  local filename = vim.fn.expand('%:t')
+  local database = vim.b.typedb_database or filename:match('^schema_(.+)%.tql$')
+    or filename:match('^data_(.+)%.tql$') or vim.g.typedb_database or vim.g.typedb_active_schema
+  local body = { command = command, projectTempDirectory = projectTempDirectory() }
+  if database and database ~= '' then body.database = database end
+  sendNavigation('/api/viewer/control', body, false)
+end
+
+function M.schema_motion(backward)
+  local before = vim.api.nvim_win_get_cursor(0)
+  local name = backward and 'Tdb_MainStartBindingBackw' or 'Tdb_MainStartBindingForw'
+  if vim.fn.exists('*' .. name) == 1 then
+    vim.fn[name]()
+    if vim.fn.exists('*ScrollOff') == 1 then vim.fn.ScrollOff(backward and 10 or 16) end
+  else
+    vim.fn.search([=[\v^\s*(entity|relation|attribute|fun)>\s+\zs\S+]=], backward and 'bW' or 'W')
+  end
+  if not vim.deep_equal(before, vim.api.nvim_win_get_cursor(0)) then M.caret(true) end
+end
+
+function M.buffer_maps(buffer)
+  buffer = buffer or vim.api.nvim_get_current_buf()
+  if not vim.api.nvim_buf_is_valid(buffer) or not vim.api.nvim_buf_get_name(buffer):match('%.tqls?$') then return end
+  vim.keymap.set('n', '<CR>', function() M.caret(false) end, { buffer = buffer, silent = true, desc = 'TypeDB: caret identifier in connected graphs' })
+  vim.keymap.set('n', 'geo', function() M.caret(false) end, { buffer = buffer, silent = true, desc = 'TypeDB: open identifier in connected graphs' })
+  vim.keymap.set('n', '<C-n>', function() M.schema_motion(false) end, { buffer = buffer, silent = true, desc = 'TypeDB: next binding and schema caret' })
+  vim.keymap.set('n', '<C-p>', function() M.schema_motion(true) end, { buffer = buffer, silent = true, desc = 'TypeDB: previous binding and schema caret' })
+  -- Changing/disabling the prefix on reload removes only our own old controls.
+  for _, map in ipairs(vim.api.nvim_buf_get_keymap(buffer, 'n')) do
+    if map.desc and map.desc:find('^TypeDB viewer: ') then vim.keymap.del('n', map.lhs, { buffer = buffer }) end
+  end
+  if config.control_prefix then
+    for suffix, command in pairs({ zz = 'centreCaret', zt = 'caretTop', zb = 'caretBottom', zh = 'caretLeft', zl = 'caretRight',
+      ['<C-h>'] = 'panLeft', ['<C-l>'] = 'panRight', ['<C-y>'] = 'panUp', ['<C-e>'] = 'panDown',
+      ['<C-k>'] = 'panUp', ['<C-j>'] = 'panDown', ['<C-o>'] = 'back',
+      ['+'] = 'zoomIn', ['='] = 'zoomIn', ['-'] = 'zoomOut', ['<CR>'] = 'focus', s = 'snap', r = 'relayout' }) do
+      vim.keymap.set('n', config.control_prefix .. suffix, function() M.control(command) end,
+        { buffer = buffer, silent = true, desc = 'TypeDB viewer: ' .. command })
+    end
   end
 end
 
@@ -99,7 +193,7 @@ function M.mirror(query, database, execution)
 end
 
 -- Resolve before starting the bridge: termopen and result floats can change buffers.
-local function projectTempDirectory()
+projectTempDirectory = function()
   local override = vim.b.typedb_graph_temp_dir or config.temp_dir
   if override then return vim.fn.fnamemodify(vim.fn.expand(override), ':p'):gsub('/+$', '') end
   local source = vim.api.nvim_buf_get_name(0)
@@ -172,6 +266,17 @@ end
 function M.setup(options)
   config = vim.tbl_extend('force', config, options or {})
   config.url = config.url:gsub('/+$', '')
+  local group = vim.api.nvim_create_augroup('TypeDBStudioCaret', { clear = true })
+  vim.api.nvim_create_autocmd({ 'BufEnter', 'FileType' }, {
+    group = group, callback = function(args)
+      -- Run after existing filetype maps so the user's TypeDB motions stay the
+      -- underlying jump implementation, regardless of plugin load order.
+      vim.schedule(function() M.buffer_maps(args.buf) end)
+    end,
+  })
+  for _, buffer in ipairs(vim.api.nvim_list_bufs()) do M.buffer_maps(buffer) end
+  vim.api.nvim_create_user_command('TypeDBGraphCaret', function() M.caret(false) end,
+    { desc = 'Focus identifier under/right of cursor in connected graph views', force = true })
   vim.api.nvim_create_user_command('TypeDBGraph', function(args)
     local first = args.range > 0 and args.line1 - 1 or 0
     local last = args.range > 0 and args.line2 or -1

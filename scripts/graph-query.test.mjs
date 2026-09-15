@@ -24,13 +24,13 @@ test('one-hop context uses fresh variables and keeps the original seed pipeline'
     const result = prepare(source, { neighbours: true, relationTypes: ['friendship'] });
     assert.ok(result.query.startsWith('match $x isa person; $nvim_player isa person; limit 5; select $x;'));
     assert.match(result.query, /try \{/);
-    assert.match(result.query, /\$nvim_relation links \(\$x\)/);
+    assert.match(result.query, /\$nvim_relation links \(\$nvim_role: \$x\)/);
     assert.match(result.query, /\$nvim_relation isa friendship/);
-    assert.match(result.query, /links \(\$nvim_player_\)/);
+    assert.match(result.query, /links \(\$nvim_other_role: \$nvim_player_\)/);
 });
 
 test('relation seeds expand role players, while unlinked and aggregate seeds are left intact', () => {
-    assert.match(prepare('match $r isa friendship;', { neighbours: true }).query, /\$r links \(\$nvim_player\)/);
+    assert.match(prepare('match $r isa friendship;', { neighbours: true }).query, /\$r links \(\$nvim_role: \$nvim_player\)/);
     for (const source of ['match $x isa isolated;', 'match $x isa person; reduce $n = count;',
         'match $x isa person; select $other;', 'match $a isa name;']) {
         assert.equal(prepare(source, { neighbours: true }).query, source);
@@ -70,10 +70,10 @@ test('incompatible saved relation filters preserve seed rows instead of generati
     assert.match(mixed.query, /isa motivation/);
     assert.doesNotMatch(mixed.query, /depiction-slot/);
     assert.match(mixed.note, /Skipped incompatible relation types: depiction-slot/);
-    assert.match(filtered([]).query, /\$nvim_relation links \(\$item\)/);
+    assert.match(filtered([]).query, /\$nvim_relation links \(\$nvim_role: \$item\)/);
     assert.match(prepareGraphQuery('match $item isa motivation;', {
         neighbours: true, relationTypes: ['depiction-slot'],
-    }, lookup).query, /\$item links \(\$nvim_player\)/);
+    }, lookup).query, /\$item links \(\$nvim_role: \$nvim_player\)/);
 });
 
 test('compatibility respects scoped roles, inherited roles, subtype seeds and exact isa', () => {
@@ -108,11 +108,11 @@ test('schema inspection projects the instance without its auxiliary type node', 
     assert.equal(prepare(`${base}\nfetch { "type": $concrete, "attributes": { $item.* } };`).query, projected);
     const expanded = prepare(base, { neighbours: true });
     assert.ok(expanded.query.startsWith(projected));
-    assert.match(expanded.query, /links \(\$nvim_player\)/);
+    assert.match(expanded.query, /links \(\$nvim_other_role: \$nvim_player\)/);
     assert.ok(expanded.query.indexOf('select $item;') < expanded.query.indexOf('# Graph context:'));
     const relation = prepare('match $r isa friendship; $r isa! $type;', { neighbours: true });
     assert.match(relation.query, /select \$r;/);
-    assert.match(relation.query, /\$r links \(\$nvim_player\)/);
+    assert.match(relation.query, /\$r links \(\$nvim_role: \$nvim_player\)/);
 });
 
 test('explicit type selections and other query shapes retain their intended columns', () => {

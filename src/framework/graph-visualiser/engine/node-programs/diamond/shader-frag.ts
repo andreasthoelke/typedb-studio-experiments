@@ -8,6 +8,7 @@ varying vec4 v_borderColor;
 varying vec2 v_uv;
 varying float v_aspect;
 varying float v_size;
+varying float v_lineThickness;
 
 uniform float u_correctionRatio;
 uniform float u_sizeRatio;
@@ -29,7 +30,7 @@ ${outlineDashGLSL("diamond")}
 void main(void) {
   float u = log2(max(u_sizeRatio, 1.0));
   float borderScale = clamp(1.0 + u * (0.96 + u * (-0.75 + 0.29 * u)), 1.0, 5.0);
-  float bw = BORDER_ABSOLUTE * borderScale / v_size;
+  float bw = BORDER_ABSOLUTE * v_lineThickness * borderScale / v_size;
   vec2 halfDiag = vec2(0.5 * v_aspect, 0.5);
   float dist = sdRhombus(v_uv, halfDiag) - CORNER_RADIUS;
 

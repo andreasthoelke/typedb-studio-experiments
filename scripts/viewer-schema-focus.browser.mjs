@@ -10,6 +10,8 @@ import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createViewerServer } from './viewer-server.mjs';
+import { checkGraphNavigation } from './graph-navigation.browser-checks.mjs';
+import { checkGraphCustomise } from './graph-customise.browser-checks.mjs';
 let playwright;
 if(process.env.PLAYWRIGHT_MODULE) playwright=await import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href);
 else {
@@ -103,6 +105,8 @@ try {
  await waitSchema(await send('match $item isa missing-schema-focus-test;'));
  assert.deepEqual(await selection(),selected);
  assert.match(await schema.evaluate(()=>window.ng.getComponent(document.querySelector('ts-schema-page')).bridge.message),/No explicit type names/);
+ await checkGraphNavigation(schema, 'schema');
+    await checkGraphCustomise(schema, 'schema');
  assert.deepEqual(errors,[]);
  console.log('PASS full schema positions restored after working subset; parallel Query/Schema, roles and players, no data execution in Schema, docking and selection edits, pause/resume with replay, project snap provenance, schema refresh, saved-view exit, unknown-type fallback');
 } catch(error) {

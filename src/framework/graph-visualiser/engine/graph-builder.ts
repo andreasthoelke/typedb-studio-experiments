@@ -1,3 +1,4 @@
+import { edgeRoleLabel, edgeStyleKey, inheritedEdgeStyle, parallelEdgeGeometry } from "../../util/graph-edge";
 import { getVariableName, ConstraintVertexAny } from "@typedb/driver-http";
 
 /** Curvature applied to curved edges (Sigma's stock default). */
@@ -103,9 +104,8 @@ export class GraphBuilder extends AbstractGraphBuilder {
 
     private edgeAttributes(label: string, metadata: EdgeMetadata): EdgeAttributes {
         // Extend as you please: https://www.sigmajs.org/docs/advanced/data/
-        const tag = metadata.dataEdge.tag;
-        const colorHex = this.styleParameters.edgeLabelColors?.[tag]
-            ?? this.styleParameters.edgeColor.hex();
+        metadata.defaultLabel = label;
+        const colorHex = inheritedEdgeStyle(this.styleParameters.edgeLabelColors ?? {}, edgeStyleKey({ metadata }), this.styleParameters.edgeColor.hex());
         const curved = this.styleParameters.edgesCurvedByDefault === true;
         return {
             label: label,
@@ -139,27 +139,15 @@ export class GraphBuilder extends AbstractGraphBuilder {
     }
 
     private createEdge(edgeKey: string, from: string, to: string, attributes: EdgeAttributes) {
+        // Old snaps used short role names in edge keys. Match their semantic identity too.
+        const role = edgeRoleLabel(attributes);
+        if (role && this.graph.directedEdges(from, to).some(edge => edgeRoleLabel(this.graph.getEdgeAttributes(edge)) === role)) return;
         if (!this.graph.hasDirectedEdge(edgeKey)) {
-            // When another edge already connects this pair (either direction),
-            // curve this one (and fan it out further if curving is the default)
-            // so the parallel edges don't overlap.
-            const parallelCount = this.countEdgesBetween(from, to);
-            if (parallelCount > 0) {
-                attributes.type = "curved";
-                attributes.curvature = EDGE_CURVATURE * (parallelCount + 1);
-            }
             this.graph.addDirectedEdgeWithKey(edgeKey, from, to, attributes);
+            const edges = this.graph.edges(from, to).sort();
+            edges.forEach((edge, index) => this.graph.mergeEdgeAttributes(edge, parallelEdgeGeometry(
+                index, edges.length, this.graph.source(edge), this.graph.target(edge), this.styleParameters.edgesCurvedByDefault === true)));
         }
-    }
-
-    /** Number of edges (either direction) already connecting the two nodes. */
-    private countEdgesBetween(a: string, b: string): number {
-        let n = 0;
-        if (this.graph.hasNode(a) && this.graph.hasNode(b)) {
-            this.graph.forEachDirectedEdge(a, b, () => { n++; });
-            this.graph.forEachDirectedEdge(b, a, () => { n++; });
-        }
-        return n;
     }
 
     private maybeCreateEdge(answerIndex: number, edge: DataConstraintAny, label: string, from: StudioDataVertex, to: StudioDataVertex, queryFrom: ConstraintVertexOrSpecial, queryTo: ConstraintVertexOrSpecial) {
@@ -186,7 +174,7 @@ export class GraphBuilder extends AbstractGraphBuilder {
             if (fromKey === toKey && label === "sub") {
                 return;
             }
-            let edgeKey = this.edgeKey(fromKey, toKey, label);
+            let edgeKey = this.edgeKey(fromKey, toKey, edgeRoleLabel({ metadata: { dataEdge: edge } }) ?? label);
             const attributes = this.edgeAttributes(label, this.edgeMetadata(answerIndex, edge));
             this.createEdge(edgeKey, fromKey, toKey, attributes);
         } else {

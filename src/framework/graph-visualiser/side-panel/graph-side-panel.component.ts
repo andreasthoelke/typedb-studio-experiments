@@ -1,3 +1,4 @@
+import { edgeDisplayLabel, edgeRoleLabel, edgeStyleKey } from "../../util/graph-edge";
 import { Component, DoCheck, TemplateRef, EventEmitter, HostBinding, inject, Input, OnChanges, OnDestroy, Output, SimpleChanges, ViewChild } from "@angular/core";
 import { NgTemplateOutlet } from "@angular/common";
 import { MatTooltipModule } from "@angular/material/tooltip";
@@ -64,23 +65,39 @@ export class GraphSidePanelComponent implements OnChanges, OnDestroy, DoCheck {
     @Input() initialTypeFilter = "";
     @Input() snapsTemplate: TemplateRef<unknown> | null = null;
     inspectorTab: "explorer" | "snaps" = "snaps";
+    private inspectedEdge: string | null = null;
+    edgeStyleRequest = 0;
     private inspectedNode: string | null = null;
     private selectionRenderer: GraphVisualiser["sigma"] | null = null;
-    private onNodeClicked = () => { this.inspectorTab = "explorer"; };
+    private onGraphElementClicked = () => { this.inspectorTab = "explorer"; };
     private inspectedVisualiser: GraphVisualiser | null = null;
 
     ngDoCheck(): void {
         const node = this.visualiser?.interactionHandler.state.selectedNode ?? null;
+        const edge = this.edgeInspection?.key ?? null;
         if (this.inspectedVisualiser !== this.visualiser) {
             this.inspectedVisualiser = this.visualiser;
-            this.inspectedNode = node;
+            this.inspectedNode = node; this.inspectedEdge = edge;
             // Restoring a snap may restore its inspected node too. Keep browsing snaps.
             this.inspectorTab = node && !this.snapshotMode ? "explorer" : "snaps";
-        } else if (this.inspectedNode !== node) {
-            this.inspectedNode = node;
-            this.inspectorTab = node ? "explorer" : "snaps";
+        } else if (this.inspectedNode !== node || this.inspectedEdge !== edge) {
+            this.inspectedNode = node; this.inspectedEdge = edge;
+            this.inspectorTab = node || edge ? "explorer" : "snaps";
         }
     }
+
+    get edgeInspection() {
+        const v = this.visualiser, key = v?.interactionHandler.inspectedEdge;
+        if (!v || !key || !v.graph.hasEdge(key)) return null;
+        const attrs = v.graph.getEdgeAttributes(key), source = v.graph.source(key), target = v.graph.target(key);
+        return { key, label: edgeDisplayLabel(attrs), role: edgeRoleLabel(attrs), styleKey: edgeStyleKey(attrs),
+            isLink: attrs.metadata?.dataEdge?.tag === "links", source, target,
+            sourceLabel: v.graph.getNodeAttribute(source, "label") || v.graph.getNodeAttribute(source, "metadata")?.defaultLabel || source,
+            targetLabel: v.graph.getNodeAttribute(target, "label") || v.graph.getNodeAttribute(target, "metadata")?.defaultLabel || target };
+    }
+
+    customiseEdge(): void { this.topTab = "customise"; this.edgeStyleRequest++; }
+    caretEndpoint(node: string): void { this.visualiser?.pointCaret(node, "none", true); }
 
     @ViewChild(ElementsTabComponent) elements?: ElementsTabComponent;
 
@@ -117,9 +134,11 @@ export class GraphSidePanelComponent implements OnChanges, OnDestroy, DoCheck {
 
     ngOnChanges(changes: SimpleChanges) {
         if (changes["visualiser"]) {
-            this.selectionRenderer?.off("clickNode", this.onNodeClicked);
+            this.selectionRenderer?.off("clickNode", this.onGraphElementClicked);
+            this.selectionRenderer?.off("clickEdge", this.onGraphElementClicked);
             this.selectionRenderer = this.visualiser?.sigma ?? null;
-            this.selectionRenderer?.on("clickNode", this.onNodeClicked);
+            this.selectionRenderer?.on("clickNode", this.onGraphElementClicked);
+            this.selectionRenderer?.on("clickEdge", this.onGraphElementClicked);
             this.selectionSub?.unsubscribe();
             this.typeSelectionSub?.unsubscribe();
             this.selectionSub = null;
@@ -140,7 +159,8 @@ export class GraphSidePanelComponent implements OnChanges, OnDestroy, DoCheck {
     }
 
     ngOnDestroy() {
-        this.selectionRenderer?.off("clickNode", this.onNodeClicked);
+        this.selectionRenderer?.off("clickNode", this.onGraphElementClicked);
+        this.selectionRenderer?.off("clickEdge", this.onGraphElementClicked);
         this.selectionSub?.unsubscribe();
         this.typeSelectionSub?.unsubscribe();
     }

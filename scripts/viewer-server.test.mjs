@@ -65,6 +65,36 @@ test('queues before a browser connects, preserves query text, and broadcasts upd
     assert.equal(health.service, 'typedb-studio-bridge');
 });
 
+test('caret gestures broadcast separately, validate coordinates, and never replay or replace queries', { timeout: 5000 }, async t => {
+    const { post, subscribe, origin } = await start(t);
+    const query=await (await post({query:'match $x isa scene;'})).json();
+    const first=await subscribe(),second=await subscribe();await first();await second();
+    const caret={source:'entity scene;\n  owns title;',line:0,column:7,schemaOnly:true,database:'example'};
+    const send=body=>fetch(origin+'/api/viewer/caret',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    const response=await send(caret);assert.equal(response.status,202);const accepted=await response.json();
+    assert.equal(accepted.caretNavigation,true);assert.equal(accepted.viewers,2);
+    assert.deepEqual(await first(),{id:accepted.id,...caret});assert.deepEqual(await second(),{id:accepted.id,...caret});
+    const reconnected=await subscribe();assert.equal((await reconnected()).id,query.id,'Only queries replay');
+    for(const invalid of [{},null,{...caret,line:-1},{...caret,line:2},{...caret,column:999},{...caret,column:1.5},
+        {...caret,schemaOnly:'yes'},{...caret,database:''},{...caret,source:42}]) assert.equal((await send(invalid)).status,400);
+    const health=await (await fetch(origin+'/api/viewer/health')).json();
+    assert.equal(health.caretNavigation,true);assert.equal(health.latestRequestId,query.id);
+});
+
+test('viewer controls broadcast independently with a bounded command allowlist and never replay', {timeout:5000}, async t=>{
+    const {post,subscribe,origin}=await start(t);
+    const query=await (await post({query:'match $x isa scene;'})).json();
+    const first=await subscribe(),second=await subscribe();await first();await second();
+    const send=body=>fetch(origin+'/api/viewer/control',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+    for(const command of ['centreCaret','caretTop','caretBottom','caretLeft','caretRight','panLeft','panRight','panUp','panDown','zoomIn','zoomOut','back','focus','relayout','snap']) {
+        const control={command,database:'example',projectTempDirectory:'/tmp/studio-project/temp'};
+        const response=await send(control);assert.equal(response.status,202);const accepted=await response.json();
+        assert.equal(accepted.viewerControls,true);assert.deepEqual(await first(),{id:accepted.id,...control});assert.deepEqual(await second(),{id:accepted.id,...control});
+    }
+    for(const bad of [null,{}, {command:'delete'}, {command:'snap',database:''}, {command:'snap',projectTempDirectory:'relative'}]) assert.equal((await send(bad)).status,400);
+    const reconnected=await subscribe();assert.equal((await reconnected()).id,query.id);
+});
+
 test('rejects malformed, excessive, and foreign-origin requests without replacing latest', { timeout: 5000 }, async t => {
     const { post, origin, subscribe } = await start(t);
     const accepted = await (await post({ query: 'valid' })).json();

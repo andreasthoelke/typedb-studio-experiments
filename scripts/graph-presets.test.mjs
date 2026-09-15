@@ -44,10 +44,17 @@ test('dash styles round-trip at kind, type, default-edge and per-edge scopes', (
  preset.kindStyles.entity.lineStyle='dotted';
  preset.typeStyles.scene={lineStyle:'long-dash'};
  preset.defaultEdgeLineStyle='short-dash';
- preset.edgeLineStyles={owns:'dash-dot',links:'solid'};
+ preset.edgeLineStyles={owns:'dash-dot',links:'solid','composition:host':'dotted'};
+ preset.edgeLabelColors['composition:host']='#2468ac';
+ preset.kindStyles.entity.lineThickness=1.5;
+ preset.typeStyles.scene.lineThickness=3;
+ preset.defaultEdgeLineThickness=0.5;
+ preset.edgeLineThicknesses={owns:4,'composition:host':2.5};
  assert.deepEqual(parseGraphPresets(exportGraphPresets([preset])),[preset]);
  for(const invalid of [{...preset,defaultEdgeLineStyle:'invalid'},
-   {...preset,edgeLineStyles:{owns:[1,2]}}, {...preset,typeStyles:{scene:{lineStyle:'bad'}}}]) {
+   {...preset,edgeLineStyles:{owns:[1,2]}}, {...preset,typeStyles:{scene:{lineStyle:'bad'}}},
+   {...preset,defaultEdgeLineThickness:0}, {...preset,edgeLineThicknesses:{owns:20}},
+   {...preset,typeStyles:{scene:{lineThickness:-1}}}]) {
   assert.throws(()=>parseGraphPresets(JSON.stringify(invalid)));
  }
 });

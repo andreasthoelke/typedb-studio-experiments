@@ -1,3 +1,4 @@
+import { unresolvedRolePairs, resolveRoleEdges } from "../framework/util/graph-edge";
 import { Injectable, inject } from "@angular/core";
 import { firstValueFrom } from "rxjs";
 import { isApiErrorResponse } from "@typedb/driver-http";
@@ -5,7 +6,7 @@ import { DriverState } from "./driver-state.service";
 import { SchemaState } from "./schema-state.service";
 import type { GraphOutputState } from "./query-page-state.service";
 
-/** Loads label values into the existing off-graph store, never into GraphBuilder. */
+/** Loads display attributes and resolves role names for existing links, without adding nodes. */
 @Injectable({ providedIn: "root" })
 export class GraphLabelService {
     private driver = inject(DriverState);
@@ -37,6 +38,24 @@ export class GraphLabelService {
         });
         const fetch = async () => {
             try {
+                const visualiser = output.visualiser!;
+                const pairs = unresolvedRolePairs(visualiser.graph);
+                for (let from = 0; from < pairs.length; from += 50) {
+                    if (output.destroyed || output.visualiser !== visualiser || this.driver.connection$.value !== connection
+                        || output.database !== this.driver.database$.value?.name) return false;
+                    const branches = pairs.slice(from, from + 50).map(pair => `{ $r iid ${pair.relation}; $p iid ${pair.player}; }`).join(" or ");
+                    const query = `match ${branches}; $r links ($role: $p);`;
+                    const res = await firstValueFrom(output.independentRead
+                        ? this.driver.queryReadOnly(query, output.database!, { answerCountLimit: 100000 })
+                        : this.driver.runBackgroundReadQueries([query], { answerCountLimit: 100000 }));
+                    if (isApiErrorResponse(res)) throw res.err;
+                    if (output.destroyed || output.visualiser !== visualiser || this.driver.connection$.value !== connection
+                        || output.database !== this.driver.database$.value?.name) return false;
+                    if (res.ok.answerType === "conceptRows" && resolveRoleEdges(visualiser.graph, res.ok.answers.map(answer => answer.data))) {
+                        visualiser.applyEdgeCurvature();
+                        visualiser.applyEdgeStyleUpdate();
+                    }
+                }
                 for (const [label, iids] of groups) {
                     for (let from = 0; from < iids.length; from += 50) {
                         if (output.destroyed || this.driver.connection$.value !== connection

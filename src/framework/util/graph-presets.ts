@@ -42,6 +42,7 @@ function map<T>(value: unknown, parse: (entry: unknown) => T, allowedKeys?: stri
 function style(value: unknown): PartialNodeStyle {
     const input = record(value);
     const result: PartialNodeStyle = {};
+    if (input["lineThickness"] !== undefined) result.lineThickness = number(input["lineThickness"], 0.25, 8);
     if (input["lineStyle"] !== undefined) result.lineStyle = choice(input["lineStyle"], lineStyles);
     if (input["color"] !== undefined) result.color = color(input["color"]);
     if (input["shape"] !== undefined) result.shape = choice(input["shape"], shapes);
@@ -66,6 +67,8 @@ function preset(value: unknown): CustomPreset {
         colorEdgesByConstraint: boolean(p["colorEdgesByConstraint"]), labelsVisible: boolean(p["labelsVisible"]),
         showHoverLabel: boolean(p["showHoverLabel"]), degreeScaling: boolean(p["degreeScaling"]),
     };
+    if (p["edgeLineThicknesses"] !== undefined) result.edgeLineThicknesses = map(p["edgeLineThicknesses"], value => number(value, 0.25, 8));
+    if (p["defaultEdgeLineThickness"] !== undefined) result.defaultEdgeLineThickness = number(p["defaultEdgeLineThickness"], 0.25, 8);
     if (p["edgeLineStyles"] !== undefined) result.edgeLineStyles = map(p["edgeLineStyles"], value => choice(value, lineStyles));
     if (p["defaultEdgeLineStyle"] !== undefined) result.defaultEdgeLineStyle = choice(p["defaultEdgeLineStyle"], lineStyles);
     if (p["defaultEdgeColor"] !== undefined) result.defaultEdgeColor = p["defaultEdgeColor"] === null ? null : color(p["defaultEdgeColor"]);

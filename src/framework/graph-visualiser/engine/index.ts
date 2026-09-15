@@ -1,3 +1,4 @@
+import { edgeDisplayLabel, edgeStyleKey, parallelEdgeGeometry } from "../../util/graph-edge";
 import {
     ApiResponse,
     isApiErrorResponse,
@@ -5,10 +6,13 @@ import {
 } from "@typedb/driver-http";
 import type { GraphSnap } from "../../util/graph-snap";
 import { GraphElementSelection } from "../../util/graph-element-selection";
+import { GraphNavigation, graphDirectionVectors } from "../../util/graph-navigation";
+import type { GraphCardinalDirection, GraphDirection, GraphNavigationPoint, GraphSelectionEdit } from "../../util/graph-navigation";
 import { rememberWorkingContext, restoreWorkingContext } from "../../util/graph-working-context";
 import type { GraphFinderEntry } from "../../util/graph-finder";
 import chroma from "chroma-js";
 import Sigma from "sigma";
+import type { CameraState } from "sigma/types";
 import { Subscription } from "rxjs";
 import { buildBackgroundCSS } from "../../../service/graph-style.service";
 import type { GraphStyleService } from "../../../service/graph-style.service";
@@ -43,6 +47,7 @@ export class GraphVisualiser {
     interactionHandler: InteractionHandler;
     state: StudioState;
     readonly elementSelection: GraphElementSelection;
+    readonly navigation = new GraphNavigation();
     finderMatches: Set<string> | null = null;
     searchTerm = "";
     searchMatches: Set<string> | null = null;
@@ -229,7 +234,12 @@ export class GraphVisualiser {
             // elevated zIndex propagates to the body draw order, the label
             // draw order (renderLabels sorts by the same nodeIndices), and to
             // picking — keeping the dragged node the hovered one throughout.
-            data = { ...data, lineStyle: this.styleService.getNodeLineStyle(data["metadata"].concept.kind, getTypeLabel(data["metadata"].concept as any)) };
+            data = { ...data, lineThickness: this.styleService.getNodeLineThickness(data["metadata"].concept.kind, getTypeLabel(data["metadata"].concept as any)),
+                lineStyle: this.styleService.getNodeLineStyle(data["metadata"].concept.kind, getTypeLabel(data["metadata"].concept as any)) };
+            if (this.navigation.caret === node && this.navigation.mode !== "normal") {
+                data = { ...data, highlighted: true, keyboardCaret: true,
+                    keyboardCaretColor: chroma(this.styleService.effectiveBackgroundHex).luminance() > 0.4 ? "#151515" : "#ffffff" };
+            }
             if (node === state.draggedNode) return { ...data, zIndex: 2 };
             let shouldFade = false;
             let isPreviewFade = false;
@@ -239,33 +249,16 @@ export class GraphVisualiser {
             if (matches != null) {
                 shouldFade = !matches.has(node);
             } else {
-                // Selection-based fading
-                const isSelectedOrNeighbor = state.selectedNode != null
-                    && (node === state.selectedNode || (state.selectedNeighbors?.has(node) ?? false));
-                if (state.selectedNode != null && !isSelectedOrNeighbor) {
-                    shouldFade = true;
-                }
-
-                // Highlight-based fading (skipped for nodes in the active selection)
-                if (!isSelectedOrNeighbor) {
-                    try {
-                        if (this.styleService.isHighlightActive()) {
-                            const attrs = this.graph.getNodeAttributes(node);
-                            const concept = attrs.metadata.concept;
-                            if (!this.styleService.shouldHighlightNode(concept.kind as any, getTypeLabel(concept as any))) {
-                                shouldFade = true;
-                            }
-                        } else if (state.selectedNode == null && this.styleService.isPreviewActive()) {
-                            // Hover-preview: only kicks in when there's no real highlight or selection
-                            const attrs = this.graph.getNodeAttributes(node);
-                            const concept = attrs.metadata.concept;
-                            if (!this.styleService.shouldPreviewNode(concept.kind as any, getTypeLabel(concept as any))) {
-                                shouldFade = true;
-                                isPreviewFade = true;
-                            }
-                        }
-                    } catch (_) { /* guard against missing metadata during graph mutations */ }
-                }
+                // Inspection and the caret never change the highlight set.
+                try {
+                    const concept = data["metadata"].concept;
+                    if (this.styleService.isHighlightActive()) {
+                        shouldFade = !this.styleService.shouldHighlightNode(concept.kind as any, getTypeLabel(concept as any));
+                    } else if (this.styleService.isPreviewActive()) {
+                        shouldFade = !this.styleService.shouldPreviewNode(concept.kind as any, getTypeLabel(concept as any));
+                        isPreviewFade = shouldFade;
+                    }
+                } catch (_) { /* guard against missing metadata during graph mutations */ }
             }
 
             // Lift the hovered node above its peers so body + label come to the
@@ -289,10 +282,11 @@ export class GraphVisualiser {
         });
 
         this.sigma.setSetting("edgeReducer", (edge, data) => {
-            data = { ...data, lineStyle: this.styleService.getEdgeLineStyle(data["metadata"]?.dataEdge?.tag ?? data["label"]) };
+            data = { ...data, label: edgeDisplayLabel(data), size: data["size"] * this.styleService.getEdgeLineThickness(edgeStyleKey(data)),
+                lineStyle: this.styleService.getEdgeLineStyle(edgeStyleKey(data)) };
+            if (this.interactionHandler.inspectedEdge === edge) data = { ...data, size: data["size"] + 1, forceLabel: true };
             const endpoints = this.graph.extremities(edge).map(node => this.graph.getNodeAttributes(node));
             if (endpoints.some(node => node["viewHidden"])) return { ...data, hidden: true, label: "" };
-            const state = this.interactionHandler.state;
             let shouldFade = false;
             let isPreviewFade = false;
 
@@ -305,58 +299,43 @@ export class GraphVisualiser {
                 const tag = data["metadata"]?.dataEdge?.tag;
                 if (tag && !this.styleService.shouldHighlightEdge(tag)) shouldFade = true;
             } else {
-                // Selection-based fading: keep edges where both endpoints are highlighted
-                let edgeInSelection = false;
-                if (state.selectedNode != null) {
-                    const source = this.graph.source(edge);
-                    const target = this.graph.target(edge);
-                    const isNodeHighlighted = (n: string) => n === state.selectedNode || (state.selectedNeighbors?.has(n) ?? false);
-                    edgeInSelection = isNodeHighlighted(source) && isNodeHighlighted(target);
-                    if (!edgeInSelection) {
-                        shouldFade = true;
-                    }
-                }
-
-                // Highlight-based fading (skipped for edges in the active selection)
-                if (!edgeInSelection) {
-                    try {
-                        if (this.styleService.isHighlightActive()) {
-                            const source = this.graph.source(edge);
-                            const target = this.graph.target(edge);
-                            const sourceAttrs = this.graph.getNodeAttributes(source);
-                            const targetAttrs = this.graph.getNodeAttributes(target);
-                            const sourceConcept = sourceAttrs.metadata.concept;
-                            const targetConcept = targetAttrs.metadata.concept;
-                            const sourceHighlighted = this.styleService.shouldHighlightNode(sourceConcept.kind as any, getTypeLabel(sourceConcept as any));
-                            const targetHighlighted = this.styleService.shouldHighlightNode(targetConcept.kind as any, getTypeLabel(targetConcept as any));
-                            if (!sourceHighlighted || !targetHighlighted) {
-                                shouldFade = true;
-                            }
-                            const tag = this.graph.getEdgeAttributes(edge).metadata?.dataEdge?.tag;
-                            if (tag && !this.styleService.shouldHighlightEdge(tag)) {
-                                shouldFade = true;
-                            }
-                        } else if (state.selectedNode == null && this.styleService.isPreviewActive()) {
-                            const source = this.graph.source(edge);
-                            const target = this.graph.target(edge);
-                            const sourceAttrs = this.graph.getNodeAttributes(source);
-                            const targetAttrs = this.graph.getNodeAttributes(target);
-                            const sourceConcept = sourceAttrs.metadata.concept;
-                            const targetConcept = targetAttrs.metadata.concept;
-                            const sourcePreviewed = this.styleService.shouldPreviewNode(sourceConcept.kind as any, getTypeLabel(sourceConcept as any));
-                            const targetPreviewed = this.styleService.shouldPreviewNode(targetConcept.kind as any, getTypeLabel(targetConcept as any));
-                            if (!sourcePreviewed || !targetPreviewed) {
-                                shouldFade = true;
-                                isPreviewFade = true;
-                            }
-                            const tag = this.graph.getEdgeAttributes(edge).metadata?.dataEdge?.tag;
-                            if (tag && !this.styleService.shouldPreviewEdge(tag)) {
-                                shouldFade = true;
-                                isPreviewFade = true;
-                            }
+                try {
+                    if (this.styleService.isHighlightActive()) {
+                        const source = this.graph.source(edge);
+                        const target = this.graph.target(edge);
+                        const sourceAttrs = this.graph.getNodeAttributes(source);
+                        const targetAttrs = this.graph.getNodeAttributes(target);
+                        const sourceConcept = sourceAttrs.metadata.concept;
+                        const targetConcept = targetAttrs.metadata.concept;
+                        const sourceHighlighted = this.styleService.shouldHighlightNode(sourceConcept.kind as any, getTypeLabel(sourceConcept as any));
+                        const targetHighlighted = this.styleService.shouldHighlightNode(targetConcept.kind as any, getTypeLabel(targetConcept as any));
+                        if (!sourceHighlighted || !targetHighlighted) {
+                            shouldFade = true;
                         }
-                    } catch (_) { /* guard against missing metadata during graph mutations */ }
-                }
+                        const tag = this.graph.getEdgeAttributes(edge).metadata?.dataEdge?.tag;
+                        if (tag && !this.styleService.shouldHighlightEdge(tag)) {
+                            shouldFade = true;
+                        }
+                    } else if (this.styleService.isPreviewActive()) {
+                        const source = this.graph.source(edge);
+                        const target = this.graph.target(edge);
+                        const sourceAttrs = this.graph.getNodeAttributes(source);
+                        const targetAttrs = this.graph.getNodeAttributes(target);
+                        const sourceConcept = sourceAttrs.metadata.concept;
+                        const targetConcept = targetAttrs.metadata.concept;
+                        const sourcePreviewed = this.styleService.shouldPreviewNode(sourceConcept.kind as any, getTypeLabel(sourceConcept as any));
+                        const targetPreviewed = this.styleService.shouldPreviewNode(targetConcept.kind as any, getTypeLabel(targetConcept as any));
+                        if (!sourcePreviewed || !targetPreviewed) {
+                            shouldFade = true;
+                            isPreviewFade = true;
+                        }
+                        const tag = this.graph.getEdgeAttributes(edge).metadata?.dataEdge?.tag;
+                        if (tag && !this.styleService.shouldPreviewEdge(tag)) {
+                            shouldFade = true;
+                            isPreviewFade = true;
+                        }
+                    }
+                } catch (_) { /* guard against missing metadata during graph mutations */ }
             }
 
             if (endpoints.some(node => node["viewDimmed"])) { shouldFade = true; isPreviewFade = false; }
@@ -410,32 +389,21 @@ export class GraphVisualiser {
      */
     applyEdgeCurvature(): void {
         const curvedByDefault = this.styleService.edgesCurvedByDefault;
-        // Count edges per unordered node pair so parallels can be detected.
-        const pairCounts = new Map<string, number>();
-        const pairKey = (a: string, b: string) => a < b ? `${a} ${b}` : `${b} ${a}`;
-        this.graph.forEachEdge((_e, _a, source, target) => {
-            const k = pairKey(source, target);
-            pairCounts.set(k, (pairCounts.get(k) ?? 0) + 1);
-        });
-        const seen = new Map<string, number>();
+        const groups = new Map<string, string[]>();
         this.graph.forEachEdge((edge, _attrs, source, target) => {
-            const k = pairKey(source, target);
-            const total = pairCounts.get(k) ?? 1;
-            const idx = seen.get(k) ?? 0;
-            seen.set(k, idx + 1);
-            if (total > 1) {
-                // Parallel edges: always curve and fan out.
-                this.graph.setEdgeAttribute(edge, "type", "curved");
-                this.graph.setEdgeAttribute(edge, "curvature", EDGE_CURVATURE * (idx + 1));
-            } else {
-                this.graph.setEdgeAttribute(edge, "type", curvedByDefault ? "curved" : "line");
-                this.graph.setEdgeAttribute(edge, "curvature", EDGE_CURVATURE);
-            }
+            const key = JSON.stringify([source, target].sort());
+            const group = groups.get(key) ?? [];
+            group.push(edge); groups.set(key, group);
+        });
+        for (const edges of groups.values()) edges.sort().forEach((edge, index) => {
+            this.graph.mergeEdgeAttributes(edge, parallelEdgeGeometry(index, edges.length,
+                this.graph.source(edge), this.graph.target(edge), curvedByDefault));
         });
         this.sigma.refresh();
     }
 
     reLayout(): void {
+        this.endNavigation();
         const restartFromCurrent = this.layout.isRunning;
         this.layout.stop();
         this.autoZoomEnabled = true;
@@ -527,12 +495,234 @@ export class GraphVisualiser {
         this.settingCameraProgrammatically = false;
     }
 
-    /** Shared zoom step for the toolbar and keyboard, centered on the camera. */
+    /** Shared zoom step. A selection anchors zoom at its screen-space centre. */
     zoom(direction: "in" | "out"): void {
         const camera = this.sigma.getCamera();
-        const options = { duration: 150, factor: 0.7 };
-        if (direction === "in") camera.animatedUnzoom(options);
-        else camera.animatedZoom(options);
+        const bounds = this.elementSelection.active ? this.navigationBounds([...this.elementSelection.nodes]) : null;
+        const { width, height } = this.sigma.getDimensions();
+        const anchor = bounds ? { x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 } : { x: width / 2, y: height / 2 };
+        const ratio = camera.getBoundedRatio(camera.ratio * (direction === "in" ? 0.7 : 1 / 0.7));
+        this.animateNavigationCamera(this.sigma.getViewportZoomedState(anchor, ratio));
+    }
+
+    /** Enter at the rendered node nearest the viewport centre, independently of selection. */
+    enterNavigation(): boolean {
+        const points = this.navigationPoints();
+        const { width, height } = this.sigma.getDimensions();
+        const visible = points.filter(p => p.x >= 0 && p.x <= width && p.y >= 0 && p.y <= height);
+        const caret = (visible.length ? visible : points).sort((a, b) =>
+            Math.hypot(a.x - width / 2, a.y - height / 2) - Math.hypot(b.x - width / 2, b.y - height / 2) || a.key.localeCompare(b.key))[0]?.key;
+        return !!caret && this.pointCaret(caret, "none", true);
+    }
+
+    /** Pointer and hint jumps inspect exactly one node without implicitly selecting it. */
+    pointCaret(key: string, edit: GraphSelectionEdit = "none", follow = false): boolean {
+        if (!this.graph.hasNode(key) || this.graph.getNodeAttribute(key, "viewHidden")) return false;
+        this.layout.stop(); this.freezeViewport(); this.stopCameraAnimation();
+        this.navigation.visit(key);
+        this.editCaretSelection(key, edit);
+        this.interactionHandler.inspectKeyboardNode(key);
+        this.sigma.refresh();
+        if (follow) this.followNavigation([key]);
+        return true;
+    }
+
+    moveNavigation(direction: GraphDirection, edit: GraphSelectionEdit = "none"): boolean {
+        this.layout.stop(); this.freezeViewport();
+        const caret = this.navigation.caret;
+        const connected = new Set(caret && this.graph.hasNode(caret) ? this.graph.neighbors(caret) : []);
+        if (!this.navigation.move(direction, this.navigationPoints(), connected)) { this.sigma.refresh(); return false; }
+        const key = this.navigation.caret!;
+        this.editCaretSelection(key, edit);
+        this.interactionHandler.inspectKeyboardNode(key);
+        this.sigma.refresh();
+        this.followNavigation([key]);
+        return true;
+    }
+
+    /** Adjust only the caret node by five screen pixels, without moving the
+     * camera, visiting another node, or reheating its neighbours. */
+    nudgeCaret(direction: GraphDirection): boolean {
+        const key = this.navigation.caret;
+        if (!key || !this.graph.hasNode(key) || this.graph.getNodeAttribute(key, "viewHidden")) return false;
+        this.layout.stop(); this.freezeViewport(); this.stopCameraAnimation(); this.sigma.refresh();
+        const attrs = this.graph.getNodeAttributes(key);
+        if (!Number.isFinite(attrs.x) || !Number.isFinite(attrs.y)) return false;
+        const point = this.sigma.graphToViewport(attrs), [dx, dy] = graphDirectionVectors[direction];
+        const position = this.sigma.viewportToGraph({ x: point.x + dx * 5, y: point.y + dy * 5 });
+        this.autoZoomEnabled = false; this.pinnedCameraWorld = null;
+        this.graph.mergeNodeAttributes(key, position);
+        this.layout.pinNode?.(key, position.x, position.y);
+        this.sigma.refresh();
+        return true;
+    }
+
+    backNavigation(): boolean {
+        if (!this.navigation.caret) return false;
+        this.layout.stop(); this.freezeViewport(); this.stopCameraAnimation();
+        if (!this.navigation.back(this.navigationPoints())) { this.sigma.refresh(); return false; }
+        const key = this.navigation.caret!;
+        this.interactionHandler.inspectKeyboardNode(key);
+        this.sigma.refresh();
+        this.followNavigation([key]);
+        return true;
+    }
+
+    private editCaretSelection(key: string, edit: GraphSelectionEdit): void {
+        if (edit === "none") return;
+        const selected = this.highlightedNodeKeys();
+        // Freeze the effective highlight only when an edit actually changes membership.
+        if (selected.includes(key) !== (edit === "add")) this.elementSelection.toggleSingle(key, selected);
+    }
+
+    /** Freeze hint geometry and expose only nodes whose centres are on screen. */
+    graphHintPoints(): GraphNavigationPoint[] {
+        this.layout.stop(); this.freezeViewport(); this.stopCameraAnimation();
+        // Camera updates schedule rendering; hints need current projection immediately.
+        this.sigma.refresh();
+        const { width, height } = this.sigma.getDimensions();
+        return this.navigationPoints().filter(p => p.x >= 0 && p.x <= width && p.y >= 0 && p.y <= height);
+    }
+
+    private stopCameraAnimation(): void {
+        const camera = this.sigma.getCamera();
+        if (camera.isAnimated()) void camera.animate(camera.getState(), { duration: 0 });
+    }
+
+    endNavigation(): void {
+        this.navigation.reset(); this.stopCameraAnimation(); this.sigma.refresh();
+    }
+
+    clearGraphSelection(): void {
+        this.endNavigation();
+        this.interactionHandler.setSecondaryAnchors(new Set());
+        this.interactionHandler.clearSelection();
+        this.clearSearch();
+        this.styleService.clearHighlights();
+        this.elementSelection.clear();
+    }
+
+    private navigationPoints(): GraphNavigationPoint[] {
+        const points: GraphNavigationPoint[] = [];
+        const cameraState = this.sigma.getCamera().getState();
+        for (const key of this.graph.nodes()) {
+            const attrs = this.graph.getNodeAttributes(key);
+            const data = this.sigma.getNodeDisplayData(key);
+            if (attrs.viewHidden || !data || data.hidden || !Number.isFinite(attrs.x) || !Number.isFinite(attrs.y)) continue;
+            const point = this.sigma.graphToViewport({ x: attrs.x, y: attrs.y }, { cameraState });
+            const rawW = attrs.width ?? data.size, rawH = attrs.height ?? data.size;
+            const scale = this.sigma.scaleSize(data.size, cameraState.ratio) / Math.max(rawW, rawH, 1);
+            if (Number.isFinite(point.x) && Number.isFinite(point.y)) points.push({ key, ...point,
+                halfWidth: rawW * scale, halfHeight: rawH * scale });
+        }
+        return points;
+    }
+
+    /** Node bodies (including a small caret/label margin), in viewport pixels. */
+    private navigationBounds(keys: string[], cameraState = this.sigma.getCamera().getState()) {
+        let left = Infinity, right = -Infinity, top = Infinity, bottom = -Infinity;
+        for (const key of keys) {
+            if (!this.graph.hasNode(key)) continue;
+            const data = this.sigma.getNodeDisplayData(key);
+            if (!data || data.hidden) continue;
+            const point = this.sigma.framedGraphToViewport(data, { cameraState });
+            const attrs = this.graph.getNodeAttributes(key);
+            const rawW = attrs.width ?? data.size, rawH = attrs.height ?? data.size;
+            const scale = this.sigma.scaleSize(data.size, cameraState.ratio) / Math.max(rawW, rawH, 1);
+            const rx = rawW * scale + 10, ry = rawH * scale + 10;
+            left = Math.min(left, point.x - rx); right = Math.max(right, point.x + rx);
+            top = Math.min(top, point.y - ry); bottom = Math.max(bottom, point.y + ry);
+        }
+        return Number.isFinite(left) ? { left, right, top, bottom } : null;
+    }
+
+    private animateNavigationCamera(target: CameraState): void {
+        this.autoZoomEnabled = false; this.pinnedCameraWorld = null;
+        void this.sigma.getCamera().animate(target, { duration: document.hidden || window.matchMedia("(prefers-reduced-motion: reduce)").matches ? 0 : 150 });
+    }
+
+    /** Position the caret at a viewport fraction, preserving zoom and rotation. */
+    centreCaret(x = 0.5, y = 0.5): boolean {
+        const key = this.navigation.caret;
+        if (!key || !this.graph.hasNode(key) || this.graph.getNodeAttribute(key, "viewHidden")) return false;
+        this.layout.stop(); this.freezeViewport(); this.stopCameraAnimation(); this.sigma.refresh();
+        const data = this.sigma.getNodeDisplayData(key);
+        if (!data || data.hidden) return false;
+        const camera = this.sigma.getCamera().getState();
+        const { width, height } = this.sigma.getDimensions();
+        if (!width || !height) return false;
+        const anchor = this.sigma.viewportToFramedGraph({ x: width * x, y: height * y });
+        this.animateNavigationCamera({ ...camera, x: camera.x + data.x - anchor.x, y: camera.y + data.y - anchor.y });
+        return true;
+    }
+
+    panNavigation(direction: GraphCardinalDirection): void {
+        const { width, height } = this.sigma.getDimensions();
+        if (!width || !height) return;
+        const distance = Math.min(width, height) * 0.1;
+        const dx = direction === "left" ? -distance : direction === "right" ? distance : 0;
+        const dy = direction === "up" ? -distance : direction === "down" ? distance : 0;
+        const centre = this.sigma.viewportToFramedGraph({ x: width / 2 + dx, y: height / 2 + dy });
+        this.animateNavigationCamera({ ...this.sigma.getCamera().getState(), ...centre });
+    }
+
+    /** Follow the caret at viewport edges; Enter explicitly fits the highlighted set. */
+    private followNavigation(keys: string[], fit = false): void {
+        const { width, height } = this.sigma.getDimensions();
+        if (!width || !height || !keys.length) return;
+        const marginX = Math.min(70, width * 0.15), marginY = Math.min(90, height * 0.18);
+        const areaW = width - 2 * marginX, areaH = height - 2 * marginY;
+        const camera = this.sigma.getCamera(), initial = camera.getState();
+        let target = { ...initial };
+        // Sigma scales node glyphs with the square root of zoom. Iterate the fit
+        // against actual projected bodies instead of treating them as points.
+        for (let i = 0; i < 5; i++) {
+            const bounds = this.navigationBounds(keys, target);
+            if (!bounds) return;
+            const factor = Math.max((bounds.right - bounds.left) / areaW, (bounds.bottom - bounds.top) / areaH);
+            if (fit || factor > 1.005) target.ratio = camera.getBoundedRatio(Math.max(0.08, Math.min(20, target.ratio * factor)));
+            else break;
+        }
+        const bounds = this.navigationBounds(keys, target);
+        if (!bounds) return;
+        const dx = fit || bounds.right - bounds.left > areaW ? (bounds.left + bounds.right - width) / 2
+            : bounds.left < marginX ? bounds.left - marginX : bounds.right > width - marginX ? bounds.right - width + marginX : 0;
+        const dy = fit || bounds.bottom - bounds.top > areaH ? (bounds.top + bounds.bottom - height) / 2
+            : bounds.top < marginY ? bounds.top - marginY : bounds.bottom > height - marginY ? bounds.bottom - height + marginY : 0;
+        const centre = this.sigma.viewportToFramedGraph({ x: width / 2 + dx, y: height / 2 + dy }, { cameraState: target });
+        target = { ...target, ...centre };
+        if (dx || dy || target.ratio !== initial.ratio || camera.isAnimated()) this.animateNavigationCamera(target);
+    }
+
+    removeSelectedFromGraph(): number {
+        return this.removeNavigationNodes(this.elementSelection.active ? [...this.elementSelection.nodes] : []);
+    }
+
+    removeCaretFromGraph(): number {
+        const caret = this.navigation.caret;
+        return this.removeNavigationNodes(caret ? [caret] : []);
+    }
+
+    private removeNavigationNodes(keys: string[]): number {
+        const existing = keys.filter(key => this.graph.hasNode(key));
+        if (!existing.length) return 0;
+        this.layout.stop(); this.stopCameraAnimation();
+        const modal = this.navigation.mode !== "normal";
+        const previous = this.navigationPoints().find(p => p.key === this.navigation.caret);
+        const connected = new Set(previous ? this.graph.neighbors(previous.key) : []);
+        this.navigation.reset();
+        this.rememberContext(); this.freezeViewport();
+        this.dropNodes(existing);
+        if (modal) {
+            const remaining = this.navigationPoints().sort((a, b) =>
+                Number(b.key === previous?.key) - Number(a.key === previous?.key)
+                || Number(connected.has(b.key)) - Number(connected.has(a.key))
+                || (previous ? Math.hypot(a.x - previous.x, a.y - previous.y) - Math.hypot(b.x - previous.x, b.y - previous.y) : 0)
+                || a.key.localeCompare(b.key));
+            if (remaining[0]) { this.pointCaret(remaining[0].key); }
+        }
+        this.sigma.refresh();
+        return existing.length;
     }
 
     reheat(opts?: { soft?: boolean; preserveCamera?: boolean }): void {
@@ -643,7 +833,7 @@ export class GraphVisualiser {
         this.settingCameraProgrammatically = false;
     }
 
-    handleQueryResponse(res: ApiResponse<QueryResponse>, database: string) {
+    handleQueryResponse(res: ApiResponse<QueryResponse>, database: string, preserveSelection = false) {
         if (isApiErrorResponse(res)) return;
 
         if (res.ok.answerType === "conceptRows") {
@@ -654,7 +844,7 @@ export class GraphVisualiser {
             // alone so the user's focused view isn't yanked away. The
             // inspector kicks its own `reheat({ preserveCamera })` after.
             const wasEmpty = this.graph.order === 0;
-            const previousNodes = this.elementSelection.active ? new Set(this.graph.nodes()) : null;
+            const previousNodes = this.elementSelection.active && !preserveSelection ? new Set(this.graph.nodes()) : null;
             this.state.activeQueryDatabase = database;
             this.handleQueryResult(res);
             if (previousNodes) this.elementSelection.includeAddedNodes(this.graph.nodes().filter(key => !previousNodes.has(key)));
@@ -666,6 +856,38 @@ export class GraphVisualiser {
                 this.centerCamera();
             }
         }
+    }
+
+    /** Place incremental editor illustrations near their existing neighbours.
+     * Preserve every old coordinate and the camera; do not re-layout the view. */
+    placeIllustrationNodes(previous: ReadonlySet<string>): void {
+        this.layout.stop(); this.freezeViewport(); this.stopCameraAnimation();
+        const { width, height } = this.sigma.getDimensions();
+        const added = this.graph.nodes().filter(key => !previous.has(key));
+        this.sigma.refresh();
+        const bodies = new Map(this.navigationPoints().map(point => [point.key, point]));
+        const occupied = [...bodies.values()].filter(point => previous.has(point.key));
+        added.forEach((key, index) => {
+            const neighbours = this.graph.neighbors(key).filter(node => previous.has(node) && !this.graph.getNodeAttribute(node, "viewHidden"));
+            const points = neighbours.map(node => this.sigma.graphToViewport(this.graph.getNodeAttributes(node)));
+            const centre = points.length ? { x: points.reduce((n, p) => n + p.x, 0) / points.length, y: points.reduce((n, p) => n + p.y, 0) / points.length }
+                : { x: width / 2, y: height / 2 };
+            const body = bodies.get(key);
+            let destination = centre, best = Infinity;
+            for (let step = 0; step < 64; step++) {
+                const angle = (index + step) * 2.399963, distance = 100 + 45 * Math.sqrt(step);
+                const candidate = { x: centre.x + Math.cos(angle) * distance, y: centre.y + Math.sin(angle) * distance };
+                const overlap = occupied.reduce((sum, point) => sum
+                    + Math.max(0, (body?.halfWidth ?? 40) + (point.halfWidth ?? 40) + 18 - Math.abs(point.x - candidate.x))
+                    * Math.max(0, (body?.halfHeight ?? 25) + (point.halfHeight ?? 25) + 18 - Math.abs(point.y - candidate.y)), 0);
+                if (overlap < best) { best = overlap; destination = candidate; }
+                if (overlap === 0) break;
+            }
+            occupied.push({ key, ...destination, halfWidth: body?.halfWidth, halfHeight: body?.halfHeight });
+            const position = this.sigma.viewportToGraph(destination);
+            this.graph.mergeNodeAttributes(key, position);
+        });
+        this.sigma.refresh();
     }
 
     handleQueryResult(res: ApiResponse<QueryResponse>) {
@@ -1034,6 +1256,7 @@ export class GraphVisualiser {
             if (this.graph.hasNode(key)) { this.graph.dropNode(key); dropped++; }
         }
         if (dropped > 0) {
+            if (this.navigation.caret && !this.graph.hasNode(this.navigation.caret)) this.navigation.reset();
             const inspected = this.interactionHandler.state.selectedNode;
             if (inspected && !this.graph.hasNode(inspected)) this.interactionHandler.clearSelection();
             const removed = [...this.elementSelection.nodes].filter(key => !this.graph.hasNode(key));
@@ -1082,8 +1305,7 @@ export class GraphVisualiser {
         sources.forEach(src => {
             if (!this.graph.hasNode(src)) return;
             this.graph.forEachEdge(src, (_edge: string, attrs: any, source: string, target: string) => {
-                const tag = attrs?.metadata?.dataEdge?.tag;
-                const roleLabel = typeof tag === "string" ? tag.split(":").at(-1) : tag;
+                const roleLabel = edgeDisplayLabel(attrs);
                 const other = source === src ? target : source;
                 if (roleLabel === roleShortName && other !== src) targets.add(other);
             });
@@ -1126,23 +1348,19 @@ export class GraphVisualiser {
 
     finderEntries(): GraphFinderEntry[] {
         const entries: GraphFinderEntry[] = [];
-        const groups = new Map<string, string[]>();
         this.graph.forEachNode((key, attrs) => {
             const concept = attrs.metadata?.concept;
-            if (!concept) return;
+            if (!concept || attrs.viewHidden || !Number.isFinite(attrs.x) || !Number.isFinite(attrs.y)) return;
             const typeLabel = "type" in concept ? concept.type.label : "label" in concept ? concept.label : "";
-            const group = groups.get(typeLabel) ?? [];
-            group.push(key); groups.set(typeLabel, group);
             const iid = "iid" in concept ? concept.iid : "";
             const attributes = iid ? [...(this.displayAttributes.get(iid)?.entries() ?? [])] : [];
             const values = attributes.flatMap(([label, values]) => [label, ...values.map(String)]).join(" ");
             const identity = attributes.filter(([label]) => /(?:id|name|title)$/i.test(label))
                 .slice(0, 2).map(([label, values]) => `${label}: ${values.map(String).join(", ")}`).join(" · ") || iid;
-            entries.push({ id: `node:${key}`, label: attrs.label, detail: `${concept.kind}${identity ? ` · ${identity}` : ""}${attrs.viewHidden ? " · hidden" : ""}`,
+            entries.push({ id: `node:${key}`, label: attrs.label || typeLabel || key, detail: `${concept.kind}${typeLabel ? ` · ${typeLabel}` : ""}${identity ? ` · ${identity}` : ""}`,
                 nodes: [key], text: `${attrs.label} ${typeLabel} ${iid} ${values}` });
         });
-        return [...groups].map(([label, nodes]) => ({ id: `type:${label}`, label,
-            detail: `type · ${nodes.length} node${nodes.length === 1 ? "" : "s"}`, nodes, text: label })).concat(entries);
+        return entries;
     }
 
     captureSnap(query: string, schemaMode: boolean, expansionQueries: string[] = []): GraphSnap {
@@ -1165,6 +1383,8 @@ export class GraphVisualiser {
     }
 
     restoreSnapView(snap: GraphSnap): void {
+        this.stopCameraAnimation();
+        this.navigation.reset();
         this.autoZoomEnabled = false;
         if (snap.view.layoutDensity) this.layout.setDensity(snap.view.layoutDensity);
         this.layout.stop();
@@ -1196,7 +1416,8 @@ export class GraphVisualiser {
         if (this.elementSelection.active) {
             for (const key of keys) this.setNodeAppearance(key, "viewHidden", false);
         }
-        this.focusNodesSmoothly(keys);
+        this.layout.stop(); this.freezeViewport();
+        this.followNavigation(keys, true);
     }
 
     /** The same effective set for Enter, exact selection edits, and isolation. */
@@ -1248,6 +1469,7 @@ export class GraphVisualiser {
 
     restoreContext(): void {
         if (!this.hasWorkingContext) return;
+        this.stopCameraAnimation();
         this.layout.stop();
         this.autoZoomEnabled = false;
         this.pinnedCameraWorld = null;
@@ -1338,8 +1560,8 @@ export class GraphVisualiser {
             }
         });
         this.graph.edges().forEach(edgeKey => {
-            const metadata = this.graph.getEdgeAttributes(edgeKey).metadata;
-            this.graph.setEdgeAttribute(edgeKey, "label", metadata?.dataEdge?.tag ?? "");
+            const attrs = this.graph.getEdgeAttributes(edgeKey);
+            this.graph.setEdgeAttribute(edgeKey, "label", edgeDisplayLabel(attrs));
         });
         // The loop above resets every node to its basic type label; re-run the
         // heuristic so entity/relation instances keep their enriched labels.

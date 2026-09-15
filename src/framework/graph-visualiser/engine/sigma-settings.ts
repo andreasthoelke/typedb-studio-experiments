@@ -93,6 +93,7 @@ export const defaultSigmaSettings: Partial<SigmaSettings> = {
     labelDensity: Infinity,
     defaultDrawEdgeLabel: scaledDrawStraightEdgeLabel as any,
     renderEdgeLabels: true,
+    enableEdgeEvents: true,
     nodeProgramClasses: {
         "rounded-rect": NodeRoundedRectangleProgram,
         diamond: NodeDiamondProgram,
@@ -224,11 +225,27 @@ export function createSigmaRenderer(containerEl: HTMLElement, sigmaSettings: Sig
 
         nodesToRender.forEach((node: string) => {
             const data = (this as any).nodeDataCache[node];
+            if (!data || data.hidden) return;
             const { x, y } = (this as any).framedGraphToViewport(data);
             const size = (this as any).scaleSize(data.size);
             const nodeProgram = (this as any).nodePrograms[data.type];
             const drawHover = nodeProgram?.drawHover || (this as any).settings.defaultDrawNodeHover;
-            drawHover(context, { key: node, ...data, size, x, y }, (this as any).settings);
+            if (node === hoveredNode || !data.keyboardCaret) drawHover(context, { key: node, ...data, size, x, y }, (this as any).settings);
+            if (data.keyboardCaret) {
+                // Four corners distinguish the caret from selected nodes, for
+                // all node shapes, at a constant screen-space stroke width.
+                const scale = size / Math.max(data.width ?? data.size, data.height ?? data.size, 1);
+                const rx = (data.width ?? data.size) * scale + 6, ry = (data.height ?? data.size) * scale + 6;
+                const arm = Math.min(10, rx, ry);
+                context.save(); context.strokeStyle = data.keyboardCaretColor; context.lineWidth = 2;
+                context.beginPath();
+                for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
+                    context.moveTo(x + sx * (rx - arm), y + sy * ry);
+                    context.lineTo(x + sx * rx, y + sy * ry);
+                    context.lineTo(x + sx * rx, y + sy * (ry - arm));
+                }
+                context.stroke(); context.restore();
+            }
         });
     };
     return renderer;

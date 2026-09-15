@@ -19,7 +19,7 @@
     <div class="side-panel-header">
       <div class="tab-bar inspector-tabs" role="tablist" aria-label="Explorer and snaps">
         <button class="tab" role="tab" [class.active]="inspectorTab === 'explorer'"
-                [attr.aria-selected]="inspectorTab === 'explorer'" [disabled]="!snapshotNodeKey"
+                [attr.aria-selected]="inspectorTab === 'explorer'" [disabled]="!snapshotNodeKey && !edgeInspection"
                 (click)="inspectorTab = 'explorer'">Explorer</button>
         <button class="tab" role="tab" [class.active]="inspectorTab === 'snaps'"
                 [attr.aria-selected]="inspectorTab === 'snaps'" (click)="inspectorTab = 'snaps'">Snaps</button>
@@ -43,7 +43,7 @@
         <ng-container *ngTemplateOutlet="snapsTemplate"></ng-container>
       </div>
     } @else {
-    @if (!snapshotMode && showSelectionModeToggle && hasSelection) {
+    @if (!edgeInspection && !snapshotMode && showSelectionModeToggle && hasSelection) {
       <div class="selection-mode-toggle">
         <button class="mode-button"
                 [class.active]="selectionMode === 'instances'"
@@ -58,7 +58,20 @@
       </div>
     }
 
-    @if (snapshotMode) {
+    @if (edgeInspection; as edge) {
+      <div class="panel-section snapshot-details" aria-label="Edge inspector">
+        <h6>{{ edge.role || edge.label }}</h6>
+        <p>{{ edge.isLink ? 'Relation' : 'From' }}: {{ edge.sourceLabel }}</p>
+        <p>{{ edge.isLink ? 'Role player' : 'To' }}: {{ edge.targetLabel }}</p>
+        @if (edge.isLink && !edge.role) { <p>The role name is unavailable in this saved result.</p> }
+        <div class="highlight-group-actions">
+          <button class="highlight-action-button" (click)="caretEndpoint(edge.source)">{{ edge.isLink ? 'Go to relation' : 'Go to source' }}</button>
+          <button class="highlight-action-button" (click)="caretEndpoint(edge.target)">{{ edge.isLink ? 'Go to player' : 'Go to target' }}</button>
+          <button class="highlight-action-button" (click)="customiseEdge()">Customise {{ edge.role ? 'role' : 'edge' }}</button>
+        </div>
+        @if (edge.role) { <p>Role styles inherit from links. Overrides apply to all {{ edge.role }} edges.</p> }
+      </div>
+    } @else if (snapshotMode) {
       <div class="panel-section snapshot-details">
         @if (snapshotNodeKey) {
           <p>{{ snapshotNodeLabel }}</p>
@@ -105,7 +118,7 @@
         <ts-graph-styles-themes-tab [visualiser]="visualiser"></ts-graph-styles-themes-tab>
       }
       @if (topTab === 'customise') {
-        <ts-graph-side-panel-customise-tab [visualiser]="visualiser"></ts-graph-side-panel-customise-tab>
+        <ts-graph-side-panel-customise-tab [visualiser]="visualiser" [edgeStyleRequest]="edgeStyleRequest"></ts-graph-side-panel-customise-tab>
       }
     </div>
 

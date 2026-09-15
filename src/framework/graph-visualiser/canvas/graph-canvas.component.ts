@@ -29,8 +29,10 @@ import { DriverState } from "../../../service/driver-state.service";
 import { SchemaState } from "../../../service/schema-state.service";
 import { SnackbarService } from "../../../service/snackbar.service";
 import { graphExportBaseName, ExportType } from "../../util/graph-export-name";
-import { graphShortcut } from "../../util/graph-shortcuts";
+import { GraphKeyLeader, GraphViewCommand, graphLetterKey, graphShortcut } from "../../util/graph-shortcuts";
 import { fuzzyGraphMatches, GraphFinderEntry } from "../../util/graph-finder";
+
+import { graphNodeHints, graphSelectionEdit, GraphNodeHint, GraphDirection } from "../../util/graph-navigation";
 
 export type GraphCanvasStatus = "ok" | "running" | "noQueryAnswers" | "noInstancesFound" | "error" | "graphlessQueryType" | "answerOutputDisabled" | "multiQuery" | "emptySchema" | "emptySnap" | "needsTransaction";
 export type GraphCanvasStatusAction = "viewLog" | "openTransaction" | "switchToAuto";
@@ -55,6 +57,51 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     private static keyboardOwner: GraphCanvasComponent | null = null;
     shortcutHelpOpen = false;
     lastShortcut = "None received yet";
+    leaderPending: GraphKeyLeader | null = null;
+    nodeHints: GraphNodeHint[] = [];
+    hintPrefix = "";
+    private hintGeometry = "";
+    get visibleNodeHints() { return this.nodeHints.filter(hint => hint.label.startsWith(this.hintPrefix)); }
+    private geometrySignature(): string {
+        const v = this.visualiser;
+        return v ? JSON.stringify([v.graph.order, v.sigma.getCamera().getState(), v.sigma.getDimensions()]) : "";
+    }
+    private leaderTimer: ReturnType<typeof setTimeout> | null = null;
+    private leaderVisualiser: GraphVisualiser | null = null;
+    private leaderCaret: string | null = null;
+
+    private cancelKeySequence = (): void => {
+        this.leaderPending = null;
+        this.nodeHints = []; this.hintPrefix = ""; this.hintGeometry = "";
+        if (this.leaderTimer !== null) clearTimeout(this.leaderTimer);
+        this.leaderTimer = null;
+        this.leaderVisualiser = null;
+        this.leaderCaret = null;
+    };
+
+    get navigationMode() { return this.visualiser?.navigation.mode ?? "normal"; }
+
+    /** Commands from Neovim address this route's current canvas, including in a
+     * background tab. They do not synthesize keyboard events or steal focus. */
+    async runViewerCommand(command: GraphViewCommand): Promise<boolean> {
+        const v = this.visualiser;
+        if (!v || this.queryRunning) return false;
+        this.cancelKeySequence();
+        switch (command) {
+            case "centreCaret": return v.centreCaret();
+            case "caretTop": return v.centreCaret(.5, .125);
+            case "caretBottom": return v.centreCaret(.5, .875);
+            case "caretLeft": return v.centreCaret(.125, .5);
+            case "caretRight": return v.centreCaret(.875, .5);
+            case "panLeft": case "panRight": case "panUp": case "panDown":
+                v.panNavigation(command === "panLeft" ? "left" : command === "panRight" ? "right" : command === "panUp" ? "up" : "down"); return true;
+            case "zoomIn": case "zoomOut": v.zoom(command === "zoomIn" ? "in" : "out"); return true;
+            case "focus": v.focusHighlightedNodes(); return true;
+            case "back": return v.backNavigation();
+            case "relayout": v.reLayout(); return true;
+            case "snap": if (!this.canExportPng()) return false; await this.saveSnap(); return true;
+        }
+    }
 
     private isKeyboardVisible(): boolean {
         const el = this.host.nativeElement;
@@ -63,37 +110,125 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     }
 
     private ownKeyboard = (event: Event): void => {
+        this.cancelKeySequence();
+        if (!event.composedPath().some(target => target instanceof HTMLElement && target.closest(".graph-finder"))) this.finderOpen = false;
         if (event.composedPath().includes(this.host.nativeElement)) GraphCanvasComponent.keyboardOwner = this;
     };
 
     private onGraphKey = (event: KeyboardEvent): void => {
-        const action = graphShortcut(event);
-        if (!action || !this.isKeyboardVisible()) return;
+        if (!this.isKeyboardVisible() || document.hidden) { this.cancelKeySequence(); return; }
         const owner = GraphCanvasComponent.keyboardOwner;
-        if (owner && owner !== this && owner.isKeyboardVisible()) return;
+        if (owner && owner !== this && owner.isKeyboardVisible()) { this.cancelKeySequence(); return; }
         // Includes CodeMirror, native controls, shadow-DOM editors, and open Material overlays.
         if (event.composedPath().some(target => target instanceof HTMLElement &&
-            (target.isContentEditable || target.closest("input, textarea, select, [role='textbox'], [role='dialog'], [role='menu']")))) return;
-        if (action === "focus" && event.composedPath().some(target => target instanceof HTMLElement &&
-            target.closest("button, a[href], [role='button']"))) return;
-        if (document.querySelector(".cdk-overlay-pane .mat-mdc-dialog-container, .cdk-overlay-pane .mat-mdc-menu-panel, .cdk-overlay-pane .mat-mdc-select-panel")) return;
+            (target.isContentEditable || target.closest("input, textarea, select, [role='textbox'], [role='dialog'], [role='menu']")))) { this.cancelKeySequence(); return; }
+        if (document.querySelector(".cdk-overlay-pane .mat-mdc-dialog-container, .cdk-overlay-pane .mat-mdc-menu-panel, .cdk-overlay-pane .mat-mdc-select-panel")) { this.cancelKeySequence(); return; }
+        if ((this.leaderPending || this.nodeHints.length) && this.leaderVisualiser !== this.visualiser) this.cancelKeySequence();
+        if (this.leaderPending === "d" && this.leaderCaret !== this.visualiser?.navigation.caret) { this.cancelKeySequence(); return; }
+        if (this.nodeHints.length && this.onHintKey(event)) return;
+        // A modifier's own keydown is not the chord yet. In particular, let
+        // Ctrl-[ cancel an armed deletion before considering a global clear.
+        if (["Shift", "Alt", "Control", "Meta"].includes(event.key)) return;
+        const action = graphShortcut(event, this.navigationMode, this.leaderPending);
+        if (!action) {
+            if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) this.cancelKeySequence();
+            return;
+        }
+        if ((action === "focus" || action === "leader") && event.composedPath().some(target => target instanceof HTMLElement &&
+            target.closest("button, a[href], [role='button']"))) { this.cancelKeySequence(); return; }
         GraphCanvasComponent.keyboardOwner = this;
         event.preventDefault();
         event.stopImmediatePropagation();
-        this.lastShortcut = `${event.key} → ${action}`;
+        const prefix = this.leaderPending === "d" ? "d " : this.leaderPending && (action === "previous" || action === "next") ? "Space " : event.ctrlKey ? "Ctrl+" : "";
+        this.lastShortcut = `${prefix}${event.key === " " ? "Space" : event.key} → ${action}`;
+        this.cancelKeySequence();
+        if (action === "leader" || action === "hintLeader" || action === "centreLeader" || action === "deleteLeader" || action === "historyLeader") {
+            if (action === "deleteLeader" && this.queryRunning) return;
+            this.leaderPending = action === "leader" ? "space" : action === "hintLeader" ? "comma" : action === "deleteLeader" ? "d" : action === "historyLeader" ? "g" : "z";
+            this.leaderVisualiser = this.visualiser;
+            this.leaderCaret = this.visualiser?.navigation.caret ?? null;
+            this.leaderTimer = setTimeout(this.cancelKeySequence, 1000);
+            return;
+        }
+        if (action === "cancelLeader") return;
         if (action === "help") { this.shortcutHelpOpen = !this.shortcutHelpOpen; this.showSnapsTab(); }
+        else if (action === "clear") { this.finderOpen = false; this.shortcutHelpOpen = false; this.visualiser?.clearGraphSelection(); }
+        else if (action === "centreCaret") { if (!this.visualiser?.centreCaret()) this.lastShortcut += " (no caret)"; }
+        else if (action === "caretTop" || action === "caretBottom" || action === "caretLeft" || action === "caretRight") {
+            if (!this.visualiser?.centreCaret(action === "caretLeft" ? 0.125 : action === "caretRight" ? 0.875 : 0.5,
+                action === "caretTop" ? 0.125 : action === "caretBottom" ? 0.875 : 0.5)) this.lastShortcut += " (no caret)";
+        }
+        else if (action === "hints") { this.startNodeHints(); }
+        else if (action === "caret") {
+            if (this.queryRunning) return;
+            this.visualiser?.enterNavigation();
+            if (this.sidePanel && this.navigationMode !== "normal") this.sidePanel.inspectorTab = "explorer";
+        }
+        else if (action === "left" || action === "right" || action === "up" || action === "down"
+            || action === "downLeft" || action === "upRight" || action === "upLeft" || action === "downRight") {
+            if (!this.queryRunning && !this.visualiser?.moveNavigation(action, graphSelectionEdit(event))) this.lastShortcut += " (no node in that direction)";
+        }
+        else if (action.startsWith("nudge:")) {
+            if (!this.queryRunning && !this.visualiser?.nudgeCaret(action.slice(6) as GraphDirection)) this.lastShortcut += " (no caret)";
+        }
+        else if (action === "back") {
+            if (!this.queryRunning && !this.visualiser?.backNavigation()) this.lastShortcut += " (no earlier node)";
+        }
+        else if (action === "panLeft" || action === "panRight" || action === "panUp" || action === "panDown") {
+            this.visualiser?.panNavigation(action === "panLeft" ? "left" : action === "panRight" ? "right" : action === "panUp" ? "up" : "down");
+        }
+        else if (action === "remove") {
+            if (!this.queryRunning) this.lastShortcut += ` (${this.visualiser?.removeSelectedFromGraph() ?? 0} removed from view)`;
+        }
+        else if (action === "removeCaret") {
+            if (!this.queryRunning) this.lastShortcut += ` (${this.visualiser?.removeCaretFromGraph() ?? 0} removed from view)`;
+        }
         else if (action === "relayout") { if (!this.queryRunning) this.visualiser?.reLayout(); }
         else if (action === "zoomIn" || action === "zoomOut") { this.visualiser?.zoom(action === "zoomIn" ? "in" : "out"); }
         else if (action === "focus") { this.visualiser?.focusHighlightedNodes(); }
         else if (action === "live") { if (this.inlineSnap || this.snapsBusy) this.closeInlineSnap(); }
         else if (action === "find") {
-            this.host.nativeElement.querySelector<HTMLInputElement>("input[aria-label='Find types or labels']")?.focus();
+            const input = this.finderInput?.nativeElement;
+            input?.focus(); input?.select();
+            this.updateFinder(this.finderText);
         } else if (action === "snap") { if (this.canExportPng()) void this.saveSnap(); }
-        else if (!this.snapsBusy) {
+        else if ((action === "next" || action === "previous") && !this.snapsBusy) {
             this.showSnapsTab();
             void this.stepSnap(action === "next" ? 1 : -1);
         }
     };
+
+    private startNodeHints(): void {
+        if (this.queryRunning || !this.visualiser) return;
+        this.nodeHints = graphNodeHints(this.visualiser.graphHintPoints());
+        this.leaderVisualiser = this.visualiser;
+        this.hintGeometry = this.geometrySignature();
+        this.hintPrefix = "";
+    }
+
+    private onHintKey(event: KeyboardEvent): boolean {
+        if (event.defaultPrevented || event.isComposing) return true;
+        if (["Shift", "Alt", "Control", "Meta"].includes(event.key)) return true;
+        if (this.hintGeometry !== this.geometrySignature()) { this.cancelKeySequence(); return true; }
+        if (event.ctrlKey && event.key === "[") { this.cancelKeySequence(); return false; }
+        if (event.ctrlKey || event.metaKey) { this.cancelKeySequence(); return false; }
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (event.repeat) return true;
+        if (event.key === "Escape") { this.cancelKeySequence(); return true; }
+        if (event.key === "Backspace") { this.hintPrefix = this.hintPrefix.slice(0, -1); return true; }
+        const letter = graphLetterKey(event);
+        this.hintPrefix += letter;
+        const matches = this.visibleNodeHints;
+        if (!matches.length) { this.cancelKeySequence(); return true; }
+        const match = matches.find(hint => hint.label === this.hintPrefix);
+        if (match) {
+            this.cancelKeySequence();
+            this.visualiser?.pointCaret(match.key, graphSelectionEdit(event), true);
+            if (this.sidePanel) this.sidePanel.inspectorTab = "explorer";
+            this.lastShortcut = `Graph hint ${match.label} → ${graphSelectionEdit(event) === "none" ? "inspect" : graphSelectionEdit(event)}`;
+        }
+        return true;
+    }
 
     private showSnapsTab(): void { if (this.sidePanel) this.sidePanel.inspectorTab = "snaps"; }
 
@@ -184,6 +319,10 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         window.addEventListener("keydown", this.onGraphKey, true);
         window.addEventListener("pointerdown", this.ownKeyboard, true);
         window.addEventListener("focusin", this.ownKeyboard, true);
+        window.addEventListener("blur", this.cancelKeySequence);
+        window.addEventListener("resize", this.cancelKeySequence);
+        window.addEventListener("wheel", this.cancelKeySequence, true);
+        document.addEventListener("visibilitychange", this.cancelKeySequence);
         this.stylesSub = this.styleService.styles$.subscribe(() => {
             this.updateControlTheme();
             this.applyBackground();
@@ -196,75 +335,72 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
      *  node here and move the renderer onto it (preserving graph + camera). */
     private attachedCanvasEl: HTMLElement | null = null;
 
+    @ViewChild("finderInput") finderInput?: ElementRef<HTMLInputElement>;
+    @ViewChild("finderOptions") finderOptions?: ElementRef<HTMLElement>;
+    private static nextFinderId = 0;
+    readonly finderListId = `graph-finder-${GraphCanvasComponent.nextFinderId++}`;
     finderText = "";
     finderOpen = false;
     finderResults: GraphFinderEntry[] = [];
+    finderIndex = -1;
     private finderVisualiser: GraphVisualiser | null = null;
-    private selectedEntries: GraphFinderEntry[] = [];
-    private selectionRevision = -1;
-    private selectionGraphOrder = -1;
     private finderGraphOrder = -1;
+    private scrollFinder = false;
 
-    get finderSelected(): GraphFinderEntry[] {
-        const v = this.visualiser;
-        if (!v) return [];
-        if (this.selectionRevision !== v.elementSelection.revision || this.selectionGraphOrder !== v.graph.order) {
-            const entries = v.finderEntries();
-            const wholeTypes = entries.filter(entry => entry.id.startsWith("type:") && v.elementSelection.status(entry.nodes) === "all");
-            const covered = new Set(wholeTypes.flatMap(entry => entry.nodes));
-            this.selectedEntries = [...wholeTypes, ...entries.filter(entry => entry.id.startsWith("node:")
-                && v.elementSelection.nodes.has(entry.nodes[0]) && !covered.has(entry.nodes[0]))];
-            this.selectionRevision = v.elementSelection.revision;
-            this.selectionGraphOrder = v.graph.order;
-        }
-        return this.selectedEntries;
-    }
-
-    finderStatus(entry: GraphFinderEntry): "none" | "partial" | "all" {
-        return this.visualiser?.elementSelection.status(entry.nodes) ?? "none";
+    get finderActiveId(): string | null {
+        return this.finderOpen && this.finderIndex >= 0 ? `${this.finderListId}-${this.finderIndex}` : null;
     }
 
     updateFinder(text: string): void {
         this.finderGraphOrder = this.visualiser?.graph.order ?? -1;
-        this.selectionRevision = -1;
         this.finderText = text;
         this.finderOpen = true;
+        // One destination per row, never a type-wide selection or search fade.
         this.finderResults = fuzzyGraphMatches(this.visualiser?.finderEntries() ?? [], text).slice(0, 60);
-        this.applyFinder();
+        this.finderIndex = this.finderResults.length ? 0 : -1;
+        this.scrollFinder = true;
     }
 
-    toggleFinder(entry: GraphFinderEntry): void {
-        this.visualiser?.elementSelection.toggle(entry.nodes);
+    onFinderBlur(event: FocusEvent): void {
+        // Vimium may consume Escape in insert mode and blur the input itself.
+        // Also dismiss on Tab, retaining focus moves to the clear button inside.
+        if (!(event.relatedTarget instanceof Node) || !(event.currentTarget as HTMLElement).contains(event.relatedTarget)) this.finderOpen = false;
     }
 
-    removeFinderSelection(entry: GraphFinderEntry): void {
-        this.visualiser?.elementSelection.set(entry.nodes, false);
+    onFinderKey(event: KeyboardEvent): void {
+        if (event.isComposing || event.defaultPrevented || event.metaKey || event.altKey) return;
+        const key = event.key.toLowerCase();
+        const next = event.ctrlKey ? key === "n" : event.key === "ArrowDown";
+        const previous = event.ctrlKey ? key === "p" : event.key === "ArrowUp";
+        const cancel = event.key === "Escape" || (event.ctrlKey && event.key === "[");
+        const accept = !event.ctrlKey && event.key === "Enter";
+        if (!(next || previous || cancel || accept)) return;
+        event.preventDefault(); event.stopPropagation();
+        if (cancel) { this.closeFinder(); return; }
+        if (accept) { if (!event.repeat) this.acceptFinder(); return; }
+        if (!this.finderOpen) this.updateFinder(this.finderText);
+        if (this.finderResults.length) {
+            this.finderIndex = (this.finderIndex + (next ? 1 : -1) + this.finderResults.length) % this.finderResults.length;
+            this.scrollFinder = true;
+        }
     }
 
-    private applyFinder(): void {
-        if (!this.visualiser) return;
-        this.visualiser.finderMatches = !this.visualiser.elementSelection.active && this.finderText
-            ? new Set(this.finderResults.flatMap(entry => entry.nodes)) : null;
-        this.visualiser.sigma.refresh();
+    acceptFinder(index = this.finderIndex): void {
+        const entry = this.finderResults[index];
+        if (!entry || this.queryRunning || !this.visualiser?.pointCaret(entry.nodes[0], "none", true)) return;
+        this.closeFinder();
+        if (this.sidePanel) this.sidePanel.inspectorTab = "explorer";
+    }
+
+    closeFinder(): void {
+        this.finderOpen = false;
+        // Return keyboard control to the graph, without clearing inspection or highlights.
+        this.finderInput?.nativeElement.blur();
     }
 
     clearFinder(): void {
-        this.finderText = ""; this.finderResults = []; this.finderOpen = false;
-        if (this.visualiser) { this.visualiser.finderMatches = null; this.visualiser.elementSelection.clear(); }
-    }
-
-    focusFinder(): void {
-        this.applyFinder();
-        if (!this.visualiser?.elementSelection.active && this.visualiser?.finderMatches) {
-            this.visualiser.elementSelection.replace([...this.visualiser.finderMatches]);
-        }
-        this.visualiser?.focusHighlightedNodes();
-        this.finderOpen = false;
-    }
-
-    updateSearch(text: string): void {
-        this.clearFinder();
-        this.visualiser?.searchGraph(text.toLowerCase());
+        this.updateFinder("");
+        this.finderInput?.nativeElement.focus();
     }
 
     private get styleService(): GraphStyleService { return this.snapStyles ?? this.liveStyleService; }
@@ -322,6 +458,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     private libraryContextKey = "";
     private destroyed = false;
     ngDoCheck(): void {
+        if (this.nodeHints.length && (this.leaderVisualiser !== this.visualiser || this.hintGeometry !== this.geometrySignature())) this.cancelKeySequence();
         const key = JSON.stringify([this.snapshotDatabase, this.snapshotContext]);
         if (key !== this.libraryContextKey) {
             this.libraryContextKey = key;
@@ -330,13 +467,13 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
             this.snapsBusy = false;
             setTimeout(() => this.refreshSnaps());
         }
-        if (this.finderOpen && this.finderGraphOrder !== this.visualiser?.graph.order) this.updateFinder(this.finderText);
+        if (this.finderOpen && this.finderGraphOrder !== (this.visualiser?.graph.order ?? -1)) this.updateFinder(this.finderText);
     }
 
     ngOnChanges() {
         if (this.finderVisualiser !== this.visualiser) {
             this.finderText = this.loadedSnap?.view.finderText ?? ""; this.finderResults = []; this.finderOpen = false;
-            this.selectionRevision = -1; this.selectionGraphOrder = -1;
+            this.finderIndex = -1;
             this.finderVisualiser = this.visualiser;
         }
         if (this.selectionMode) this.visualiser?.interactionHandler.setSelectionMode(this.selectionMode);
@@ -347,6 +484,16 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     }
 
     ngAfterViewChecked() {
+        if (this.scrollFinder) {
+            this.scrollFinder = false;
+            const list = this.finderOptions?.nativeElement;
+            const option = list?.children.item(this.finderIndex) as HTMLElement | null;
+            if (list && option) {
+                const row = option.getBoundingClientRect(), box = list.getBoundingClientRect();
+                if (row.top < box.top) list.scrollTop -= box.top - row.top;
+                else if (row.bottom > box.bottom) list.scrollTop += row.bottom - box.bottom;
+            }
+        }
         const snapEl = this.snapCanvasEl?.nativeElement;
         if (this.snapVisualiser && snapEl && snapEl !== this.snapVisualiser.sigma.getContainer() && !this.rehomingSnap) {
             this.rehomingSnap = true;
@@ -396,9 +543,14 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     }
 
     ngOnDestroy() {
+        this.cancelKeySequence();
         window.removeEventListener("keydown", this.onGraphKey, true);
         window.removeEventListener("pointerdown", this.ownKeyboard, true);
         window.removeEventListener("focusin", this.ownKeyboard, true);
+        window.removeEventListener("blur", this.cancelKeySequence);
+        window.removeEventListener("resize", this.cancelKeySequence);
+        window.removeEventListener("wheel", this.cancelKeySequence, true);
+        document.removeEventListener("visibilitychange", this.cancelKeySequence);
         if (GraphCanvasComponent.keyboardOwner === this) GraphCanvasComponent.keyboardOwner = null;
         this.destroyed = true;
         ++this.libraryRequest;

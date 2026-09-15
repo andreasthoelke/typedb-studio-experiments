@@ -54,7 +54,7 @@ test('selection snapshots survive renderer remounts without sharing mutable stat
  assert.equal(restored.status([]), 'none');
 });
 
-test('Shift-click neighborhoods preserve overlap and the previously inspected group', () => {
+test('legacy neighborhood snapshots preserve overlap and the previously inspected group', () => {
  const selection = new GraphElementSelection();
  selection.toggleNeighborhood('b', ['shared','b1'], ['a',['a','shared','a1']]);
  assert.deepEqual([...selection.nodes].sort(), ['a','a1','b','b1','shared']);
@@ -74,7 +74,7 @@ test('neighborhood groups survive snaps and preserve independently selected node
  restored.toggleNeighborhood('a', ['shared']);
  assert.deepEqual([...restored.nodes].sort(), ['independent','shared']);
  assert.deepEqual([...selection.nodes].sort(), ['a','independent','shared']);
- restored.set(['a'], true); // Finder/type chips establish a new base.
+ restored.set(['a'], true); // Type chips establish a new base.
  restored.toggleNeighborhood('a', ['neighbor']);
  restored.toggleNeighborhood('a', ['neighbor']);
  assert.deepEqual([...restored.nodes].sort(), ['a','independent','shared']);
@@ -101,7 +101,7 @@ test('exact node edits override original and overlapping neighborhoods, includin
  restored.toggleSingle('title');
  assert.equal(restored.nodes.has('title'), false);
  restored.replace(['title']);
- assert.deepEqual([...restored.nodes], ['title'], 'All/None/type/finder edits deliberately establish a new selection');
+ assert.deepEqual([...restored.nodes], ['title'], 'All/None/type edits deliberately establish a new selection');
 });
 
 

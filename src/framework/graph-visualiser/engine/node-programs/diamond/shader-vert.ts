@@ -2,6 +2,8 @@
 const SHADER_SOURCE = /*glsl*/ `
 attribute vec4 a_id;
 attribute float a_lineStyle;
+attribute float a_lineThickness;
+varying float v_lineThickness;
 varying float v_lineStyle;
 attribute vec4 a_color;
 attribute vec4 a_borderColor;
@@ -44,6 +46,7 @@ void main() {
   v_aspect = a_aspect;
   v_size = a_size;
   v_lineStyle = a_lineStyle;
+  v_lineThickness = a_lineThickness;
 
   #ifdef PICKING_MODE
   v_color = a_id;

@@ -245,6 +245,18 @@
   &:hover {
     background: var(--theme-purple);
   }
+
+  &.caret-style {
+    background: var(--theme-purple);
+    box-shadow: inset 3px 0 var(--theme-green);
+    .style-label { color: var(--theme-white); }
+  }
+}
+
+.caret-style-summary {
+  gap: 8px;
+  .style-label { overflow-wrap: anywhere; }
+  .action-button { flex-shrink: 0; }
 }
 
 .style-label {

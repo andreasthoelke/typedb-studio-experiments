@@ -1,5 +1,10 @@
 import { Injectable, NgZone } from "@angular/core";
-import { combineLatest, Subscription } from "rxjs";
+import { combineLatest, firstValueFrom, Subscription } from "rxjs";
+import { isApiErrorResponse } from "@typedb/driver-http";
+import type { GraphVisualiser } from "../framework/graph-visualiser/engine";
+import { editorCaretTarget, editorIllustrationQuery, type EditorCaretRequest } from "../framework/util/editor-caret";
+import type { GraphViewCommand } from "../framework/util/graph-shortcuts";
+import type { RunOutputState } from "./query-page-state.service";
 import { GraphSnapshotService } from "./graph-snapshot.service";
 import { DriverState } from "./driver-state.service";
 import { QueryPageState } from "./query-page-state.service";
@@ -42,6 +47,17 @@ export class NvimQueryBridge {
     private driverConnected = false;
     private busy = false;
     private reapplyTimer?: ReturnType<typeof setTimeout>;
+    private caretView?: () => GraphVisualiser | null | undefined;
+    private caretRun?: () => RunOutputState | null;
+    private viewerCommand?: (command: GraphViewCommand) => Promise<boolean>;
+    private controls: { id: string; command: GraphViewCommand; database?: string; projectTempDirectory?: string }[] = [];
+    private controlBusy = false;
+    lastControlId?: string;
+    private caretRequest: EditorCaretRequest | null = null;
+    private caretGeneration = 0;
+    private caretBusy = false;
+    lastCaretRequest: EditorCaretRequest | null = null;
+    caretMessage = "";
 
     constructor(private driver: DriverState, private state: QueryPageState, private tabs: QueryTabsState,
         private schema: SchemaState, private snapshots: GraphSnapshotService, private zone: NgZone, private snackbar: SnackbarService) {
@@ -56,9 +72,13 @@ export class NvimQueryBridge {
         } catch { /* Storage is optional. */ }
     }
 
-    attach(parameter: string | null, schemaFocus?: (request: EditorRequest, schema: Schema) => boolean): void {
+    attach(parameter: string | null, schemaFocus?: (request: EditorRequest, schema: Schema) => boolean,
+        caretView?: () => GraphVisualiser | null | undefined,
+        viewerCommand?: (command: GraphViewCommand) => Promise<boolean>, caretRun?: () => RunOutputState | null): void {
         this.detach();
         this.schemaFocus = schemaFocus;
+        this.caretView = caretView;
+        this.viewerCommand = viewerCommand; this.caretRun = caretRun;
         // The SSE replay must reach the newly mounted route, even if another route
         // handled this request earlier in the same browser tab.
         this.lastRequest = null;
@@ -87,9 +107,24 @@ export class NvimQueryBridge {
         this.events.addEventListener("query", event => this.zone.run(() => {
             const request = JSON.parse((event as MessageEvent<string>).data) as EditorRequest;
             if (request.id === this.lastRequest?.id) return;
+            this.caretRequest = null; this.caretGeneration++;
+            this.controls = [];
             this.lastRequest = request;
             this.pending = true;
             this.schedule();
+        }));
+        this.events.addEventListener("caret", event => this.zone.run(() => {
+            const request = JSON.parse((event as MessageEvent<string>).data) as EditorCaretRequest;
+            if (request.id === this.lastCaretRequest?.id || (request.schemaOnly && !this.schemaFocus)) return;
+            this.caretRequest = request;
+            this.lastCaretRequest = request;
+            this.caretGeneration++;
+            this.schedule();
+        }));
+        this.events.addEventListener("control", event => this.zone.run(() => {
+            const request = JSON.parse((event as MessageEvent<string>).data);
+            if (request.id === this.lastControlId || this.controls.some(c => c.id === request.id)) return;
+            this.controls.push(request); this.schedule();
         }));
     }
 
@@ -128,6 +163,9 @@ export class NvimQueryBridge {
     }
 
     detach(): void {
+        this.caretRequest = null; this.caretGeneration++;
+        this.lastCaretRequest = null;
+        this.controls = []; this.lastControlId = undefined;
         clearTimeout(this.retryTimer);
         this.retryTimer = undefined;
         clearTimeout(this.reapplyTimer);
@@ -144,13 +182,119 @@ export class NvimQueryBridge {
         // Let tab changes, connection setup, and schema refresh finish this view check.
         queueMicrotask(() => this.zone.run(() => {
             this.scheduled = false;
-            if (this.events) this.drain();
+            if (this.events) { this.drain(); void this.drainCaret(); void this.drainControls(); }
         }));
     }
 
     private retry(): void {
         clearTimeout(this.retryTimer);
         this.retryTimer = setTimeout(() => this.schedule(), 100);
+    }
+
+    private async drainControls(): Promise<void> {
+        if (this.controlBusy || !this.controls.length) return;
+        if (this.pending || this.busy || this.caretBusy || this.caretRequest || this.schema.isRefreshing) { this.retry(); return; }
+        const request = this.controls.shift()!;
+        this.controlBusy = true;
+        try {
+            if (!this.driverConnected || !this.caretView?.() || (request.database && request.database !== this.driver.database$.value?.name)) {
+                this.message = "Viewer command ignored: no graph on the matching database."; return;
+            }
+            if (request.projectTempDirectory) this.snapshots.remember(this.driver.database$.value!.name, request.projectTempDirectory);
+            const done = await this.viewerCommand?.(request.command);
+            this.message = done ? `Viewer: ${request.command}.` : `Viewer: ${request.command} needs an available graph/caret.`;
+        } catch (error) {
+            this.message = `Viewer command failed: ${error instanceof Error ? error.message : String(error)}`;
+        } finally {
+            this.lastControlId = request.id; this.controlBusy = false;
+            if (this.controls.length) this.schedule();
+        }
+    }
+
+    private async drainCaret(): Promise<void> {
+        const request = this.caretRequest;
+        if (!request || this.caretBusy) return;
+        const report = (text: string, notice = false) => {
+            this.caretMessage = text; this.message = text;
+            if (notice && !request.schemaOnly) this.snackbar.info(text);
+        };
+        if (!this.driverConnected || (request.database && request.database !== this.driver.database$.value?.name)) {
+            this.caretRequest = null;
+            report("Caret jump ignored: this tab is not connected to the requested database."); return;
+        }
+        if (this.pending || this.busy || this.controlBusy || this.schema.isRefreshing) { this.retry(); return; }
+        const schema = this.schema.value$.value, visualiser = this.caretView?.();
+        if (!schema || !visualiser) {
+            this.caretRequest = null; report("No graph is available for this caret jump.", true); return;
+        }
+        this.caretRequest = null;
+        const target = editorCaretTarget(request, schema);
+        if (!target) { report("No schema identifier at or to the right of the cursor on this line."); return; }
+        const generation = this.caretGeneration, connection = this.driver.connection$.value, database = this.driver.database$.value!.name;
+        const currentCaret = visualiser.navigation.caret;
+        const stillCurrent = () => generation === this.caretGeneration && this.enabled && visualiser === this.caretView?.()
+            && connection === this.driver.connection$.value && database === this.driver.database$.value?.name
+            && currentCaret === visualiser.navigation.caret;
+        let candidates = visualiser.graph.nodes().filter(key => !visualiser.graph.getNodeAttribute(key, "viewHidden"));
+        try {
+            if (this.schemaFocus) {
+                candidates = candidates.filter(key => {
+                    const concept = visualiser.graph.getNodeAttribute(key, "metadata").concept;
+                    return "label" in concept && target.schemaLabels.includes(concept.label);
+                });
+            } else {
+                if (!target.instance) { report("No instance binding could be resolved in this paragraph; the Query caret is unchanged."); return; }
+                const run = this.caretRun?.();
+                const schemaNodes = candidates.filter(key => {
+                    const c = visualiser.graph.getNodeAttribute(key, "metadata").concept;
+                    return "label" in c && target.schemaLabels.includes(c.label);
+                });
+                if (run?.graph.schemaMode) candidates = schemaNodes;
+                else {
+                    const query = editorIllustrationQuery(target, schema);
+                    if (!query) { report("No supported, typed pattern could be resolved here; the graph is unchanged.", true); return; }
+                    if (!run || run.graph.visualiser !== visualiser || run.graph.database !== database) {
+                        report("Open an editable Query graph on this database to illustrate this pattern.", true); return;
+                    }
+                    this.caretBusy = true;
+                    report(`Finding ${target.identifier}…`);
+                    const response = await firstValueFrom(this.driver.queryReadOnly(query, database, { answerCountLimit: 20, includeQueryStructure: true }));
+                    if (!stillCurrent() || this.caretRun?.() !== run || run.graph.destroyed) return;
+                    if (isApiErrorResponse(response)) throw new Error(response.err.message);
+                    if (response.ok.answerType !== "conceptRows") return;
+                    const nodeKey = (concept: any) => concept && ["entity", "relation", "attribute"].includes(concept.kind)
+                        ? visualiser.instanceNodeKey(concept.kind, concept.type.label, "iid" in concept ? concept.iid : String(concept.value)) : null;
+                    // Respect deliberate hiding. Missing concepts may be added, but
+                    // an explicitly hidden target does not bring its neighbourhood back.
+                    const rows = response.ok.answers.filter(row => {
+                        const key = nodeKey(row.data["focus"]);
+                        return !key || !visualiser.graph.getNodeAttribute(key, "viewHidden");
+                    });
+                    if (rows.length) {
+                        const previous = new Set(visualiser.graph.nodes());
+                        const previousEdges = visualiser.graph.size;
+                        visualiser.stopLayout(); visualiser.freezeViewport();
+                        run.graph.pushIllustration({ ok: { ...response.ok, answers: rows } });
+                        visualiser.placeIllustrationNodes(previous);
+                        if ((visualiser.graph.order > previous.size || visualiser.graph.size > previousEdges) && !run.expansionQueries?.includes(query)) (run.expansionQueries ??= []).push(query);
+                    }
+                    candidates = [...new Set(rows.map(row => nodeKey(row.data["focus"])).filter((key): key is string => key != null))];
+                }
+            }
+            if (!stillCurrent()) return;
+            candidates = candidates.filter(key => visualiser.graph.hasNode(key) && !visualiser.graph.getNodeAttribute(key, "viewHidden"));
+            if (!candidates.length) { report(`No visible match for ${target.identifier} in this ${this.schemaFocus ? "Schema" : "Query"} graph.`, true); return; }
+            const { width, height } = visualiser.sigma.getDimensions();
+            const distance = (key: string) => { const p = visualiser.sigma.graphToViewport(visualiser.graph.getNodeAttributes(key)); return Math.hypot(p.x - width / 2, p.y - height / 2); };
+            candidates.sort((a, b) => Number(b === currentCaret) - Number(a === currentCaret) || distance(a) - distance(b) || a.localeCompare(b));
+            visualiser.pointCaret(candidates[0], "none", true);
+            report(`Caret: ${target.identifier}${candidates.length > 1 ? ` (${candidates.length} matches; nearest/current node)` : ""}.`);
+        } catch (error) {
+            if (stillCurrent()) report(`Could not resolve ${target.identifier}: ${error instanceof Error ? error.message : String(error)}`, true);
+        } finally {
+            this.caretBusy = false;
+            if (this.caretRequest) this.schedule();
+        }
     }
 
     private drain(): void {

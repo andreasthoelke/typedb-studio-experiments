@@ -518,19 +518,19 @@ export class GraphViewState {
         const harvest = new Set<string>();
         if (type.kind === "entityType") {
             const h = await this.runIidBatchedHarvesting(run, iids, "x", rowLimit * 50,
-                branches => `match ${branches}; $r links ($x); $r links ($other);`,
+                branches => `match ${branches}; $r links ($role: $x); $r links ($otherRole: $other);`,
                 ["r", "other"]);
             h.forEach(iid => harvest.add(iid));
         } else if (type.kind === "relationType") {
             const groups = await Promise.all([
                 this.runIidBatchedHarvesting(run, iids, "r", rowLimit * 50,
-                    branches => `match ${branches}; $r links ($p);`,
+                    branches => `match ${branches}; $r links ($role: $p);`,
                     ["p"]),
                 this.runIidBatchedHarvesting(run, iids, "r", rowLimit * 50,
-                    branches => `match ${branches}; $r links ($p); $p has $pa;`,
+                    branches => `match ${branches}; $r links ($role: $p); $p has $pa;`,
                     ["p"]),
                 this.runIidBatchedHarvesting(run, iids, "r", rowLimit * 50,
-                    branches => `match ${branches}; $r links ($p); $r2 links ($p); $r2 links ($other);`,
+                    branches => `match ${branches}; $r links ($role: $p); $r2 links ($sharedRole: $p); $r2 links ($otherRole: $other);`,
                     ["p", "r2", "other"]),
             ]);
             groups.forEach(s => s.forEach(iid => harvest.add(iid)));

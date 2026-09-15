@@ -101,14 +101,14 @@ export function prepareOperationContext(source: string, execution: EditorExecuti
     let query = `match\n${branches.join(" or\n")};`;
     if (options.neighbours) {
         const types = selected.map(s => s.type);
-        if (types.some(t => t.kind === "relationType" && t.relatedRoles.length)) query += "\ntry { $item links ($nvim_player); };";
+        if (types.some(t => t.kind === "relationType" && t.relatedRoles.length)) query += "\ntry { $item links ($nvim_own_role: $nvim_player); };";
         const eligible = types.filter(t => t.kind === "entityType" || t.kind === "relationType").filter(t => t.playedRoles.length);
         const requested = options.relationTypes ?? [];
         const compatible = requested.filter(label => schema.relations[label] && eligible.some(type =>
             isGraphContextRelationCompatible({ variable: "$item", type: { ...type, kind: "entityType" }, exact: false }, schema.relations[label])));
         if (eligible.length && (!requested.length || compatible.length)) {
             const filter = compatible.length ? " " + compatible.map(label => `{ $nvim_relation isa ${label}; }`).join(" or ") + ";" : "";
-            query += `\ntry { $nvim_relation links ($item);${filter} $nvim_relation links ($nvim_other); };`;
+            query += `\ntry { $nvim_relation links ($nvim_role: $item);${filter} $nvim_relation links ($nvim_other_role: $nvim_other); };`;
         }
     }
     return { query, schemaMode: false, note: "Existing data matching referenced types and literal attributes; unnamed relations are selected by type. This is context, not a record of which instances were newly created." };

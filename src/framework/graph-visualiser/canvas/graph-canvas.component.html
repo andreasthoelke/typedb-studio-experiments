@@ -20,43 +20,46 @@
     @if (inlineSnap) { <div class="canvas-element" #snapCanvasEl></div> }
     <ng-content/>
 
-    <div class="graph-search-bar">
-      <i class="fa-light fa-magnifying-glass"></i>
-      <input type="text" placeholder="Search" aria-label="Search graph"
-             (keydown.enter)="visualiser?.focusSearchMatches()"
-             [value]="visualiser?.searchTerm ?? ''"
-             (input)="updateSearch($any($event.target).value)">
-      @if (visualiser?.searchTerm) {
-        <button class="graph-search-clear" (click)="visualiser?.clearSearch()">
-          <i class="fa-light fa-xmark"></i>
-        </button>
-      }
-      <button class="graph-search-focus"
-              (click)="visualiser?.searchTerm ? visualiser?.focusSearchMatches() : visualiser?.centerCamera()">
-        <i class="fa-light fa-crosshairs"></i>
-      </button>
-    </div>
+    @if (visualiser) {
+      <div class="graph-search-bar graph-keyboard-status" aria-live="polite" aria-atomic="true">
+        <span>{{ navigationMode === 'normal' ? 'Normal' : 'Caret' }}</span>
+        @if (visualiser.elementSelection.active) { <span>· {{ visualiser.elementSelection.nodes.size }} selected</span> }
+        @if (nodeHints.length) { <span>· Graph hints: {{ hintPrefix || 'type a label' }} · Esc cancel</span> }
+        @else if (leaderPending === 'space') { <span>· Space: h previous / l next snap</span> }
+        @else if (leaderPending === 'comma') { <span>· ,f graph hints</span> }
+        @else if (leaderPending === 'z') { <span>· z: z centre / t top / b bottom / h left / l right</span> }
+        @else if (leaderPending === 'g') { <span>· g; previous caret visit</span> }
+        @else if (leaderPending === 'd') { <span>· d: d remove caret / Enter remove selection · Esc cancel</span> }
+        @else if (navigationMode === 'normal') { <span>· c caret · ,f graph hints · ? keys</span> }
+        @else { <span>· hjkl move · n/o/y/. diagonal · Ctrl-o back · Shift nudge · Ctrl-Shift add · Option remove</span> }
+      </div>
+    }
 
-    <div class="graph-search-bar graph-finder" (keydown.escape)="finderOpen = false" (keydown.enter)="focusFinder(); $event.preventDefault()">
-      <i class="fa-light fa-list-check"></i>
-      <input type="text" aria-label="Find types or labels" placeholder="Find types or labels"
-             [value]="finderText" (input)="updateFinder($any($event.target).value)" (focus)="updateFinder(finderText)" (click)="updateFinder(finderText)">
-      <button class="graph-search-focus" aria-label="Focus finder matches" (click)="focusFinder()"><i class="fa-light fa-crosshairs"></i></button>
-      @if (finderText || visualiser?.elementSelection?.active) {
-        <button class="graph-search-focus" aria-label="Clear finder selection" (click)="clearFinder()"><i class="fa-light fa-xmark"></i></button>
+    @for (hint of visibleNodeHints; track hint.key) {
+      <span class="graph-node-hint" [style.left.px]="hint.x" [style.top.px]="hint.y" aria-hidden="true">{{ hint.label }}</span>
+    }
+
+    <div class="graph-search-bar graph-finder" (keydown)="onFinderKey($event)" (focusout)="onFinderBlur($event)">
+      <i class="fa-light fa-magnifying-glass"></i>
+      <input #finderInput type="text" role="combobox" aria-label="Find node" placeholder="Find node (/)"
+             autocomplete="off" aria-autocomplete="list" [attr.aria-expanded]="finderOpen"
+             [attr.aria-controls]="finderListId" [attr.aria-activedescendant]="finderActiveId"
+             [value]="finderText" (input)="updateFinder($any($event.target).value)"
+             (focus)="updateFinder(finderText)" (click)="updateFinder(finderText)">
+      @if (finderText) {
+        <button class="graph-search-focus" aria-label="Clear node search" (click)="clearFinder()"><i class="fa-light fa-xmark"></i></button>
       }
       @if (finderOpen) {
         <div class="finder-results">
-          <p>{{ visualiser?.elementSelection?.nodes?.size ?? 0 }} nodes selected · Enter to focus · Esc to close</p>
-          @for (entry of finderSelected; track entry.id) {
-            <button class="finder-selected" (click)="removeFinderSelection(entry)" [attr.aria-label]="'Remove selection ' + entry.label">{{ entry.label }} ×</button>
-          }
-          <div class="finder-options" role="group" aria-label="Finder matches">
-            @for (entry of finderResults; track entry.id) {
-              <label><input type="checkbox" [checked]="finderStatus(entry) === 'all'" [indeterminate]="finderStatus(entry) === 'partial'" (change)="toggleFinder(entry)">
+          <p>Ctrl-n/p or ↑/↓ to browse · Enter to inspect · Esc to close</p>
+          <div #finderOptions class="finder-options" role="listbox" [id]="finderListId" aria-label="Matching nodes">
+            @for (entry of finderResults; track entry.id; let index = $index) {
+              <button type="button" role="option" tabindex="-1" [id]="finderListId + '-' + index"
+                      [attr.aria-selected]="index === finderIndex" [class.active]="index === finderIndex"
+                      (mousedown)="$event.preventDefault()" (click)="acceptFinder(index)">
                 <span>{{ entry.label }}<small>{{ entry.detail }}</small></span>
-              </label>
-            } @empty { <p>No matches in this graph.</p> }
+              </button>
+            } @empty { <p>No matching nodes.</p> }
           </div>
           @if (finderResults.length === 60) { <p>Showing the first 60 matches. Keep typing to narrow them.</p> }
         </div>
@@ -161,14 +164,19 @@
     </div>
     @if (shortcutHelpOpen) {
       <div class="shortcut-help">
-        <p><kbd>h</kbd> previous snap · <kbd>l</kbd> next snap<br>
+        <p><kbd>Space h</kbd> previous snap · <kbd>Space l</kbd> next snap<br>
           <kbd>Backspace</kbd> close preview · <kbd>s</kbd> save snap<br>
-          <kbd>r</kbd> re-layout · <kbd>+</kbd> / <kbd>-</kbd> zoom · <kbd>Enter</kbd> focus selection · <kbd>/</kbd> find nodes · <kbd>?</kbd> this help</p>
-        <p><kbd>Shift-click</kbd> toggles a node and its periphery in the shared selection. Overlapping groups keep their shared nodes.</p>
-        <p><kbd>⌘-click</kbd> (or <kbd>Ctrl-click</kbd>) toggles just one node, overriding overlapping groups. Explorer uses the same exact selection.</p>
-        <p>Elements → <strong>Isolate &amp; layout</strong> lays out only the highlighted graph. <strong>Restore context</strong> brings back the original arrangement. Enter only moves the camera.</p>
-        <p>Works across the graph view, outside text fields. Click the graph after editing.</p>
-        <p>Vimium: exclude keys <code>hlsr/?+-</code> on <code>http://localhost:1430/*</code>, or press <kbd>i</kbd> to pass keys temporarily.</p>
+          <kbd>r</kbd> re-layout · <kbd>+</kbd> / <kbd>-</kbd> zoom around selection · <kbd>Enter</kbd> focus selection · <kbd>/</kbd> find nodes · <kbd>?</kbd> this help</p>
+        <p><kbd>c</kbd> places the caret nearest the camera centre. Click a node or use <kbd>h j k l</kbd> to inspect it without changing highlights. Motions advance to the next node in the same visible column/row using node bounds. If none overlaps, direction, proximity and connections guide the jump. <kbd>Ctrl-o</kbd> (also <kbd>g;</kbd>) retraces caret visits without changing highlights.</p>
+        <p>Diagonals: <kbd>n</kbd> ↙ down-left · <kbd>o</kbd> ↗ up-right · <kbd>y</kbd> ↖ up-left · <kbd>.</kbd> ↘ down-right. A connected node in that quadrant takes priority; otherwise, movement follows nearby nodes. Shift nudges all eight directions; Ctrl-Shift adds and Option removes at the motion destination.</p>
+        <p><kbd>Ctrl-Shift</kbd> + move or <kbd>Shift</kbd> + click adds only the destination node. <kbd>Option/Alt</kbd> + move/click removes it. Repeating either edit keeps the same membership.</p>
+        <p><kbd>, f</kbd> shows graph-node hints (two letters, more for crowded views). Type a label to inspect; hold Shift or Option on the final letter to add or remove. <kbd>Esc</kbd> cancels hints.</p>
+        <p><kbd>zz</kbd> centres the caret without zooming. <kbd>zt / zb / zh / zl</kbd> place it ⅛ of the viewport from the top / bottom / left / right. · <kbd>Ctrl-y / Ctrl-e</kbd> pan up/down · <kbd>Ctrl-h / Ctrl-l</kbd> pan left/right · <kbd>Enter</kbd> fits highlights · <kbd>+ / -</kbd> zoom in/out around selection.</p>
+        <p><kbd>Shift + h/j/k/l/n/o/y/.</kbd> nudges only the caret node by 5 screen pixels. Hold to repeat; the camera and highlights stay put.</p>
+        <p><kbd>dd</kbd> removes the caret node from this view. <kbd>d Enter</kbd> removes the explicit selection. The first <kbd>d</kbd> only starts a one-second prefix; <kbd>Esc / Ctrl-[</kbd> cancels it. Restore context brings removed nodes back.</p>
+        <p>Outside a picker or pending deletion, <kbd>Esc</kbd> / <kbd>Ctrl-[</kbd> clear selection and return to Normal.</p>
+        <p><kbd>/</kbd> opens the node picker. <kbd>Ctrl-n / Ctrl-p</kbd> or arrows browse suggestions; <kbd>Enter</kbd> or a click sets the caret. <kbd>Esc / Ctrl-[</kbd> cancels the picker. Search never changes highlights.</p>
+        <p>Vimium: exclude <code>abcdghjklnorstyzASDHJKLNOY.;/?&gt;+-=</code> on this site and add custom mapping <code>map , passNextKey</code>. Keep comma and f out of exclusions: bare <kbd>f</kbd> stays with Vimium, <kbd>,f</kbd> reaches graph hints. Also add <code>unmap &lt;c-e&gt;</code> and <code>unmap &lt;c-y&gt;</code> so camera scrolling reaches Studio.</p>
         <p aria-live="polite">Last shortcut: {{ lastShortcut }}</p>
       </div>
     }

@@ -82,7 +82,7 @@ not query inference: a generic query using only type variables or opaque functio
 calls may provide no usable type names. In that case the previous schema view is
 kept and the Neovim button's status explains why.
 
-Selected types share the existing finder/Elements selection; remaining schema
+Selected types share the existing Elements selection; remaining schema
 nodes are dimmed and remain available. Enter focuses your edited selection.
 A fresh layout gets a short settling period before automatic framing. A background
 tab frames when it can render. Changing the selection cancels a pending automatic
@@ -192,42 +192,45 @@ cannot forward execution outcomes; the helper reports that it needs a restart.
 
 ## Finding and framing nodes
 
-The original **Search** field still dims nonmatches. It also searches the visible
-node label, and **Enter** smoothly frames the matches (as does its target icon).
+**Find node (/)** is a single fuzzy node picker. It searches type names, node
+labels, IIDs and already-loaded attribute values, including values used for labels.
+Each suggestion represents one node; there are no selection checkboxes or type
+groups. Dimmed and off-screen nodes are searchable; explicitly hidden nodes are
+omitted until restored. Search uses the loaded graph and never queries more data.
 
-The second field, **Find types or labels**, provides fuzzy matching and multiple
-selections. It searches type names, node labels, IIDs, and already-loaded
-attribute values—including title/name/ID values loaded for labels.
+1. Press **/** to open the picker. Its previous query is selected so typing replaces
+   it. Type a few letters, such as `mtvn` for `motivation`.
+2. Use **Ctrl-n / Ctrl-p** or **Down / Up** to move through matching suggestions,
+   wrapping at either end. Input focus stays in the field, so you can keep typing.
+3. Press **Enter**, or click a suggestion, to place the caret on that node, update
+   Explorer and bring it into view. The picker closes and **hjkl** work immediately.
+4. **Escape / Ctrl-[** closes the picker without changing the caret or highlights.
+   **×** clears only the search text. Neither typing nor browsing suggestions
+   changes the graph's selection or moves its caret before acceptance.
 
-1. Type a few letters, such as `mtvn` for `motivation`.
-2. Check a type to select its nodes, or check individual node results.
-3. Change the search text to add more selections; checked selections persist.
-4. Press **Enter** or the target icon to frame the combined selection. Before
-   starting a selection, Enter selects and frames the displayed matches (up to
-   60). Hidden selected nodes are shown when focused. Click the field to reopen
-   the list; Escape closes it.
-5. Use **×** to clear the finder. Typing in the original Search also clears it.
+Up to 60 suggestions are shown; keep typing to narrow a long list. This follows
+an editor picker flow: search, choose a result, then continue navigating from it.
+Use **zz** after accepting a result when you want it exactly centred at the current
+zoom, rather than merely visible.
 
-The finder, **Elements → Types / Kinds**, and Explorer's **Add to selection /
-Remove from selection** share one selection of nodes in the current graph:
+**Elements → Types / Kinds**, modifier clicks/motions and Explorer's **Add to
+selection / Remove from selection** share one selection of nodes:
 
-- Type and kind tags select their current nodes, just like finder type checkboxes.
-  A dashed tag and a mixed checkbox indicate a partial selection. Type counts
-  show selected/total when partial. Clicking a partial group selects the rest.
+- Type and kind tags select their current nodes. A dashed tag indicates a partial
+  selection; type counts show selected/total. Clicking a partial group selects
+  the rest.
 - **All** selects every node, allowing you to exclude types by toggling them off.
   **None** explicitly selects nothing, allowing you to build a selection from
-  scratch. **Clear** (or the finder's ×) restores normal graph highlighting.
-- **Filter types** only narrows the tag list; it does not alter the selection.
-  **Enter** anywhere in Elements, or its **Focus** button, frames highlighted
-  nodes. Space still toggles a focused tag; double-click selects only that group.
+  scratch. **Clear** restores normal graph highlighting.
+- **Filter types** only narrows the tag list. **Enter** in Elements, or its
+  **Focus** button, frames highlighted nodes. Space toggles a focused tag;
+  double-click selects only that group.
 - Edge tags retain their independent edge-highlighting controls.
 
-The finder works on the graph already displayed; it does not query additional
-data. Newly loaded nodes are initially unselected; a type can become partially
-selected as more instances are loaded. Selections survive docking and switching
-run tabs, and reset with a new result. Reduced-motion preferences disable
-camera animation. Focusing pauses the force layout so the chosen nodes stay in
-view; the redraw control can start a new layout.
+Selections survive docking and switching run tabs, and reset with a new result.
+New query nodes are initially unselected; Explorer expansions join an active
+selection. Reduced-motion preferences disable camera animation. Focusing pauses
+the force layout so targets stay in view; the redraw control starts a new layout.
 
 ## Downloading a graph image
 
@@ -394,7 +397,7 @@ Explorer is the more direct way to explore further.
 
 Beside **Reveal in graph**, **Hide / Show** hides the selected node and its incident
 edges. **Add to selection / Remove from selection** changes the same selection
-as the finder and Elements tags. Hidden nodes remain in the result, including
+as the Elements tags. Hidden nodes remain in the result, including
 its counts and layout; they are not deleted from TypeDB. **Restore hidden / dimmed
 nodes** in the panel footer clears these view overrides. Reveal also unhides the
 inspected node. Overrides survive docking and switching run tabs, but a new query
@@ -421,13 +424,23 @@ On **/schema**, select a node to explore its type in the right-hand Explorer:
 - Clicking a chip reveals that type and opens its Explorer details. The **\***
   chip reveals the whole group with the selected type, showing any hidden nodes.
 - **Hide / Show**, **Add to selection / Remove from selection**, and **Reveal in
-  graph** work on the selected schema node. Selection is shared with the finder
-  and Elements tags. The panel footer restores all hidden or dimmed nodes.
+  graph** work on the selected schema node. Selection is shared with Elements tags. The panel footer restores all hidden or dimmed nodes.
 
 These are view controls over the loaded schema; they do not alter the database.
 Schema refresh rebuilds the graph and clears its temporary visibility changes.
 The same controls are available in fullscreen and with the Explorer docked below
 the graph.
+
+**Customise → Graph** remembers whether **Settings**, **Kinds**, **Types** and
+**Edges** are expanded. Choices survive switching tabs, docking, route changes
+and browser reloads on the same Studio origin. They are UI preferences, separate
+from styling presets and snaps.
+
+When the caret moves, the **Caret type** indicator follows it. If **Types** is
+expanded, the matching style row is highlighted, placed first and brought into
+view inside the panel. It stays reachable even when a type filter or the 100-row
+limit would otherwise omit it. Collapsed sections stay collapsed; **Reveal style**
+opens Types on request. Following the caret never changes the type's actual style.
 
 The **Themes** panel imports and exports custom presets as JSON. Importing keeps
 existing presets and adds a suffix to duplicate names; choose Apply to activate
@@ -440,30 +453,28 @@ Two presets inspired by the Neovim TypeQL palette are available in
 
 ## Keyboard controls and additive graph selection
 
-**Shift-click** a node to toggle it and its periphery in the shared selection.
-A first Shift-click extends the neighborhood of the node you were already
-inspecting. Subsequent Shift-clicks add or remove groups. Shared nodes stay
-selected while another selected group still includes them. This uses the same
-periphery rules as ordinary inspection, including relation role players; it does
-not issue a query or load more nodes. It works in Query, Schema, and saved views.
+The caret is the node you are inspecting; highlights are the set you are working
+with. A plain node click moves the caret and updates Explorer without changing
+highlights, including when you click a dimmed node. It never expands a node's
+neighborhood or toggles selection. Quick repeated clicks use the same semantics
+and do not trigger a separate node zoom.
 
-The finder checkboxes and Elements tags reflect the result. Editing those controls
-establishes a new explicit selection, so subsequent Shift-clicks extend that base.
-Removing the last group selects **None**; **Clear** restores ordinary highlighting.
-Neighborhood groups survive snap save/restore. Ordinary clicking still opens the
-Explorer without replacing an explicit selection.
+**Shift-click** adds only the clicked node. **Option-click** on macOS (**Alt-click**
+elsewhere) removes only that node. Both are idempotent: repeating an add keeps the
+node selected; repeating a removal keeps it unselected. Option wins if both
+modifiers are down. Command/Ctrl-click has no special selection meaning.
 
-**Command-click** (or Ctrl-click) toggles only the clicked node. Unlike removing
-a Shift-click group, this exact edit wins over overlap and the original selection.
-It can exclude an original node or a shared attribute, and a second Command-click
-adds it back. Explorer's **Add to selection / Remove from selection** uses the same
-operation, including when you started with ordinary node inspection. These exact
-exclusions survive snaps and future Shift-click additions. Finder/type/kind edits
-start a new base, as before; Clear or All also resets these exclusions.
+Elements tags and Explorer's **Add to selection / Remove from
+selection** use the same shared set. The first modifier edit starts from the
+currently highlighted nodes. If all nodes are highlighted, Shift-click has
+nothing to add; use **Elements → None** to build a fresh set, or Option-click to
+subtract from the current set. **Clear** returns to ordinary style highlighting.
+Exact selections survive snaps. Older neighborhood-based snaps remain readable,
+but clicks no longer create or toggle neighborhood groups.
 
 ### Stable focus and a working graph
 
-Selection edits only change highlighting. **Enter**, **Focus**, and the lower-right
+Mouse and Explorer selection edits only change highlighting. **Enter**, **Focus**, and the lower-right
 target button frame the same effective selection without changing node positions.
 
 **Elements → Isolate & layout** makes the highlighted nodes the actual working
@@ -473,7 +484,7 @@ Query, Schema, and saved views; the displayed query remains provenance, not a
 rewritten query for the subset. An empty selection does nothing.
 
 For the shared `title` example: use **Kinds → All**, then turn off the attribute
-kind (or exclude just `title` using its type chip / Command-click), and choose
+kind (or exclude just `title` using its type chip / Option-click), and choose
 **Isolate & layout**. Alternatively build a smaller entity/relation selection first.
 For schema graphs, keep the role nodes connecting the relation types to their
 players if you want those connections in the reduced layout.
@@ -498,35 +509,264 @@ players if you want those connections in the reduced layout.
 layout. Use selection plus **Isolate & layout**, or **Remove from graph**, to remove
 that influence. None of these view edits execute the original query or modify data.
 
+### Caret navigation and node hints
+
+In a Neovim `.tql` (or `.tqls`) buffer, normal-mode **Ctrl-n / Ctrl-p** retain
+the existing next/previous binding motions and send a caret jump to following
+**Schema** tabs. Normal-mode **Enter** keeps the source cursor in place and sends
+the identifier under or to its right on the current line to all following Schema
+and Query tabs on that database. Insert-mode Enter keeps its ordinary behavior.
+Use **Follow Neovim** or open the routes with `?nvim=1` to receive these gestures.
+
+Schema follows a type or scoped role name. **geo** is an alias for normal-mode
+Enter. A variable uses its `isa` type when known. Cursor position distinguishes
+`entity take` from a later `plays scene-take:take` clause: the declaration focuses
+`take`; the plays clause focuses the scoped role in Schema and a `scene-take`
+relation instance in Query.
+
+A data relation line focuses the **relation instance**, using all available player
+bindings. For `depiction-slot (host: $d, slot: $sg);`, the literal IDs for both `$d`
+and `$sg` identify the intended relation, distinguishing the agent/goal/barrier
+slots. `scene-take (scene: $s, take: $t);` and `stages (scene: $s, root: $d);`
+similarly focus those relations. Move the source cursor directly onto `$sg`, `$s`,
+or another variable to inspect that player instead. A role label within a data
+relation points Schema to its role and Query to the relation.
+
+**Enter/geo may add missing illustrative data to the current Query graph.** The
+read is built from supported paragraph constraints (`isa`, `iid`, literal string
+`has`, variable attributes and relation players), including connected patterns
+needed to resolve untyped variables. This makes a partial paragraph such as
+`role-binding …; occurrence-of …; $r has title $who;` useful even when its relations
+or owned title attributes were omitted from the original Query result. Reads are
+limited to **20 answer rows** and **32 connected variables**, so one gesture stays
+bounded. The read never executes the source's insert/update/delete stages.
+
+Illustrations append to the current run and are recorded in its expansion queries
+and saved snapshots. Existing node positions, highlights and original query text
+stay unchanged; new nodes are placed near existing neighbours. Repeating the same
+illustration does not duplicate nodes or edges. Deliberately hidden targets remain
+hidden. If the database has no matching data, the view stays unchanged and a notice
+explains the miss. When several visible nodes match, keep the current matching
+caret or choose the nearest to the camera centre. Unknown untyped bindings do not
+fall back to unrelated nodes. Blank lines delimit the source context; this is not
+a full evaluator for arbitrary functions, expressions, negations or query stages.
+
+Neovim jumps use the same padded follow as graph motions: a comfortably visible
+node leaves the camera unchanged; an off-screen node is brought just inside the
+padded viewport. Zoom changes only when its body is too large. Use **zz** to centre
+explicitly. Ctrl-n/p remain Schema-only navigation and do not add Query data.
+
+Neovim can also control all following viewers without switching applications.
+The default buffer-local prefix is **<leader>gv** (Space g v in this config):
+
+| Neovim sequence after `<leader>gv` | Viewer action |
+| --- | --- |
+| `zz / zt / zb / zh / zl` | Centre / top / bottom / left / right caret placement |
+| `Ctrl-h / Ctrl-l` | Pan camera left / right |
+| `Ctrl-y / Ctrl-e` (also `Ctrl-k / Ctrl-j`) | Pan camera up / down |
+| `+` or `=` / `-` | Zoom in / out |
+| `Ctrl-o` | Previous caret visit |
+| `Enter` | Fit highlights |
+| `s` | Save a snapshot in the project |
+| `r` | Re-layout |
+
+The prefix avoids the existing argument-list maps on `<leader>v` and `<leader>vs`.
+Set `control_prefix` in the helper's setup options to change it (or `false` to
+disable these maps). Commands go to **all following Schema/Query tabs on the
+matching database**; `s` saves each receiving view. Navigation and controls are
+transient and never replay when a tab reconnects. Controls wait for pending caret
+lookups; `geo` and controls leave the source cursor in place. They follow an
+already-running bridge and do not open a browser or start a viewer as a side effect.
+
+After updating the bridge/helper, run
+**`:luafile ~/.config/nvim/plugin/ftype/typedb_graph.lua`**, then
+**`:TypeDBGraphStop`** followed by **`:TypeDBGraphStart`**.
+`:TypeDBGraphCaret` is also available as an explicit command.
+
+The lower-left indicator shows **Normal** or **Caret**, with the explicit selection
+count. **c** draws four caret corners around the visible node nearest the camera
+centre (or the nearest loaded node if all are off screen). It does not change
+highlights. Clicking a node also enters Caret. Explorer follows the caret while
+retaining the **here / every** preference. Schema nodes inspect types and roles;
+data nodes inspect instances or their types.
+
+**h / j / k / l** move left / down / up / right in screen coordinates. Each
+motion uses the current layout and the rendered node bodies, independently of
+how you reached the node. For **j/k**, nodes whose horizontal bounds overlap form
+a visual column; movement chooses the next centre below/above. **h/l** uses the
+same rule for a row: overlapping vertical bounds, then the next centre left/right.
+This lets wide, staggered nodes be traversed in screen order even when their
+centres are quite diagonal. A farther, more centred node does not skip the next
+node in that visual column or row.
+
+If no node overlaps that column/row in the requested direction, movement falls
+back to a 90-degree cone (or the forward half-plane when empty), balancing distance
+and lateral drift with a stronger connection preference: a direct neighbour's
+distance/alignment score is divided by three. Connections also break
+comparable choices at the same row/column position. Hidden nodes are skipped;
+dimmed nodes remain reachable. No candidate means no movement, with no wrapping.
+
+For the evidence / take-includes / goal arrangement, **k** moves from evidence
+to take-includes and another **k** to goal, even after arriving at evidence with
+**j** from motivation. **l** from take-includes reaches motivation. In the wide-node
+Fear / tension / motivation / goal arrangement, repeated **j** advances through
+those nodes in their vertical order rather than skipping tension for a more
+centred motivation node. These screenshot layouts are covered by regression tests.
+
+**n / o / y / .** add diagonal directions, so rows and columns do not prevent
+reaching diagonal connections:
+
+```text
+y ↖    k ↑    o ↗
+h ←           l →
+n ↙    j ↓    . ↘
+```
+
+Diagonal motions first consider direct neighbours in the requested quadrant;
+if none exists, they consider other nodes there. Distance and alignment choose
+among candidates. A diagonal never falls back to another quadrant or a node
+directly above/below/left/right. In the stages screenshot, **n** reaches
+**depiction: Conflict stage** and **o** reaches **scene: Approach-avoidance, held**,
+even with closer unconnected nodes and occupied rows/columns. **y** and **.**
+reach the upper-left and lower-right depiction-slot nodes when no connection
+competes in those quadrants. **,f** remains an exact jump when several nodes
+compete for one direction.
+
+**Shift + h/j/k/l/n/o/y/.** moves the caret node itself by 5 screen pixels in that
+direction, regardless of zoom or camera rotation. Hold the chord to repeat. The
+camera, other nodes, caret identity and highlights stay fixed; like dragging,
+the new position is anchored against later layout reheats and saved in snaps.
+Only the caret node moves even when several nodes are highlighted. Ctrl-h/l and
+Ctrl-y/e pan the camera; Ctrl-o goes back through caret history. Ctrl-n/p inside
+the picker and in Neovim keep their existing meanings.
+
+**Ctrl-o** (also **g;**) retraces previous caret visits, one at a time, independently of direction.
+It includes motions, node clicks, accepted search results, graph hints and **c**
+jumps, skips hidden/removed nodes, and brings an off-screen destination into view.
+Repeated visits to the same current node do not add history. Backtracking preserves
+highlights, including selection edits made while moving. New movement after going
+back starts a new branch; there is no automatic redo attached to direction keys.
+History holds the latest 256 visits and stops at its beginning without wrapping.
+Clearing/exiting navigation, re-layout, node deletion or replacing/remounting the
+graph starts fresh; caret history is not saved in snaps.
+
+Hold **Ctrl-Shift** during a motion to add its destination, or **Option/Alt** to remove
+it. This applies to all eight directions; **Ctrl-Shift-.** adds
+the down-right destination, and **Option-.** removes it. The starting node is
+untouched. There is no Visual mode. Caret navigation stops
+the force layout so targets stay stable; **r** exits Caret and re-layouts while
+retaining selection. Elements/Explorer selection edits keep the caret.
+
+**Comma, then f** opens graph hints on nodes currently on screen, including dimmed
+nodes. Type a label to move the caret and inspect that node. Labels use `asdhjkl`:
+two letters for up to 49 nodes, then longer labels for denser views. Hold Shift or
+Option on the **final letter** to add or remove that node. **Backspace** corrects
+a partial label; **Escape** cancels hints without changing highlights. Invalid
+labels, pointer interaction, resizing, camera changes or a new source cancel the
+picker. Without Vimium, bare **f** is also an alias.
+
+Camera following minimally pans the caret into a padded viewport and zooms out
+only if its body will not fit. **zz** centres the caret exactly, preserving zoom
+and rotation; without a caret it does nothing. **Enter** explicitly fits the highlighted set,
+accounting for node bodies. **+ / -** zoom around the explicit selection centre,
+retaining that point on screen; without one, zoom uses the camera centre. Manual
+panning changes neither caret nor selection.
+
+**dd** removes just the caret node and its incident edges from the working graph,
+even if that node is not highlighted. Other selected nodes keep their membership.
+**d Enter** removes the explicit selection; without an explicit selection it does
+nothing. Both preserve the camera and remaining node positions. After deleting
+the caret, navigation continues at the nearest surviving direct neighbour, then
+the nearest other visible node, or returns to Normal if none remain.
+
+The first **d** only arms a one-second prefix, shown in the mode indicator. It
+never deletes immediately or on timeout. **Escape / Ctrl-[** cancels the prefix
+without clearing the caret or highlights; an invalid second key also cancels.
+Holding d cannot repeat deletion. **dd** without a caret does nothing.
+**Restore context** restores the original arrangement using the existing single return point. These actions never delete
+database data or execute the source query.
+
+Outside the search picker, hints and pending deletion, **Escape / Ctrl-[** clears
+inspection, selection and search highlights, returning to Normal. **Ctrl-[** also
+performs that full reset during hints. New
+snaps/results and rebuilt renderers start in Normal; snaps save selection and
+camera without persisting the caret, motion history or partial key sequences.
+
 | Key | Action |
 | --- | --- |
-| `h` / `l` | Previous / next snap in the displayed route-specific list, wrapping at the ends |
-| `Backspace` | Close an offline preview and return to the preserved live view; editable restored runs are already live |
-| `r` | Re-layout; if already running, stop and restart from current positions |
-| `+` / `-` | Smoothly zoom in / out around the current camera center |
-| `Enter` | Smoothly focus the current shared selection or ordinary highlights |
+| `c` | Place caret nearest camera centre; preserve highlights |
+| Click | Place caret on that node and inspect it; preserve highlights |
+| `h` / `j` / `k` / `l` | Move caret left/down/up/right using the current layout |
+| `n` / `o` / `y` / `.` | Move caret ↙ / ↗ / ↖ / ↘; prefer connections in that quadrant |
+| Shift + direction | Nudge only the caret node 5 screen pixels; hold to repeat |
+| `Ctrl-o` (also `g;`) | Go back through previous caret visits; preserve highlights |
+| Ctrl-Shift + motion / Shift + click | Add only the destination node |
+| Option/Alt + motion/click | Remove only the destination node |
+| `,f` | Show graph hints; type label to inspect, final Shift/Option to add/remove |
+| `Ctrl-y` / `Ctrl-e` | Move camera up/down (graph moves down/up on screen) |
+| `Ctrl-h` / `Ctrl-l` | Move camera left/right |
+| `Escape` / `Ctrl-[` | Clear selection, inspection/highlights, and return to Normal; Escape only cancels active hints; either key cancels the search picker or pending deletion |
+| `dd` | Remove the caret node from the view; preserve other selected nodes |
+| `d Enter` | Remove explicitly selected nodes from the view; Restore context brings them back |
+| `zz` | Centre the caret in the viewport, preserving zoom |
+| `zt` / `zb` | Place the caret ⅛ of the viewport height from the top/bottom |
+| `zh` / `zl` | Place the caret ⅛ of the viewport width from the left/right |
+| `Enter` | Fit the highlighted node bodies; in the picker, accept its active suggestion |
+| `+` (also `=`) / `-` | Zoom in/out around explicit selection, or camera centre |
+| `Space h` / `Space l` | Previous/next snap in the route-specific list, wrapping at the ends |
+| `Backspace` | Close an offline preview and return to the preserved live view |
+| `r` | Re-layout; if running, stop and restart from current positions |
 | `s` | Save a snap |
-| `/` | Focus the fuzzy finder |
+| `/` | Open the node picker and select its previous query text |
+| `Ctrl-n` / `Ctrl-p` | In the picker, browse next/previous suggestion; Enter sets the caret |
 | `?` | Open/close shortcut help in Snaps |
 
-These work across the visible graph view; snap chips do not need keyboard focus.
-Inputs, the query editor, dialogs, menus, modified browser shortcuts, and key
-repeat are left alone. After typing, click an empty area of the graph to use graph
-shortcuts. Enter inside either search field keeps that field's existing behavior.
-The Snaps **Keys** button shows help and the last shortcut Studio received.
+Space, comma, z, g and d are one-second prefixes: release the prefix, then type the next
+key. Focus changes, clicks, leaving the window or hiding the page cancel a prefix.
+Bare h/l do not browse snaps. Controls work across the visible graph view; snap
+chips need no keyboard focus. Motion, node nudging, pan and zoom repeat; deletion, saving,
+re-layout and snap browsing do not. Inputs, the query editor, dialogs, menus and
+composition keep their normal behavior. Enter/Space on buttons remain native.
+The Snaps **Keys** button shows the last shortcut Studio received.
 
-**Vimium setup:** in Vimium's popup/options, add an exclusion rule with pattern
-`http://localhost:1430/*` and excluded/pass-through keys `hlsr/?+-`, then save.
-Use your actual port if different. Leave the keys field empty to disable Vimium
-entirely for this site, or press `i` for temporary pass-through (Escape ends it).
-Default Vimium does not map Enter or Backspace. Custom mappings for those keys
-may require a full site exclusion or insert mode.
+### Keeping Vimium UI hints
 
-Vimium 2.4.2 was tested from this machine's installed extension in an isolated
-browser profile: default `h`/`l` never reached Studio's window capture listener;
-the exclusion rule passed them through. No real Chrome profile was modified.
-A web page cannot override an extension that consumes the event first. See
-[Vimium's exclusion documentation](https://github.com/philc/vimium/wiki/Disabling-Vimium).
+In Vimium's options, add a rule for `http://localhost:1430/*` (use the actual host
+and port) with this **Excluded keys** value:
+
+```text
+abcdghjklnorstyzASDHJKLNOY.;/?>+-=
+```
+
+Then add this **Custom key mapping**:
+
+```text
+map , passNextKey
+unmap <c-e>
+unmap <c-y>
+```
+
+Keep **comma and f out of the exclusion list**. Bare **f** then remains Vimium's
+UI hints, useful for Explorer chips and buttons. Comma tells Vimium to pass the
+next key to Studio, so **,f** opens graph hints. Exclusions alone cannot express
+this sequence: passing comma does not stop Vimium from consuming the following f.
+These custom mappings apply across Vimium-enabled sites.
+
+The exclusion list covers graph commands (including **z** for **zz**), lowercase
+hint letters and Shift motions/labels. It includes **n/o/y/.** and **N/O/Y/>**
+for diagonal navigation and nudging, **b/t** for **zb/zt**, and **g/;** for caret history. Ctrl-n/p work in the focused picker input
+without additional Vimium mappings. Vimium maps Ctrl-e/y to page scrolling by
+default; the two unmap lines release camera scrolling to Studio.
+Space, Enter, Escape, Backspace, Ctrl-h/l/y/e/o/[ and Ctrl-Shift directions and
+Option motions pass through in the tested default configuration. If your own
+mappings bind these, unmap those conflicting bindings as well.
+Vimium's exclusion field is a list of characters, not `<c-e>`-style key mappings;
+putting chord notation there will exclude its individual characters instead.
+Browser-reserved shortcuts can still vary by platform.
+
+Validation uses the installed Vimium 2.4.2 in an isolated Chromium profile; no real
+Chrome settings are changed. See [Vimium exclusions](https://github.com/philc/vimium/wiki/Disabling-Vimium)
+and [custom mappings](https://github.com/philc/vimium/wiki/Key-Mappings).
 
 ## Query lifecycle
 
@@ -656,13 +896,20 @@ and both destination paths. `DELETE /api/viewer/snap` uses the same project/DB
 parameters and `filename` to remove one snap; it rejects traversal and non-snap filenames.
 
 
-## Outline and edge dashes
+## Outline and edge styles
 
 In **Customise → Graph**, the Kinds, Types, and Edges sections have a **Dashed**
 dropdown: Solid, Dotted, Short dash, Long dash, and Dash-dot. Kind settings apply
 to all nodes of that kind; Types can override them or choose **Inherit**. **All
 edges** supplies the default edge pattern, with individual edge categories such
 as `has`, `links`, and `owns` able to override it or inherit.
+
+The adjacent **Thickness ×** field scales the existing line weight from **0.25×
+to 8×**. **1×** is the previous appearance. Kinds set the outline default; a type
+can override it. **All edges** sets the edge default, and each edge category can
+override it. Clear an override field to inherit again, or use the row's reset
+button. Thickness works with every dash pattern and with straight or curved
+edges, and is included in saved styles, portable presets, snaps and PNGs.
 
 Patterns apply to all four node outlines and both straight and curved edges.
 They are drawn by WebGL, follow camera movements, and appear in PNG exports.
@@ -674,4 +921,51 @@ an animation queue: an active layout is stopped and replaced from its current
 positions. A request after settling performs the usual fresh redraw. The same
 behavior applies to the redraw buttons. Holding the key does not auto-repeat;
 text inputs and browser modifier shortcuts keep their normal behavior. With
-Vimium, add `r` to the site's pass-through keys (`hlsr/?+-`).
+Vimium, use the Studio site exclusion described under Keyboard controls.
+
+## Role labels, role styles, and edge inspection
+
+Query edges between a relation and its players show the **role name**: for
+example, motivation uses `driver` and `target`, and composition uses `host`,
+`slot`, and `child`. Label/style refreshes preserve those names. The short name
+stays on the graph; the full name, such as `composition:host`, identifies its
+style and appears in the edge inspector.
+
+Viewer-generated neighbour/Explorer queries now return role variables. If a
+query omits them, a background read resolves roles for the relation–player pairs
+already in the graph. This does not add unrelated nodes, change the query editor,
+or change the caret/highlight set. It can replace one unresolved `links` edge
+with several role edges when that player has several roles in the same relation.
+An explicitly named role remains restricted to that role. An unavailable database
+or an old offline snap without role metadata can still show `links`; connect and
+open the snap as an editable view to resolve it from current data. Offline snaps
+with role metadata need no lookup.
+
+In **Customise → Graph → Edges → Role types**, each loaded role has its own
+colour, dash pattern, and thickness. The filter searches full names. Inheritance
+is **role → links → all edges**, independently for each property. For example,
+make `links` dotted, then make `composition:host` solid and thicker; all the other
+roles keep the dotted default. `depiction-slot:host` is a separate style. Clear a
+field or choose **Inherit** to remove that property's override; the row's reset
+button removes all its overrides. Role styles travel with themes, portable
+presets, snapshots, and PNG exports.
+
+**Click an edge** to inspect its role and endpoints. This leaves the node caret
+and highlight selection intact; a small thickness accent marks the inspected
+edge. **Go to relation / Go to player** moves the caret with normal padded
+following. **Customise role** opens Edges and reveals that role's style row.
+Clicking a node or moving the caret returns to node inspection. Edge inspection
+also works in offline snaps and on generic/schema edges.
+
+Parallel edges are separated into stable curves on both sides of the straight
+path, even when their endpoint directions differ. In a TypeDB relation-node
+view, these often mean **one player occupies multiple roles in the same relation**.
+Repeated answer rows for the same relation/player/role are deduplicated. Different
+relation instances remain separate relation nodes; they are not collapsed into
+parallel person-to-person links.
+
+Arrowheads are deferred. A useful future role setting would choose **toward
+relation / toward player / none**: `motivation:driver` toward the relation,
+`motivation:target` toward the player, and symmetric `tension:pole` without an
+arrow. This needs deliberate per-role semantics and correct placement against
+Studio's custom node shapes.

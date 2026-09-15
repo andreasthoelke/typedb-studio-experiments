@@ -101,6 +101,19 @@
     display: flex;
 }
 
+.graph-search-bar.graph-keyboard-status {
+    @include typography.caption1;
+    top: auto;
+    bottom: 16px;
+    height: auto;
+    min-height: 28px;
+    max-width: calc(100% - 90px);
+    padding: 4px 10px;
+    flex-wrap: wrap;
+    pointer-events: none;
+    color: var(--gc-fg);
+}
+
 .graph-search-bar {
     position: absolute;
     left: 16px;
@@ -364,7 +377,7 @@
 }
 
 .graph-finder {
-    top: 56px;
+    top: 16px;
 
     .finder-results {
         position: absolute;
@@ -378,29 +391,43 @@
         padding: 8px;
         @include typography.p2;
 
-        p { margin: 4px 0 8px; }
-        .finder-selected {
-            background: none;
-            color: inherit;
-            border: 1px solid var(--gc-border);
-            border-radius: 12px;
-            margin: 2px;
-            cursor: pointer;
-        }
+        p { @include typography.caption1; margin: 4px 0 8px; white-space: normal; }
         .finder-options {
             max-height: 240px;
             overflow-y: auto;
-            label {
+            button {
+                width: 100%;
+                border: 0;
+                background: none;
+                color: inherit;
+                font: inherit;
+                text-align: left;
                 display: flex;
                 align-items: center;
                 gap: 8px;
                 padding: 6px 2px;
                 cursor: pointer;
                 overflow-wrap: anywhere;
-                input { width: auto; flex: 0 0 auto; }
+                span { min-width: 0; white-space: normal; }
                 small { display: block; color: var(--gc-fg-muted); }
-                &:hover { background: var(--gc-border); }
+                &:hover, &.active { background: var(--gc-border); }
             }
         }
     }
+}
+
+.graph-node-hint {
+  @include typography.caption1;
+  position: absolute;
+  z-index: 5;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  padding: 1px 5px;
+  border: 1px solid dark.$secondary-dark-yellow;
+  border-radius: 3px;
+  background: dark.$secondary-yellow;
+  color: dark.$secondary-dark-yellow;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
 }

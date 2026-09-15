@@ -1288,7 +1288,13 @@ export class GraphOutputState {
         }
     }
 
-    private pushInternal(res: ApiResponse<QueryResponse>) {
+    /** Caret illustrations append to the visible run without extending its
+     * explicit highlights. The ordinary Explorer push behavior is unchanged. */
+    pushIllustration(res: ApiResponse<QueryResponse>): void {
+        if (!this.destroyed && this.visualiser && this._canvasEl) this.pushInternal(res, true);
+    }
+
+    private pushInternal(res: ApiResponse<QueryResponse>, preserveSelection = false) {
         if (isApiErrorResponse(res)) {
             this.status = "error";
             return;
@@ -1318,7 +1324,7 @@ export class GraphOutputState {
                 break;
             }
             case "conceptRows": {
-                this.visualiser.handleQueryResponse(res, this.database!);
+                this.visualiser.handleQueryResponse(res, this.database!, preserveSelection);
                 let highlightedQuery = "";
                 if (QUERY_HIGHLIGHT_DIV_ID != null) {
                     if (res.ok.query) {

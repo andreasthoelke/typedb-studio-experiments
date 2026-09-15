@@ -9,6 +9,8 @@ import { tmpdir, homedir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { createViewerServer } from './viewer-server.mjs';
+import { checkGraphNavigation } from './graph-navigation.browser-checks.mjs';
+import { checkGraphCustomise } from './graph-customise.browser-checks.mjs';
 
 async function playwright() {
     if (process.env.PLAYWRIGHT_MODULE) return import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href);
@@ -60,23 +62,25 @@ try {
     const active=()=>page.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).snapshots.activeFile?.filename);
     if(process.env.VIMIUM_PATH) {
         const worker=context.serviceWorkers()[0]??await context.waitForEvent('serviceworker');
-        await page.waitForTimeout(700);await page.keyboard.press('l');await page.waitForTimeout(200);
-        assert.equal(await page.locator('.snap-chip-open[aria-pressed="true"]').count(),0,'Vimium should consume l before the page receives it');
-        await worker.evaluate(async origin=>{await Settings.onLoaded();await Settings.set('exclusionRules',[{pattern:origin+'/*',passKeys:'hlsr/?+-'}]);},origin);
+        await page.waitForTimeout(700);
+        await page.evaluate(()=>{window.vimiumProbe=[];window.addEventListener('keydown',event=>window.vimiumProbe.push(event.key),true);});
+        await page.keyboard.press('l');
+        assert.deepEqual(await page.evaluate(()=>window.vimiumProbe),[],'Default Vimium consumes l before page listeners');
+        await worker.evaluate(async origin=>{await Settings.onLoaded();await Settings.set('keyMappings','map , passNextKey\nunmap <c-e>\nunmap <c-y>');await Settings.set('exclusionRules',[{pattern:origin+'/*',passKeys:'abcdghjklnorstyzASDHJKLNOY.;/?>+-='}]);},origin);
         await page.reload();await page.waitForSelector('ts-graph-canvas');
         await page.evaluate(()=>{const c=window.ng.getComponent(document.querySelector('ts-graph-canvas'));Object.defineProperty(c,'snapshotDatabase',{get:()=> 'shortcut-test'});window.ng.applyChanges(c);});
         await page.waitForFunction(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).snapFiles.length===3);
         await page.waitForTimeout(700);
-        console.log('PASS real Vimium blocks default l; configured per-site hlsr/?+- in isolated profile');
+        console.log('PASS real Vimium blocks default l; configured selective exclusions and comma passNextKey in isolated profile');
     }
     const names=await page.locator('.snap-chip-open').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-label')));
     // Focus is on the graph/body, never a chip: this was the original focus restriction.
-    await page.keyboard.press('l');await page.waitForFunction(()=>!!window.ng.getComponent(document.querySelector('ts-graph-canvas')).inlineSnap);
+    await page.keyboard.press('Space');await page.keyboard.press('l');await page.waitForFunction(()=>!!window.ng.getComponent(document.querySelector('ts-graph-canvas')).inlineSnap);
     assert.equal(await active(),names[0]);
-    await page.keyboard.press('l');await page.waitForFunction(name=>document.querySelector('.snap-chip-open[aria-pressed="true"]')?.getAttribute('aria-label')===name,names[1]);
-    await page.keyboard.press('h');await page.waitForFunction(name=>document.querySelector('.snap-chip-open[aria-pressed="true"]')?.getAttribute('aria-label')===name,names[0]);
-    await page.keyboard.press('h');await page.waitForFunction(name=>document.querySelector('.snap-chip-open[aria-pressed="true"]')?.getAttribute('aria-label')===name,names.at(-1));
-    // Exercise the real interaction handler and reducer with overlapping neighborhoods.
+    await page.keyboard.press('Space');await page.keyboard.press('l');await page.waitForFunction(name=>document.querySelector('.snap-chip-open[aria-pressed="true"]')?.getAttribute('aria-label')===name,names[1]);
+    await page.keyboard.press('Space');await page.keyboard.press('h');await page.waitForFunction(name=>document.querySelector('.snap-chip-open[aria-pressed="true"]')?.getAttribute('aria-label')===name,names[0]);
+    await page.keyboard.press('Space');await page.keyboard.press('h');await page.waitForFunction(name=>document.querySelector('.snap-chip-open[aria-pressed="true"]')?.getAttribute('aria-label')===name,names.at(-1));
+    // Exercise exact, idempotent selection through the real interaction handler and reducer.
     await page.evaluate(() => {
         const c=window.ng.getComponent(document.querySelector('ts-graph-canvas')), v=c.visualiser, graph=v.graph;
         const template=graph.getNodeAttributes('n');
@@ -86,12 +90,14 @@ try {
         graph.addEdge('n','shared',{type:'line',size:1,color:'#112233',metadata:{}});
         graph.addEdge('other','shared',{type:'line',size:1,color:'#112233',metadata:{}});
         v.sigma.refresh();
-        const click=(node,shiftKey)=>v.interactionHandler.onClickNode({node,event:{original:new MouseEvent('click',{shiftKey})}});
+        const click=(node,extra={})=>v.interactionHandler.onClickNode({node,event:{original:new MouseEvent('click',extra)}});
         v.interactionHandler.setSelectionMode('instances');
-        click('n',false);click('other',true);
-        if([...v.elementSelection.nodes].sort().join(',')!=='n,other,shared') throw new Error('Shift-click did not extend inspection: '+JSON.stringify({nodes:[...v.elementSelection.nodes],primary:v.interactionHandler.state.selectedNode,mode:v.interactionHandler.selectionMode,hasVisualiser:!!v.interactionHandler.visualiser}));
-        click('n',true);
-        if([...v.elementSelection.nodes].sort().join(',')!=='other,shared') throw new Error('Overlap lost on deselect');
+        v.elementSelection.replace([]);
+        click('n');click('other',{shiftKey:true});click('other',{shiftKey:true});
+        if([...v.elementSelection.nodes].join(',')!=='other') throw new Error('Shift-click must add only its destination, once');
+        click('n',{shiftKey:true});click('n',{altKey:true});click('n',{altKey:true});
+        if([...v.elementSelection.nodes].join(',')!=='other') throw new Error('Option-click must remove only its destination, once');
+        if(v.navigation.caret!=='n'||v.interactionHandler.state.selectedNode!=='n') throw new Error('Unselected node did not receive caret and inspection');
         if(v.sigma.getSetting('nodeReducer')('unrelated',graph.getNodeAttributes('unrelated')).zIndex!==0) throw new Error('Unselected node not faded');
         v.sigma.getCamera().setState({x:0,y:0,ratio:4});
     });
@@ -116,29 +122,30 @@ try {
     await page.waitForFunction(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.sigma.getCamera().getState().ratio!==4);
     await page.waitForTimeout(350);
     const cameraRatio=()=>page.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.sigma.getCamera().ratio);
+    await page.evaluate(()=>{const camera=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.sigma.getCamera();camera.setState({ratio:Math.max(.2,camera.ratio)});});
     const originalRatio=await cameraRatio();
     await page.keyboard.press('+');await page.waitForTimeout(200);
     assert.ok(Math.abs(await cameraRatio()-originalRatio*0.7)<1e-6,'+ zooms in by the toolbar factor');
     await page.keyboard.press('-');await page.waitForTimeout(200);
     assert.ok(Math.abs(await cameraRatio()-originalRatio)<1e-6,'- zooms back out');
-    await page.keyboard.press('/');assert.equal(await page.locator('input[aria-label="Find types or labels"]').evaluate(el=>document.activeElement===el),true);
+    await page.keyboard.press('/');assert.equal(await page.locator('input[aria-label="Find node"]').evaluate(el=>document.activeElement===el),true);
     const editingRatio=await cameraRatio();
-    await page.keyboard.type('+-');assert.equal(await page.locator('input[aria-label="Find types or labels"]').inputValue(),'+-');assert.equal(await cameraRatio(),editingRatio);
-    await page.locator('input[aria-label="Find types or labels"]').fill('');
-    await page.keyboard.type('hls');await page.keyboard.press('Backspace');assert.equal(await page.locator('input[aria-label="Find types or labels"]').inputValue(),'hl');assert.equal(await active(),names.at(-1));
+    await page.keyboard.type('+-');assert.equal(await page.locator('input[aria-label="Find node"]').inputValue(),'+-');assert.equal(await cameraRatio(),editingRatio);
+    await page.locator('input[aria-label="Find node"]').fill('');
+    await page.keyboard.type('hls');await page.keyboard.press('Backspace');assert.equal(await page.locator('input[aria-label="Find node"]').inputValue(),'hl');assert.equal(await active(),names.at(-1));
     await page.locator('.canvas-element').last().click({position:{x:450,y:350}});
     await page.keyboard.press('?');await page.getByText('Last shortcut: ? → help',{exact:true}).waitFor();
     await page.keyboard.press('s');await page.waitForFunction(()=>!window.ng.getComponent(document.querySelector('ts-graph-canvas')).snapping&&window.ng.getComponent(document.querySelector('ts-graph-canvas')).snapFiles.length===4);
     assert.equal((await readdir(directory)).length,4);
-    await page.keyboard.press('l');
+    await page.keyboard.press('Space');await page.keyboard.press('l');
     const savedName=(await readdir(directory)).find(name=>!names.includes(name));
     await page.waitForFunction(name=>{const c=window.ng.getComponent(document.querySelector('ts-graph-canvas'));return !c.snapsBusy && c.snapshots.activeFile?.filename===name;},savedName);
     await page.evaluate(()=>{
         const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;
         v.interactionHandler.onClickNode({node:'other',event:{original:new MouseEvent('click',{shiftKey:true})}});
-        if(v.elementSelection.nodes.size!==0) throw new Error('Saved neighborhood did not toggle off after restoration');
+        if([...v.elementSelection.nodes].join(',')!=='other') throw new Error('Saved exact selection changed on repeated addition');
     });
-    // Exercise a real Command-click through Sigma's mouse captor, not only handler calls.
+    // Exercise a real Option-click through Sigma's mouse captor, not only handler calls.
     await page.evaluate(()=>{
         const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;
         v.stopLayout();v.graph.nodes().forEach((key,index)=>v.graph.mergeNodeAttributes(key,{x:index*300,y:0}));
@@ -150,14 +157,14 @@ try {
         const p=v.sigma.graphToViewport(v.graph.getNodeAttributes('shared'));
         const r=v.sigma.getContainer().getBoundingClientRect();return {x:r.x+p.x,y:r.y+p.y};
     });
-    await page.keyboard.down('Meta');await page.mouse.click(point.x,point.y);await page.keyboard.up('Meta');
-    assert.equal(await page.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.elementSelection.nodes.has('shared')),false,'Real Command-click subtracts the clicked node');
+    await page.keyboard.down('Alt');await page.mouse.click(point.x,point.y);await page.keyboard.up('Alt');
+    assert.equal(await page.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.elementSelection.nodes.has('shared')),false,'Real Option-click subtracts the clicked node');
     // Exact edits must remove nodes from an original explicit set and from overlapping groups.
     await page.evaluate(()=>{
         const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;
         v.elementSelection.replace(v.graph.nodes());
-        v.interactionHandler.onClickNode({node:'shared',event:{original:new MouseEvent('click',{metaKey:true})}});
-        if(v.elementSelection.nodes.has('shared')) throw new Error('Command-click did not remove original node');
+        v.interactionHandler.onClickNode({node:'shared',event:{original:new MouseEvent('click',{altKey:true})}});
+        if(v.elementSelection.nodes.has('shared')) throw new Error('Option-click did not remove original node');
         window.workingOriginal=structuredClone(v.graph.export());
         window.workingCamera={...v.sigma.getCamera().getState()};
     });
@@ -182,6 +189,26 @@ try {
         }
         if(JSON.stringify(v.sigma.getCamera().getState())!==JSON.stringify(window.workingCamera)) throw new Error('Original camera lost: '+JSON.stringify({now:v.sigma.getCamera().getState(),original:window.workingCamera}));
     });
+    if(process.env.VIMIUM_PATH) {
+        // Bare f must remain the real extension's UI picker even though its label
+        // letters are excluded in normal mode. Activate a real Elements chip through it.
+        const button=page.locator('[aria-label="Kinds"] .highlight-chip').first();
+        await page.evaluate(()=>document.activeElement?.blur());
+        const expanded=await button.getAttribute('aria-pressed');
+        const box=await button.boundingBox();
+        await page.keyboard.press('f');await page.waitForSelector('.vimiumHintMarker');
+        assert.equal(await page.locator('.graph-node-hint').count(),0,'Bare f belongs to Vimium');
+        const hint=await page.locator('.vimiumHintMarker').evaluateAll((markers,box)=>{
+            return markers.map(el=>({text:el.textContent,rect:el.getBoundingClientRect()}))
+                .sort((a,b)=>Math.hypot(a.rect.x-box.x,a.rect.y-box.y)-Math.hypot(b.rect.x-box.x,b.rect.y-box.y))[0].text;
+        },box);
+        await page.keyboard.type(hint.toLowerCase());
+        await page.waitForFunction(expanded=>document.querySelector('[aria-label="Kinds"] .highlight-chip')?.getAttribute('aria-pressed')!==expanded,expanded);
+        assert.equal(await page.locator('.graph-node-hint').count(),0);
+        console.log('PASS bare Vimium f hints activate an Explorer UI control with selective exclusions');
+    }
+    await checkGraphNavigation(page, 'saved preview');
+    await checkGraphCustomise(page, 'saved preview');
     await page.locator('.canvas-element').last().click({position:{x:450,y:350}});
     const url=page.url();await page.keyboard.press('Backspace');await page.waitForFunction(()=>!window.ng.getComponent(document.querySelector('ts-graph-canvas')).inlineSnap).catch(async error=>{
         console.error(errors);
@@ -192,13 +219,13 @@ try {
     let release;
     const delayed=new Promise(resolve=>release=resolve);
     await page.route('**/api/viewer/snap?*',async route=>{await delayed;await route.continue();});
-    await page.keyboard.press('l');
+    await page.keyboard.press('Space');await page.keyboard.press('l');
     await page.waitForFunction(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).snapsBusy);
     await page.keyboard.press('Backspace');release();
     await page.waitForFunction(()=>!window.ng.getComponent(document.querySelector('ts-graph-canvas')).snapsBusy);
     assert.equal(await page.evaluate(()=>!!window.ng.getComponent(document.querySelector('ts-graph-canvas')).inlineSnap),false);
     assert.deepEqual(errors,[]);
-    console.log('PASS +/- camera zoom and input protection, r restart from current positions, real Command-click, working subset UI and original context/camera restoration; Shift-click overlap, Enter focus, saved group restoration; h/l from graph focus, order/wrap, / finder, text editing protection, ? help, s real save, Backspace live without navigation, cancellation of pending snap load');
+    console.log('PASS +/- camera zoom and input protection, r restart from current positions, real Option-click, working subset UI and original context/camera restoration; idempotent Shift/Option clicks, Enter focus, saved selection restoration; Space h/l from graph focus, order/wrap, / finder, text editing protection, ? help, s real save, Backspace live without navigation, cancellation of pending snap load');
 } catch(error) {
     console.error(errors);console.error(await page?.locator("body").innerText());throw error;
 } finally {

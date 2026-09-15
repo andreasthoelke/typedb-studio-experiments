@@ -31,6 +31,7 @@ export interface VertexAttributes {
 }
 
 export interface EdgeMetadata {
+    defaultLabel?: string;
     answerIndex: number;
     dataEdge: DataConstraintAny;
 }

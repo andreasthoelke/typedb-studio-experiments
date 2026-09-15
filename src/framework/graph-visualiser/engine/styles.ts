@@ -1,3 +1,4 @@
+import { edgeStyleKey, inheritedEdgeStyle } from "../../util/graph-edge";
 import {
     RoleType, ConstraintAny, ConstraintSpan,
     ConstraintExpressionLegacy, ConstraintLinksLegacy,
@@ -302,8 +303,7 @@ export function colorEdgesByConstraintIndex(
         if (reset) {
             const attributes = graph.getEdgeAttributes(edgeKey);
             // Imported views can contain rendered edges without query-analysis metadata.
-            const tag = attributes.metadata?.dataEdge?.tag ?? attributes.label;
-            const color = styleParams.edgeLabelColors?.[tag] ?? styleParams.edgeColor.hex();
+            const color = inheritedEdgeStyle(styleParams.edgeLabelColors ?? {}, edgeStyleKey(attributes), styleParams.edgeColor.hex());
             graph.setEdgeAttribute(edgeKey, "color", color);
         } else {
             const attributes = graph.getEdgeAttributes(edgeKey);

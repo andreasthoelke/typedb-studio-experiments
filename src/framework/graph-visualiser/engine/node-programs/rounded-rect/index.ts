@@ -37,6 +37,7 @@ export class NodeRoundedRectangleProgram<
                 { name: "a_borderColor", size: 4, type: UNSIGNED_BYTE, normalized: true },
                 { name: "a_id", size: 4, type: UNSIGNED_BYTE, normalized: true },
                 { name: "a_lineStyle", size: 1, type: FLOAT },
+                { name: "a_lineThickness", size: 1, type: FLOAT },
             ],
             CONSTANT_ATTRIBUTES: [{ name: "a_offset", size: 2, type: FLOAT }],
             CONSTANT_DATA: [
@@ -61,6 +62,7 @@ export class NodeRoundedRectangleProgram<
         array[startIndex++] = borderColor;
         array[startIndex++] = nodeIndex;
         array[startIndex++] = lineStyleIndex((data as any).lineStyle);
+        array[startIndex++] = (data as any).lineThickness ?? 1;
     }
 
     setUniforms(params: RenderParams, { gl, uniformLocations }: ProgramInfo): void {

@@ -27,7 +27,7 @@ without rerunning queries or letting database edits change the test data.
 | Force controls | Separate link length, node repulsion, collision padding, and centering; keep drag-to-pin and provide release pins. | Keep the central goal readable while spreading motivation/gradient claims and their provenance. | Extend D3 controls on v3 first; expose a few meaningful sliders, not every simulation parameter. |
 | Focus rings | Arrange graph-distance rings around a selected instance; preserve relation nodes between role players. | Goal at center, motivation/gradient claims in the first ring, mental states beyond them, evidence/source further out. | Optional layout of loaded data. Radius is a viewing choice, not a new database query. |
 | Membership groups | Group by explicit membership relations rather than only by type or inferred communities. | Contours for claims in a `take` through `take-includes`; a scene groups occurrences and intents through its composition and `in-script` relations. | Support overlapping membership. One claim may belong to several takes. |
-| Semantic edge styles | Distinguish link families and roles without spending all the color channels. | Solid domain links; dotted evidence or cross-layer identity links such as `occurrence-of`. Keep an explicit legend. | v4 prototype first; retain role labels and clickable relation nodes. |
+| Semantic edge styles | Distinguish link families and roles without spending all the color channels. | Solid domain links; dotted evidence or cross-layer identity links such as `occurrence-of`. Keep an explicit legend. | Implemented on v3: scoped role colours/dashes/thickness, edge inspection, and parallel lanes. Arrows remain a per-role experiment. |
 | Layered schema view | Use type categories, inheritance and roles to build a stable reading order. | Separate scenic core from `domain:mechanism`, with role/ownership connections crossing the boundary. | Read schema annotations and explicit hierarchy; don't infer layers from screen proximity. |
 
 A useful first control panel would offer **Free force**, **Focus rings**, and
@@ -116,3 +116,24 @@ not the behavior of ordinary graph dragging.
 The expected payoff from v4 is a cleaner implementation of visual layers and
 edge patterns. The useful layout choices still need application-level decisions
 about relations, roles, membership, and the source schema.
+
+
+## Role-edge experiment shipped on Sigma 3 (2026-09-15)
+
+Role identity now survives label/style refreshes, and missing identity is resolved
+for already-visible relation/player pairs. The role layer inherits from links,
+then all edges. Clickable edges expose role, endpoints, and the corresponding
+style row. Parallel roles fan out on opposite sides of the chord, including
+oppositely directed graph edges. These changes use the installed curve program
+and preserve the inexpensive labels already anchored at curve apexes.
+[Official interaction example](https://github.com/jacomyal/sigma.js/blob/main/packages/storybook/stories/3-additional-packages/edge-curve/interactions.ts),
+[parallel-edge example](https://github.com/jacomyal/sigma.js/blob/main/packages/storybook/stories/3-additional-packages/edge-curve/parallel-edges.ts).
+
+An eventual arrow control should have semantic names: toward relation, toward
+player, none. This can express driver → motivation → target without imposing a
+direction on tension:pole. Generic source/target arrows alone would make every
+links edge point from relation to player, which is often a misleading reading.
+Arrow tips also need to meet rectangles/diamonds/ellipses at their actual boundary,
+not at Sigma's scalar circle radius. Curvature/arrow-head examples demonstrate
+renderer capability; they do not supply the schema's intended direction.
+[Official arrow-head example](https://github.com/jacomyal/sigma.js/blob/main/packages/storybook/stories/3-additional-packages/edge-curve/arrow-heads.ts).

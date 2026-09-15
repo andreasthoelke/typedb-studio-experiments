@@ -157,7 +157,11 @@ export class QueryPageComponent implements OnInit, AfterViewInit, AfterViewCheck
     private runTabsScrollObserver?: ResizeObserver;
 
     ngOnInit() {
-        this.bridgeRouteSubscription = this.route.queryParamMap.subscribe(params => this.bridge.attach(params.get("nvim")));
+        this.bridgeRouteSubscription = this.route.queryParamMap.subscribe(params => this.bridge.attach(params.get("nvim"), undefined,
+            () => {
+                const canvas = this.graphCanvasComponents?.first;
+                return canvas?.snapshotDatabase === this.driver.database$.value?.name ? canvas?.visualiser : null;
+            }, command => this.graphCanvasComponents?.first?.runViewerCommand(command) ?? Promise.resolve(false), () => this.currentRun));
         this.appData.viewState.setLastUsedTool("query");
         const saved = this.appData.panelLayout.get("query");
         if (saved && saved.length === QueryPageComponent.DEFAULT_PANEL_SIZES.length) {

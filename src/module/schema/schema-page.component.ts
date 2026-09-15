@@ -152,7 +152,10 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
     ngOnInit() {
         this.appData.viewState.setLastUsedTool("schema");
         this.route.queryParamMap.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(params => {
-            this.bridge.attach(params.get("nvim"), this.focusEditorSchema);
+            this.bridge.attach(params.get("nvim"), this.focusEditorSchema, () => {
+                const canvas = this.graphCanvasComponents?.first;
+                return canvas?.snapshotDatabase === this.driver.database$.value?.name ? canvas?.visualiser : null;
+            }, command => this.graphCanvasComponents?.first?.runViewerCommand(command) ?? Promise.resolve(false));
         });
         this.driver.database$.pipe(map(db => db?.name), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
             .subscribe(() => { this.contextQuery = ""; this.restoredSnap = null; });

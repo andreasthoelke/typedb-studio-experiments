@@ -28,10 +28,10 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
     const projects = new Map();
     let latest;
 
-    function send(client, request) {
+    function send(client, request, event = 'query') {
         // Reconnect and replay the latest request instead of buffering indefinitely.
         if (client.writableLength > maxBodyBytes) return client.destroy();
-        client.write(`id: ${request.id}\nevent: query\ndata: ${JSON.stringify(request)}\n\n`);
+        client.write(`id: ${request.id}\nevent: ${event}\ndata: ${JSON.stringify(request)}\n\n`);
     }
 
     function allowed(request) {
@@ -47,7 +47,7 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
         try {
             const url = new URL(request.url, 'http://127.0.0.1');
             if (url.pathname === '/api/viewer/health' && request.method === 'GET') {
-                return json(response, 200, { service: 'typedb-studio-bridge', pngExport: true, projectSnapshots: true, graphSnaps: true, snapLibrary: true, imageFolders: true, viewers: clients.size, latestRequestId: latest?.id ?? null });
+                return json(response, 200, { service: 'typedb-studio-bridge', viewerControls: true, caretNavigation: true, pngExport: true, projectSnapshots: true, graphSnaps: true, snapLibrary: true, imageFolders: true, viewers: clients.size, latestRequestId: latest?.id ?? null });
             }
             const database = url.searchParams.get('database');
             const projectTempDirectory = url.searchParams.get('projectTempDirectory') ?? projects.get(database);
@@ -106,7 +106,7 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                 response.on('close', () => { clients.delete(response); clearInterval(heartbeat); });
                 return;
             }
-            if (url.pathname === '/api/viewer/query' && request.method === 'POST') {
+            if (['/api/viewer/query', '/api/viewer/caret', '/api/viewer/control'].includes(url.pathname) && request.method === 'POST') {
                 if (request.headers['content-type']?.split(';')[0].trim() !== 'application/json') {
                     return json(response, 415, { error: 'Send application/json.' });
                 }
@@ -123,6 +123,35 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                 let body;
                 try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
                 catch { return json(response, 400, { error: 'Invalid JSON.' }); }
+                if (url.pathname === '/api/viewer/control') {
+                    const commands = ['centreCaret', 'caretTop', 'caretBottom', 'caretLeft', 'caretRight',
+                        'panLeft', 'panRight', 'panUp', 'panDown', 'zoomIn', 'zoomOut', 'focus', 'back', 'relayout', 'snap'];
+                    if (!body || !commands.includes(body.command)
+                        || (body.database !== undefined && (typeof body.database !== 'string' || !body.database.trim()))
+                        || (body.projectTempDirectory !== undefined && !validProjectTempDirectory(body.projectTempDirectory))) {
+                        return json(response, 400, { error: 'Expected a viewer command, optional database and absolute projectTempDirectory.' });
+                    }
+                    const control = { id: randomUUID(), command: body.command,
+                        ...(body.database ? { database: body.database } : {}),
+                        ...(body.projectTempDirectory ? { projectTempDirectory: body.projectTempDirectory } : {}) };
+                    for (const client of clients) send(client, control, 'control');
+                    return json(response, 202, { id: control.id, viewers: clients.size, viewerControls: true });
+                }
+                if (url.pathname === '/api/viewer/caret') {
+                    if (!body || typeof body.source !== 'string' || !body.source.trim()
+                        || !Number.isInteger(body.line) || body.line < 0 || body.line >= body.source.split('\n').length
+                        || !Number.isInteger(body.column) || body.column < 0 || body.column > body.source.split('\n')[body.line].length
+                        || typeof body.schemaOnly !== 'boolean'
+                        || (body.database !== undefined && (typeof body.database !== 'string' || !body.database.trim()))) {
+                        return json(response, 400, { error: 'Expected source, zero-based line/column, schemaOnly, and optional database.' });
+                    }
+                    const caret = { id: randomUUID(), source: body.source, line: body.line, column: body.column,
+                        schemaOnly: body.schemaOnly, ...(body.database ? { database: body.database } : {}) };
+                    // Caret gestures are transient. A new tab/reconnect must not
+                    // replay an old jump or replace the latest executable query.
+                    for (const client of clients) send(client, caret, 'caret');
+                    return json(response, 202, { id: caret.id, viewers: clients.size, caretNavigation: true });
+                }
                 if (!body || typeof body.query !== 'string' || !body.query.trim()
                     || (body.database !== undefined && (typeof body.database !== 'string' || !body.database.trim()))
                     || (body.limit !== undefined && (!Number.isInteger(body.limit) || body.limit < 1 || body.limit > 100000))) {
