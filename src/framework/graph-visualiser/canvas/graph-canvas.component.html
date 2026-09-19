@@ -15,7 +15,7 @@
 </div>
 
 <ng-template #canvasPane>
-  <div class="graph-split-left" resizable [percent]="graphPercent" (percentChange)="graphPercentChange.emit($event)">
+  <div class="graph-split-left" tsPane="graph" resizable [percent]="graphPercent" (percentChange)="graphPercentChange.emit($event)">
     <div class="canvas-element" #canvasEl [style.visibility]="inlineSnap ? 'hidden' : null"></div>
     @if (inlineSnap) { <div class="canvas-element" #snapCanvasEl></div> }
     <ng-content/>
@@ -176,8 +176,9 @@
         <p><kbd>dd</kbd> removes the caret node from this view. <kbd>d Enter</kbd> removes the explicit selection. The first <kbd>d</kbd> only starts a one-second prefix; <kbd>Esc / Ctrl-[</kbd> cancels it. Restore context brings removed nodes back.</p>
         <p>Outside a picker or pending deletion, <kbd>Esc</kbd> / <kbd>Ctrl-[</kbd> clear selection and return to Normal.</p>
         <p><kbd>/</kbd> opens the node picker. <kbd>Ctrl-n / Ctrl-p</kbd> or arrows browse suggestions; <kbd>Enter</kbd> or a click sets the caret. <kbd>Esc / Ctrl-[</kbd> cancels the picker. Search never changes highlights.</p>
-        <p>Vimium: exclude <code>abcdghjklnorstyzASDHJKLNOY.;/?&gt;+-=</code> on this site and add custom mapping <code>map , passNextKey</code>. Keep comma and f out of exclusions: bare <kbd>f</kbd> stays with Vimium, <kbd>,f</kbd> reaches graph hints. Also add <code>unmap &lt;c-e&gt;</code> and <code>unmap &lt;c-y&gt;</code> so camera scrolling reaches Studio.</p>
-        <p aria-live="polite">Last shortcut: {{ lastShortcut }}</p>
+        <p>Vimium: exclude <code>abcdghjklnoprstyzASDHJKLNOY.;/?&gt;+-=</code> on this site and add custom mapping <code>map , passNextKey</code>. Keep comma and f out of exclusions: bare <kbd>f</kbd> stays with Vimium, <kbd>,f</kbd> reaches graph hints. Also add <code>unmap &lt;c-e&gt;</code> and <code>unmap &lt;c-y&gt;</code> so camera scrolling reaches Studio.</p>
+        <p><kbd>Ctrl-w</kbd> moves focus between panes, as in Neovim. <kbd>Ctrl-w h/j/k/l</kbd> follow the panes' real positions, so docking the side panel changes where they lead. <kbd>Ctrl-w w</kbd> cycles and <kbd>Ctrl-w t/q/g/e/b</kbd> jump straight to the tool window, query editor, graph, Explorer or tabbed panel. A motion past the last pane moves to the next window on screen; <kbd>Ctrl-w H</kbd> and <kbd>Ctrl-w L</kbd> go straight to the leftmost or rightmost window. <kbd>Ctrl-w p</kbd> goes back to wherever focus was last, whether that was another pane here or another window. Focusing another pane hands the keyboard to it: <kbd>h j k l</kbd> then scroll that pane instead of moving the caret, which is what makes its controls reachable with <kbd>f</kbd>.</p>
+        <p aria-live="polite">Last shortcut: {{ lastShortcut }}@if (paneFocus.lastAction) { <span> · Last pane motion: {{ paneFocus.lastAction }}</span> }</p>
       </div>
     }
     @if (snapsError) { <p role="alert">{{ snapsError }}</p> }

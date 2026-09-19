@@ -15,7 +15,7 @@
   <!-- The dock-side kebab is anchored to the inspector pane's top-right so it
        sits beside the "Inspector" title regardless of dock orientation (the
        inspector is full-width when docked right, the left pane when bottom). -->
-  <div class="explorer-pane" resizable [percent]="inspectorPercent" (percentChange)="inspectorPercent = $event">
+  <div class="explorer-pane" tsPane="explorer" tsPaneScroller=".panel-scroll" resizable [percent]="inspectorPercent" (percentChange)="inspectorPercent = $event">
     <div class="side-panel-header">
       <div class="tab-bar inspector-tabs" role="tablist" aria-label="Explorer and snaps">
         <button class="tab" role="tab" [class.active]="inspectorTab === 'explorer'"
@@ -102,7 +102,7 @@
 </ng-template>
 
 <ng-template #panel>
-  <div class="panel" resizable [percent]="lowerPanelPercent" (percentChange)="lowerPanelPercent = $event">
+  <div class="panel" tsPane="panel" tsPaneScroller=".panel-scroll" resizable [percent]="lowerPanelPercent" (percentChange)="lowerPanelPercent = $event">
     <!-- Top-level tabs -->
     <div class="tab-bar">
       <button class="tab" [class.active]="topTab === 'elements'" (click)="topTab = 'elements'">Elements @if (isHighlightActive) { <span class="highlight-indicator"></span> }</button>

@@ -263,9 +263,77 @@ function M.visual()
   vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes('<Esc>', true, false, true), 'n', false)
 end
 
+--- Vim's own `wincmd` first; only a motion that changed nothing is an edge,
+--- and an edge is handed to the window manager through the bridge. This is the
+--- rule vim-tmux-navigator uses between Vim and tmux, applied between Neovim
+--- and the browser windows instead. Hammerspoon resolves the direction
+--- geometrically, so this knows nothing about where the browser sits.
+local windowDirections = { h = 'west', l = 'east', k = 'north', j = 'south' }
+-- Shifted motions go as far as they can. Note these replace Vim's own
+-- <c-w>H/L, which *move* a window to the far left/right; `:wincmd H` still
+-- does that.
+local farDirections = { H = 'far-west', L = 'far-east' }
+-- Set when Neovim regains focus from another application, cleared as soon as
+-- the cursor moves between Neovim's own windows. <c-w>p follows one merged
+-- timeline across Neovim and the browser: whichever happened last wins.
+local enteredFromOutside = false
+
+local function escalate(direction)
+  sendNavigation('/api/viewer/focus', { direction = direction }, true)
+end
+
+function M.window_motion(key)
+  local before = vim.api.nvim_get_current_win()
+  vim.cmd('wincmd ' .. key)
+  if vim.api.nvim_get_current_win() ~= before then return end
+  escalate(windowDirections[key])
+end
+
+-- Window level, not split level: these always cross to the leftmost or
+-- rightmost window on screen. <c-w>h/l already walk Neovim's own splits.
+function M.window_far(key)
+  escalate(farDirections[key])
+end
+
+function M.window_previous()
+  if enteredFromOutside then
+    enteredFromOutside = false
+    escalate('previous')
+    return
+  end
+  vim.cmd('wincmd p')
+end
+
+function M.window_maps()
+  local group = vim.api.nvim_create_augroup('TypeDBStudioWindowFocus', { clear = true })
+  vim.api.nvim_create_autocmd('FocusGained', {
+    group = group, callback = function() enteredFromOutside = true end,
+  })
+  vim.api.nvim_create_autocmd('WinEnter', {
+    group = group, callback = function() enteredFromOutside = false end,
+  })
+  for key, direction in pairs(windowDirections) do
+    local describe = 'TypeDB viewer: window ' .. direction .. ', escalating at the edge'
+    vim.keymap.set('n', '<C-w>' .. key, function() M.window_motion(key) end, { silent = true, desc = describe })
+    vim.keymap.set('n', '<C-w><C-' .. key .. '>', function() M.window_motion(key) end, { silent = true, desc = describe })
+  end
+  for key, far in pairs(farDirections) do
+    vim.keymap.set('n', '<C-w>' .. key, function() M.window_far(key) end,
+      { silent = true, desc = 'TypeDB viewer: ' .. far:gsub('%-', ' ') .. ' window, crossing applications' })
+  end
+  vim.keymap.set('n', '<C-w>p', M.window_previous,
+    { silent = true, desc = 'TypeDB viewer: previous window, or the application we came from' })
+  vim.keymap.set('n', '<C-w><C-p>', M.window_previous,
+    { silent = true, desc = 'TypeDB viewer: previous window, or the application we came from' })
+end
+
 function M.setup(options)
   config = vim.tbl_extend('force', config, options or {})
   config.url = config.url:gsub('/+$', '')
+  -- Off by default: these are the only global (non buffer-local) maps this
+  -- plugin would own, and they replace motions the user may already have
+  -- bound. Opt in with setup({ window_navigation = true }).
+  if config.window_navigation then M.window_maps() end
   local group = vim.api.nvim_create_augroup('TypeDBStudioCaret', { clear = true })
   vim.api.nvim_create_autocmd({ 'BufEnter', 'FileType' }, {
     group = group, callback = function(args)

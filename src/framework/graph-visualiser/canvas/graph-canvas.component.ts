@@ -33,6 +33,8 @@ import { GraphKeyLeader, GraphViewCommand, graphLetterKey, graphShortcut } from 
 import { fuzzyGraphMatches, GraphFinderEntry } from "../../util/graph-finder";
 
 import { graphNodeHints, graphSelectionEdit, GraphNodeHint, GraphDirection } from "../../util/graph-navigation";
+import { PaneDirective } from "../../pane-focus/pane.directive";
+import { PaneFocusService } from "../../../service/pane-focus.service";
 
 export type GraphCanvasStatus = "ok" | "running" | "noQueryAnswers" | "noInstancesFound" | "error" | "graphlessQueryType" | "answerOutputDisabled" | "multiQuery" | "emptySchema" | "emptySnap" | "needsTransaction";
 export type GraphCanvasStatusAction = "viewLog" | "openTransaction" | "switchToAuto";
@@ -41,7 +43,7 @@ export type GraphCanvasStatusAction = "viewLog" | "openTransaction" | "switchToA
     selector: "ts-graph-canvas",
     templateUrl: "graph-canvas.component.html",
     styleUrls: ["graph-canvas.component.scss"],
-    imports: [NgTemplateOutlet, MatTooltipModule, ResizableDirective, GraphControlsComponent, GraphSidePanelComponent, GraphContextMenuComponent],
+    imports: [NgTemplateOutlet, MatTooltipModule, ResizableDirective, PaneDirective, GraphControlsComponent, GraphSidePanelComponent, GraphContextMenuComponent],
 })
 export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, AfterViewChecked, OnDestroy {
     private liveVisualiser: GraphVisualiser | null = null;
@@ -53,6 +55,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     private snapStyles: GraphStyleService | null = null;
     private snapStylesSub?: Subscription;
     private injector = inject(Injector);
+    protected paneFocus = inject(PaneFocusService);
     private host = inject<ElementRef<HTMLElement>>(ElementRef);
     private static keyboardOwner: GraphCanvasComponent | null = null;
     shortcutHelpOpen = false;
@@ -117,6 +120,10 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
 
     private onGraphKey = (event: KeyboardEvent): void => {
         if (!this.isKeyboardVisible() || document.hidden) { this.cancelKeySequence(); return; }
+        // A pending <c-w> owns the next key wherever focus is. Listener order
+        // between window-capture handlers is not guaranteed, so ask rather
+        // than rely on the pane service having stopped propagation first.
+        if (this.paneFocus.chordPending) { this.cancelKeySequence(); return; }
         const owner = GraphCanvasComponent.keyboardOwner;
         if (owner && owner !== this && owner.isKeyboardVisible()) { this.cancelKeySequence(); return; }
         // Includes CodeMirror, native controls, shadow-DOM editors, and open Material overlays.

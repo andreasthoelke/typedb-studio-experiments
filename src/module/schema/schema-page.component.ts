@@ -33,6 +33,7 @@ import { Schema } from "../../service/schema-state.service";
 import { GraphVisualiser } from "../../framework/graph-visualiser/engine";
 import { schemaFocus } from "../../framework/util/schema-focus";
 import { GraphCanvasComponent } from "../../framework/graph-visualiser/canvas/graph-canvas.component";
+import { PaneDirective } from "../../framework/pane-focus/pane.directive";
 
 @Component({
     selector: "ts-schema-page",
@@ -42,7 +43,7 @@ import { GraphCanvasComponent } from "../../framework/graph-visualiser/canvas/gr
         RouterLink, AsyncPipe, PageScaffoldComponent, MatDividerModule, MatFormFieldModule,
         MatInputModule, FormsModule, ReactiveFormsModule, MatButtonToggleModule,
         MatSortModule, MatTooltipModule, MatButtonModule, ResizableDirective, SchemaToolWindowComponent,
-        GraphCanvasComponent,
+        GraphCanvasComponent, PaneDirective,
     ]
 })
 export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {

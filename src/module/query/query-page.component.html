@@ -1,8 +1,8 @@
 <ts-page-scaffold pageAvailability="ready">
   <article #articleRef class="query-page" style="display: flex; flex-direction: row;">
-    <ts-schema-tool-window resizable [percent]="panelSizes[0]" (percentChange)="onPanelResize(0, $event)" [title]="'Query Editor'"/>
+    <ts-schema-tool-window tsPane="tool" resizable [percent]="panelSizes[0]" (percentChange)="onPanelResize(0, $event)" [title]="'Query Editor'"/>
     <div class="main-panes" resizable [percent]="panelSizes[1]" (percentChange)="onPanelResize(1, $event)">
-      <div resizable [percent]="panelSizes[3]" (percentChange)="onPanelResize(3, $event)" class="query-pane card-top">
+      <div tsPane="query" tsPaneScroller=".query-tab-panel.active .cm-content" resizable [percent]="panelSizes[3]" (percentChange)="onPanelResize(3, $event)" class="query-pane card-top">
         <div class="query-tabs-container">
             @if ((queryTabsState.openTabs$ | async)!.length > 0) {
               <div class="query-tabs-header-row">

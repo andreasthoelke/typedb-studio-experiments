@@ -54,6 +54,7 @@ import { MatSelectModule } from "@angular/material/select";
 import { SchemaToolWindowComponent } from "../schema/tool-window/schema-tool-window.component";
 import { GraphCanvasComponent } from "../../framework/graph-visualiser/canvas/graph-canvas.component";
 import { HistoryPaneComponent } from "../query-history/history-pane/history-pane.component";
+import { PaneDirective } from "../../framework/pane-focus/pane.directive";
 
 @Component({
     selector: "ts-query-page",
@@ -64,7 +65,7 @@ import { HistoryPaneComponent } from "../query-history/history-pane/history-pane
         MatInputModule, FormsModule, ReactiveFormsModule, MatButtonToggleModule, ResizableDirective,
         SpinnerComponent, MatTableModule, MatSortModule, MatTabsModule, MatTooltipModule, MatButtonModule,
         MatMenuModule, MatSelectModule, SchemaToolWindowComponent, CodeEditorComponent,
-        GraphCanvasComponent, HistoryPaneComponent, NvimQueryControlsComponent,
+        GraphCanvasComponent, HistoryPaneComponent, NvimQueryControlsComponent, PaneDirective,
     ]
 })
 export class QueryPageComponent implements OnInit, AfterViewInit, AfterViewChecked, OnDestroy {

@@ -729,13 +729,115 @@ re-layout and snap browsing do not. Inputs, the query editor, dialogs, menus and
 composition keep their normal behavior. Enter/Space on buttons remain native.
 The Snaps **Keys** button shows the last shortcut Studio received.
 
+### Moving focus between panes, windows and Neovim
+
+**Ctrl-w** works as it does in Neovim: it is a prefix, and the next key moves
+focus. Inside a Studio window the panes are the tool window on the left, the
+query editor, the graph, the Explorer and the tabbed panel.
+
+| Key | Effect |
+| --- | --- |
+| `Ctrl-w h/j/k/l` | Move to the pane in that direction, or to the next window at the edge |
+| `Ctrl-w H/L` | Go straight to the leftmost or rightmost window on screen |
+| `Ctrl-w w` | Cycle through the panes in reading order |
+| `Ctrl-w p` | Go back to wherever focus was last, pane or window |
+| `Ctrl-w t/q/g/e/b` | Jump to the tool window, query editor, graph, Explorer or tabbed panel |
+
+`Ctrl-w H/L` are window level, not pane level. They do not stop at the edge of
+the page first, because `h`/`l` already walk the panes and "rightmost pane" is
+ambiguous whenever a full-width pane shares the page's right edge with a narrow
+one. In the three-column arrangement `Ctrl-w H` reaches the schema window and
+`Ctrl-w L` reaches Neovim, from anywhere. In Neovim these replace Vim's own
+`<c-w>H/L`, which *move* a window to the far left or right; `:wincmd H` still
+does that.
+
+`Ctrl-w p` follows one merged timeline across panes and windows: whichever
+focus change happened last is what it undoes. Arriving in the query window from
+Neovim makes `Ctrl-w p` go back to Neovim; moving between panes afterwards
+makes it return to the previous pane instead. Neovim tracks the same thing with
+a `FocusGained` autocommand, so `Ctrl-w p` there returns to the browser window
+you came from, and falls back to Vim's own `wincmd p` once you have moved
+between Neovim's splits. Arriving somewhere by clicking rather than by a motion
+leaves the window-level half of this pointing at the last motion's origin.
+
+Motions are resolved from where the panes actually are, not from a fixed map, so
+docking the side panel below the graph changes what `Ctrl-w j` does without any
+setting. A pane that is not on the current route, or is hidden behind another
+output tab, is skipped. `Ctrl-w Ctrl-h` and the like work too, as in Vim.
+
+Focusing a pane deliberately takes the keyboard away from the graph. After
+`Ctrl-w e`, **h j k l** scroll the Explorer instead of moving the caret, and
+**f** can then reach a control that was below the fold. `Ctrl-w g` gives the
+graph its keys back.
+
+**Past the last pane, focus leaves the window.** `Ctrl-w h` from the leftmost
+pane, or `Ctrl-w l` from the rightmost, moves to the next window on screen. This
+needs [Hammerspoon](https://www.hammerspoon.org/) running with its command line
+tool reachable; the bridge asks it to resolve the direction geometrically, so it
+works with whatever arrangement of windows you have rather than assuming a
+particular one. Nothing happens if there is no window in that direction.
+
+Hammerspoon only answers `hs` once its IPC module is loaded, so `init.lua` needs:
+
+```lua
+require('hs.ipc')
+```
+
+Without it every escalation silently does nothing. The bridge reports the first
+failure in `:TypeDBGraphLog` rather than once per keystroke.
+
+Neovim does the same in reverse. Add this to the Studio plugin's setup:
+
+```lua
+require('typedb_graph').setup({ window_navigation = true })
+```
+
+`Ctrl-w h/j/k/l` then behave normally inside Neovim and only escalate when the
+motion changed no window — the rule `vim-tmux-navigator` uses between Vim and
+tmux. It is off by default because these would be the plugin's only global maps.
+
+For `Ctrl-w p` to cross windows as well, load the Hammerspoon helper from
+`contrib/hammerspoon/typedb_panes.lua` in `~/.config/hammerspoon/init.lua`:
+
+```lua
+package.path = package.path .. ';/path/to/typedb-studio/contrib/hammerspoon/?.lua'
+require('typedb_panes')
+```
+
+Without it the cardinal directions still work, on Hammerspoon's built-in
+geometric focus.
+
+The arrangement this was built for is the schema route, the query route and the
+Neovim terminal side by side. Opening the two routes as their own windows rather
+than as tabs in one window is what makes them addressable — Chrome's
+`--app=http://localhost:1430/query?nvim=1` gives a window with no tab strip, the
+same way `init.lua` already opens other sites. Two tabs in one window cannot both
+be visible, so only whichever is in front can be reached.
+
+Ctrl-w is free in Chrome on macOS, where Cmd-W closes tabs. On Windows and Linux
+Ctrl-W is a reserved close-tab accelerator that a page cannot intercept, so this
+prefix is macOS-only.
+
+**Check for an OS-level Ctrl-w remap first.** Karabiner and similar tools
+intercept below the browser, so a rule on Ctrl-w eats the prefix before any page
+sees it — and a rule conditioned on the frontmost application will break only
+the browser half, leaving the Neovim half working and the cause non-obvious.
+This setup had `Chrome next window map`, which aliased Ctrl-w to Cmd-` while
+Chrome was frontmost; it was removed because Cmd-` is macOS's own
+cycle-windows-of-the-front-app shortcut and remains available, and because
+`Ctrl-w h/l` does the same job directionally.
+
+Chrome remembers each `--app` window's position per URL and prefers that over
+`--window-position` / `--window-size`, so those flags act as first-run defaults.
+Place the two windows once and later launches reuse the placement.
+
 ### Keeping Vimium UI hints
 
 In Vimium's options, add a rule for `http://localhost:1430/*` (use the actual host
 and port) with this **Excluded keys** value:
 
 ```text
-abcdghjklnorstyzASDHJKLNOY.;/?>+-=
+abcdghjklnoprstyzASDHJKLNOY.;/?>+-=
 ```
 
 Then add this **Custom key mapping**:
@@ -754,7 +856,12 @@ These custom mappings apply across Vimium-enabled sites.
 
 The exclusion list covers graph commands (including **z** for **zz**), lowercase
 hint letters and Shift motions/labels. It includes **n/o/y/.** and **N/O/Y/>**
-for diagonal navigation and nudging, **b/t** for **zb/zt**, and **g/;** for caret history. Ctrl-n/p work in the focused picker input
+for diagonal navigation and nudging, **b/t** for **zb/zt**, **g/;** for caret history,
+and **p** for **Ctrl-w p**. Without **p** in the list Vimium's own
+`openCopiedUrlInCurrentTab` swallows it and the previous-pane motion silently does
+nothing; if you would rather keep Vimium's **p**, use **Ctrl-w Ctrl-p** instead,
+which Vimium does not bind. Note also that **x** is *not* in the list, so it still
+reaches Vimium's close-tab: do not use it as a throwaway key while testing chords. Ctrl-n/p work in the focused picker input
 without additional Vimium mappings. Vimium maps Ctrl-e/y to page scrolling by
 default; the two unmap lines release camera scrolling to Studio.
 Space, Enter, Escape, Backspace, Ctrl-h/l/y/e/o/[ and Ctrl-Shift directions and

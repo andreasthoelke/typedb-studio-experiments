@@ -1,6 +1,6 @@
 import { createServer, request as httpRequest } from 'node:http';
 import { randomUUID } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createReadStream, existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -17,13 +17,69 @@ const mime = {
     '.ttf': 'font/ttf', '.webmanifest': 'application/manifest+json', '.map': 'application/json',
 };
 
+/** `<c-w>` motions that leave the page are handed to the window manager, the
+ *  same escalation vim-tmux-navigator performs at a pane edge. Hammerspoon
+ *  resolves them geometrically, so nothing here knows about the user's column
+ *  layout. Directions are a closed set and the Lua is a fixed string per
+ *  direction: nothing from the request is ever interpolated into it. */
+const windowFocusDirections = ['west', 'east', 'north', 'south', 'far-west', 'far-east', 'previous'];
+/** `contrib/hammerspoon/typedb_panes.lua` defines `typedbFocusWindow` and adds
+ *  the cross-window history that `previous` needs. Without it the cardinal
+ *  directions still work off Hammerspoon's own geometric focus, so the only
+ *  setup a working install requires is Hammerspoon itself. */
+const hammerspoonMethod = compass => `focusWindow${compass[0].toUpperCase()}${compass.slice(1)}`;
+/** The fallback repeats the step for a `far-` motion, bounded so a window
+ *  manager that keeps reporting a move can never spin. */
+const hammerspoonDirection = (direction, compass, far) =>
+    `if typedbFocusWindow then typedbFocusWindow('${direction}') else ` +
+    `for _ = 1, ${far ? 8 : 1} do local w = hs.window.focusedWindow(); if not w then break end; ` +
+    `w:${hammerspoonMethod(compass)}(nil, true, true); local n = hs.window.focusedWindow(); ` +
+    `if not n or n:id() == w:id() then break end end end`;
+const hammerspoonLua = {
+    west: hammerspoonDirection('west', 'west', false),
+    east: hammerspoonDirection('east', 'east', false),
+    north: hammerspoonDirection('north', 'north', false),
+    south: hammerspoonDirection('south', 'south', false),
+    'far-west': hammerspoonDirection('far-west', 'west', true),
+    'far-east': hammerspoonDirection('far-east', 'east', true),
+    previous: "if typedbFocusWindow then typedbFocusWindow('previous') end",
+};
+const hammerspoonCandidates = ['/opt/homebrew/bin/hs', '/usr/local/bin/hs'];
+
+/** Reported once, because a missing `hs.ipc` fails every single motion and a
+ *  line per keystroke would bury the rest of `:TypeDBGraphLog`. */
+let reportedFocusFailure = false;
+
+/** Fire-and-forget: the browser has nothing to do with the result, and waiting
+ *  on a process spawn would add latency to a keystroke. */
+function focusWindow(direction) {
+    if (process.platform !== 'darwin') return { focused: false, reason: 'Window focus escalation is macOS-only.' };
+    const hs = hammerspoonCandidates.find(path => existsSync(path));
+    if (!hs) return { focused: false, reason: 'Install Hammerspoon and its `hs` command line tool.' };
+    const child = spawn(hs, ['-c', hammerspoonLua[direction]], { stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr?.on('data', chunk => { stderr += chunk; });
+    // Best-effort: an edge motion must never fail a keystroke, but a setup
+    // mistake that makes every motion do nothing should still be findable.
+    child.on('error', error => warnFocusFailure(error.message));
+    child.on('close', code => { if (code !== 0) warnFocusFailure(stderr.trim() || `hs exited with ${code}`); });
+    return { focused: true };
+}
+
+function warnFocusFailure(detail) {
+    if (reportedFocusFailure) return;
+    reportedFocusFailure = true;
+    console.warn(`TypeDB Studio: window focus escalation failed (${detail}). `
+        + 'Hammerspoon must be running with `require("hs.ipc")` in its init.lua.');
+}
+
 function json(response, status, body) {
     response.writeHead(status, { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' });
     response.end(JSON.stringify(body));
 }
 
 /** A loopback-only query bridge and PNG saver. Database credentials stay in Studio. */
-export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/browser'), devPort } = {}) {
+export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/browser'), devPort, windowFocus = focusWindow } = {}) {
     const clients = new Set();
     const projects = new Map();
     let latest;
@@ -47,7 +103,7 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
         try {
             const url = new URL(request.url, 'http://127.0.0.1');
             if (url.pathname === '/api/viewer/health' && request.method === 'GET') {
-                return json(response, 200, { service: 'typedb-studio-bridge', viewerControls: true, caretNavigation: true, pngExport: true, projectSnapshots: true, graphSnaps: true, snapLibrary: true, imageFolders: true, viewers: clients.size, latestRequestId: latest?.id ?? null });
+                return json(response, 200, { service: 'typedb-studio-bridge', viewerControls: true, caretNavigation: true, pngExport: true, projectSnapshots: true, graphSnaps: true, snapLibrary: true, imageFolders: true, windowFocus: true, viewers: clients.size, latestRequestId: latest?.id ?? null });
             }
             const database = url.searchParams.get('database');
             const projectTempDirectory = url.searchParams.get('projectTempDirectory') ?? projects.get(database);
@@ -106,7 +162,7 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                 response.on('close', () => { clients.delete(response); clearInterval(heartbeat); });
                 return;
             }
-            if (['/api/viewer/query', '/api/viewer/caret', '/api/viewer/control'].includes(url.pathname) && request.method === 'POST') {
+            if (['/api/viewer/query', '/api/viewer/caret', '/api/viewer/control', '/api/viewer/focus'].includes(url.pathname) && request.method === 'POST') {
                 if (request.headers['content-type']?.split(';')[0].trim() !== 'application/json') {
                     return json(response, 415, { error: 'Send application/json.' });
                 }
@@ -123,6 +179,12 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                 let body;
                 try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
                 catch { return json(response, 400, { error: 'Invalid JSON.' }); }
+                if (url.pathname === '/api/viewer/focus') {
+                    if (!body || !windowFocusDirections.includes(body.direction)) {
+                        return json(response, 400, { error: `Expected direction one of ${windowFocusDirections.join(', ')}.` });
+                    }
+                    return json(response, 202, { direction: body.direction, ...windowFocus(body.direction) });
+                }
                 if (url.pathname === '/api/viewer/control') {
                     const commands = ['centreCaret', 'caretTop', 'caretBottom', 'caretLeft', 'caretRight',
                         'panLeft', 'panRight', 'panUp', 'panDown', 'zoomIn', 'zoomOut', 'focus', 'back', 'relayout', 'snap'];

@@ -95,6 +95,36 @@ test('viewer controls broadcast independently with a bounded command allowlist a
     const reconnected=await subscribe();assert.equal((await reconnected()).id,query.id);
 });
 
+test('window focus escalation validates its closed direction set and never reaches the viewers', { timeout: 5000 }, async t => {
+    // Stubbed: the real implementation spawns Hammerspoon, which would move
+    // this machine's window focus while the suite runs.
+    const escalated = [];
+    const { origin, post, subscribe } = await start(t, { windowFocus: direction => { escalated.push(direction); return { focused: true }; } });
+    const events = await subscribe();
+    const query = await (await post({ query: 'match $x isa person;' })).json();
+    assert.equal((await events()).id, query.id);
+    const send = body => fetch(origin + '/api/viewer/focus', { method: 'POST',
+        headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+    for (const direction of ['west', 'east', 'north', 'south', 'far-west', 'far-east', 'previous']) {
+        const response = await send({ direction });
+        assert.equal(response.status, 202);
+        const accepted = await response.json();
+        assert.equal(accepted.direction, direction);
+        assert.equal(accepted.focused, true);
+    }
+    assert.deepEqual(escalated, ['west', 'east', 'north', 'south', 'far-west', 'far-east', 'previous']);
+    // A focus motion is an OS gesture, not viewer state: nothing may be
+    // broadcast, and the replayable latest query must be untouched.
+    for (const bad of [null, {}, { direction: 'up' }, { direction: '' }, { direction: ['west'] },
+        { direction: 'far' }, { direction: 'west; open -a Calculator' }]) {
+        assert.equal((await send(bad)).status, 400);
+    }
+    assert.equal(escalated.length, 7, 'A rejected direction never reaches the window manager');
+    const replay = await subscribe();
+    assert.equal((await replay()).id, query.id, 'Focus requests left the latest query in place');
+    assert.equal((await fetch(origin + '/api/viewer/focus', { method: 'GET' })).status, 404);
+});
+
 test('rejects malformed, excessive, and foreign-origin requests without replacing latest', { timeout: 5000 }, async t => {
     const { post, origin, subscribe } = await start(t);
     const accepted = await (await post({ query: 'valid' })).json();

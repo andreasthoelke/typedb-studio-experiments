@@ -54,6 +54,11 @@ pnpm build:viewer
 node scripts/viewer-shortcuts.browser.mjs
 ```
 
+Pane navigation across windows cannot be covered by these: the browser check
+stubs `windowFocus` so the suite never moves this machine's focus, and the
+Neovim and Hammerspoon halves are checked by hand. Verify those by pressing
+`<c-w>h` in Neovim's leftmost window and `<c-w>l` from the Studio side panel.
+
 The unit/server suite covers query preparation, operation context, labels,
 selection, snap parsing, path/counter behavior, deletion, and bridge transport.
 The browser smoke test uses synthetic snaps and Angular's local-build debug API,
@@ -93,6 +98,7 @@ Manual checks when modifying live graph lifecycle:
 | Project resolution, safe snap/PNG files, numbering | `scripts/viewer-export.mjs` |
 | Incoming events and query lifecycle | `src/service/nvim-query-bridge.service.ts` |
 | Neovim identifier/variable navigation | `src/framework/util/editor-caret.ts`, `contrib/nvim/typedb_graph.lua` |
+| `<c-w>` pane focus, and its escalation to the window manager | `src/framework/util/pane-focus.ts`, `src/service/pane-focus.service.ts`, `src/framework/pane-focus/pane.directive.ts`, `contrib/hammerspoon/typedb_panes.lua` |
 | Bounded schema focus from original editor source | `src/framework/util/schema-focus.ts`, `src/module/schema/schema-page.component.ts` |
 | Query conversion / compatible relation augmentation | `src/framework/util/graph-query.ts` |
 | Context following writes/schema changes | `src/framework/util/operation-context.ts` |
@@ -117,6 +123,13 @@ wait for the matching schema. Schema source provenance travels via the canvas's
 `contextQuery` input. The existing project service remembers the incoming directory. Latest unpinned query tab is reused. Completed writes/schema
 operations are **not replayed**: their outcome triggers a separate contextual read.
 The workflow guide documents the payload and transaction rules in detail.
+
+POST `/api/viewer/focus` takes one of `west/east/north/south/previous` and spawns
+Hammerspoon's `hs -c`. It broadcasts nothing and leaves the replayable latest
+query alone: a focus motion is an OS gesture, not viewer state. The direction is
+a closed set and each one maps to a fixed Lua string, so nothing from the request
+reaches the shell. `createViewerServer({ windowFocus })` overrides it, which the
+tests use to avoid moving the machine's real window focus.
 
 File API: POST `/api/viewer/project`, GET `/api/viewer/snaps`, GET/POST/DELETE
 `/api/viewer/snap`, POST `/api/viewer/export`. Requests include database and project
@@ -164,8 +177,25 @@ Project context inferred from a Neovim schema file can be overridden in Snaps.
   Only motion/nudge/pan/zoom repeat; Ctrl camera/reset chords are explicitly allowed.
   Track pointer/focus ownership when multiple graphs exist. Remove listeners on
   destroy. Enter in search inputs remains handled by those inputs.
+- **Pane focus is separate from graph keyboard ownership.** `PaneFocusService`
+  owns `<c-w>` on its own window capture listener and the canvas bails out while
+  a chord is pending (`chordPending`), because listener order between the two is
+  not guaranteed. The prefix must keep working inside the query editor and other
+  editable fields — the one deliberate exception to the rule below — or focus
+  could enter the editor and never leave. Focusing a pane hands the keyboard
+  away from the graph through the existing `focusin` listener; that is the
+  feature, not a regression, since it is what lets Vimium scroll the pane and
+  put `f` hints on controls below the fold. Panes are resolved from live rects,
+  so no layout table exists to fall out of date when the dock flips. Motions
+  that find no pane escalate; nothing in the browser, the bridge or the Lua
+  knows the user's column order.
+- **An OS-level remap outranks everything here.** Karabiner intercepts below the
+  browser, so a Ctrl-w rule silently eats the prefix. A rule conditioned on the
+  frontmost application breaks only the browser half while Neovim keeps working,
+  which hides the cause. Check `~/.config/karabiner/karabiner.json` before
+  debugging the page.
 - **Vimium runs earlier.** Keep UI f hints with the site's character exclusions
-  `abcdghjklnorstyzASDHJKLNOY.;/?>+-=` and custom mappings `map , passNextKey`,
+  `abcdghjklnoprstyzASDHJKLNOY.;/?>+-=` and custom mappings `map , passNextKey`,
   `unmap <c-e>` and `unmap <c-y>`. Comma and f must
   not be excluded. Studio accepts the forwarded f as graph hints. See the workflow
   guide for setup and custom-chord caveats. Validate in an isolated extension
@@ -187,7 +217,7 @@ intent or guarantee useful context after every failed write. Preserve the origin
 Neovim execution and make the separate graph query visible/editable. Explorer
 expansions often offer better choices than asking the user to type relation names.
 
-Current shortcuts: c caret, hjkl spatial move, n/o/y/. diagonal move (↙/↗/↖/↘), Ctrl-o (also g;) caret history, Shift nudge, Ctrl-Shift add / Option remove destination, ,f node hints, Ctrl-y/e/h/l pan,
+Current shortcuts: Ctrl-w h/j/k/l pane focus (w cycle, p previous across panes and windows, H/L outermost window, t/q/g/e/b direct, escalating past the last pane), c caret, hjkl spatial move, n/o/y/. diagonal move (↙/↗/↖/↘), Ctrl-o (also g;) caret history, Shift nudge, Ctrl-Shift add / Option remove destination, ,f node hints, Ctrl-y/e/h/l pan,
 Esc/Ctrl-[ clear (or cancel pending deletion), dd remove caret / d Enter remove selection from view, Space h/l browse, Backspace close preview,
 zz centre caret without zoom, zt/zb/zh/zl position it at a ⅛ viewport inset, Enter focus, +/- zoom, r re-layout, s save, / node picker, ? help.
 In the picker, Ctrl-n/p or arrows browse; Enter sets the caret and Esc/Ctrl-[ cancels.

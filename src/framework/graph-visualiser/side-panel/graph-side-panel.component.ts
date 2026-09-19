@@ -16,6 +16,7 @@ import { ThemesTabComponent } from "./themes-tab.component";
 import { CustomiseTabComponent } from "./customise-tab.component";
 import { GraphInstanceExplorerComponent } from "../explorer/graph-instance-explorer.component";
 import { GraphTypeExplorerComponent } from "../explorer/graph-type-explorer.component";
+import { PaneDirective } from "../../pane-focus/pane.directive";
 
 @Component({
     selector: "ts-graph-side-panel",
@@ -24,7 +25,7 @@ import { GraphTypeExplorerComponent } from "../explorer/graph-type-explorer.comp
     imports: [
         NgTemplateOutlet,
         MatTooltipModule, MatMenuModule,
-        ResizableDirective,
+        ResizableDirective, PaneDirective,
         ElementsTabComponent, ThemesTabComponent, CustomiseTabComponent,
         GraphInstanceExplorerComponent, GraphTypeExplorerComponent,
     ],

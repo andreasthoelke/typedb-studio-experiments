@@ -11,6 +11,7 @@ import { pathToFileURL } from 'node:url';
 import { createViewerServer } from './viewer-server.mjs';
 import { checkGraphNavigation } from './graph-navigation.browser-checks.mjs';
 import { checkGraphCustomise } from './graph-customise.browser-checks.mjs';
+import { checkPaneFocus } from './pane-focus.browser-checks.mjs';
 
 async function playwright() {
     if (process.env.PLAYWRIGHT_MODULE) return import(pathToFileURL(process.env.PLAYWRIGHT_MODULE).href);
@@ -34,7 +35,8 @@ const fixture = index => ({
     labels:{attributes:[],overrides:[]}, database:'shortcut-test', project:{database:'shortcut-test',projectTempDirectory},
 });
 for (let i=0;i<3;i++) await writeFile(join(directory,`example-0${i}.snap.json`),JSON.stringify(fixture(i)));
-const server=createViewerServer();server.listen(0,'127.0.0.1');await once(server,'listening');
+const escalated=[];
+const server=createViewerServer({windowFocus:direction=>{escalated.push(direction);return {focused:true};}});server.listen(0,'127.0.0.1');await once(server,'listening');
 const origin=`http://localhost:${server.address().port}`;
 let browser,context,page;const errors=[];
 try {
@@ -66,7 +68,7 @@ try {
         await page.evaluate(()=>{window.vimiumProbe=[];window.addEventListener('keydown',event=>window.vimiumProbe.push(event.key),true);});
         await page.keyboard.press('l');
         assert.deepEqual(await page.evaluate(()=>window.vimiumProbe),[],'Default Vimium consumes l before page listeners');
-        await worker.evaluate(async origin=>{await Settings.onLoaded();await Settings.set('keyMappings','map , passNextKey\nunmap <c-e>\nunmap <c-y>');await Settings.set('exclusionRules',[{pattern:origin+'/*',passKeys:'abcdghjklnorstyzASDHJKLNOY.;/?>+-='}]);},origin);
+        await worker.evaluate(async origin=>{await Settings.onLoaded();await Settings.set('keyMappings','map , passNextKey\nunmap <c-e>\nunmap <c-y>');await Settings.set('exclusionRules',[{pattern:origin+'/*',passKeys:'abcdghjklnoprstyzASDHJKLNOY.;/?>+-='}]);},origin);
         await page.reload();await page.waitForSelector('ts-graph-canvas');
         await page.evaluate(()=>{const c=window.ng.getComponent(document.querySelector('ts-graph-canvas'));Object.defineProperty(c,'snapshotDatabase',{get:()=> 'shortcut-test'});window.ng.applyChanges(c);});
         await page.waitForFunction(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).snapFiles.length===3);
@@ -209,6 +211,7 @@ try {
     }
     await checkGraphNavigation(page, 'saved preview');
     await checkGraphCustomise(page, 'saved preview');
+    await checkPaneFocus(page, escalated, 'saved preview');
     await page.locator('.canvas-element').last().click({position:{x:450,y:350}});
     const url=page.url();await page.keyboard.press('Backspace');await page.waitForFunction(()=>!window.ng.getComponent(document.querySelector('ts-graph-canvas')).inlineSnap).catch(async error=>{
         console.error(errors);

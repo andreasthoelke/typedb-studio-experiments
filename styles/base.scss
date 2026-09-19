@@ -823,3 +823,22 @@ app-drag-handle span {
         pointer-events: none;
     }
 }
+
+// `<c-w>` pane navigation (see docs/local-graph-viewer.md). The active pane
+// needs a marker that survives focus landing on a child: `.pane-active` is set
+// by PaneFocusService on the pane element itself, while the browser's own
+// focus ring lands on the scroll container inside it. Drawn as an inset shadow
+// so it never changes layout — panes are flex/resizable children and a border
+// would shift the split by a pixel on every motion.
+.pane-active {
+    box-shadow: inset 0 0 0 1px var(--theme-green);
+}
+
+// Only the programmatic targets lose their outline: a pane or its scroll
+// container, both of which carry tabindex="-1" and are already marked by the
+// ring above. Buttons, links and inputs inside the pane keep their own focus
+// outline, which is what `f` hints and Tab still rely on.
+.pane-active:focus,
+.pane-active [tabindex="-1"]:focus {
+    outline: none;
+}
