@@ -12,6 +12,15 @@ This is an evolving personal fork; an upstream PR is not an objective. Keep thes
 documents current when behavior or setup changes. The existing user-owned viewer
 job may run inside Neovim; prefer isolated validation servers over restarting it.
 
+**Never quit, kill or relaunch Hammerspoon, and never run `hs.reload()`.** It
+launches the user's Alacritty/Neovim windows, and restarting it killed every
+running Neovim — taking down the terminal buffers that agents themselves run in,
+mid-task. (The probable mechanism is that `hs.task` children die with their
+parent, but the observed consequence is what matters.) The same caution applies
+to anything else that owns the user's session: edit `~/.config/hammerspoon/init.lua`
+freely, then ask the user to reload it themselves. Verifying a Hammerspoon change
+is their step, not an agent's.
+
 ## Submodule Dependencies
 
 **typedb-web** is a Git submodule dependency used via pnpm workspace:

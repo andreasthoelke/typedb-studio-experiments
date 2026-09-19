@@ -54,6 +54,12 @@ pnpm build:viewer
 node scripts/viewer-shortcuts.browser.mjs
 ```
 
+**Do not restart Hammerspoon to test a window-focus change.** It launches the
+user's Alacritty/Neovim windows; killing it killed every running Neovim, and with
+them the terminal buffers agents run in. Edit `~/.config/hammerspoon/init.lua`,
+then ask the user to reload. The same rule the viewer job already has: never
+restart something the user's session is living inside.
+
 Pane navigation across windows cannot be covered by these: the browser check
 stubs `windowFocus` so the suite never moves this machine's focus, and the
 Neovim and Hammerspoon halves are checked by hand. Verify those by pressing
