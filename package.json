@@ -15,7 +15,9 @@
     "viewer": "node scripts/viewer-server.mjs",
     "viewer:dev": "node scripts/viewer-server.mjs --dev",
     "build:viewer": "ng build --configuration local",
-    "test:viewer": "node --experimental-strip-types --test scripts/viewer-server.test.mjs scripts/graph-query.test.mjs scripts/graph-presets.test.mjs scripts/graph-edge.test.mjs scripts/graph-labels.test.mjs scripts/schema-explorer.test.mjs scripts/operation-context.test.mjs scripts/graph-finder.test.mjs scripts/graph-export-name.test.mjs scripts/graph-snap.test.mjs scripts/graph-shortcuts.test.mjs scripts/graph-navigation.test.mjs scripts/pane-focus.test.mjs scripts/editor-caret.test.mjs scripts/schema-focus.test.mjs"
+    "test:viewer": "node --experimental-strip-types --test scripts/viewer-server.test.mjs scripts/graph-query.test.mjs scripts/graph-presets.test.mjs scripts/graph-edge.test.mjs scripts/graph-labels.test.mjs scripts/schema-explorer.test.mjs scripts/operation-context.test.mjs scripts/graph-finder.test.mjs scripts/graph-export-name.test.mjs scripts/graph-snap.test.mjs scripts/graph-shortcuts.test.mjs scripts/graph-navigation.test.mjs scripts/pane-focus.test.mjs scripts/editor-caret.test.mjs scripts/schema-focus.test.mjs scripts/viewer-run.test.mjs",
+    "test:nvim-results": "node --test scripts/nvim-result.test.mjs",
+    "test:viewer-results": "node scripts/viewer-run.browser.mjs"
   },
   "private": true,
   "dependencies": {

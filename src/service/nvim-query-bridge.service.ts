@@ -1,6 +1,6 @@
 import { Injectable, NgZone } from "@angular/core";
 import { combineLatest, firstValueFrom, Subscription } from "rxjs";
-import { isApiErrorResponse } from "@typedb/driver-http";
+import { ApiResponse, QueryResponse, isApiErrorResponse } from "@typedb/driver-http";
 import type { GraphVisualiser } from "../framework/graph-visualiser/engine";
 import { editorCaretTarget, editorIllustrationQuery, type EditorCaretRequest } from "../framework/util/editor-caret";
 import type { GraphViewCommand } from "../framework/util/graph-shortcuts";
@@ -14,7 +14,10 @@ import { SnackbarService } from "./snackbar.service";
 import { prepareOperationContext, prepareSchemaContext, EditorExecution, OperationContext } from "../framework/util/operation-context";
 import { prepareGraphQuery } from "../framework/util/graph-query";
 
-export interface EditorRequest { id: string; query: string; database?: string; limit: number; execution?: EditorExecution; projectTempDirectory?: string; }
+export interface EditorRequest { id: string; query: string; database?: string; limit: number; execution?: EditorExecution; projectTempDirectory?: string;
+    connectionOrigin?: string; response?: ApiResponse<QueryResponse>;
+    graph?: { query: string; response: ApiResponse<QueryResponse>; schemaMode: boolean; source: "result" | "context"; note: string };
+}
 const OPTIONS_KEY = "typedb-studio-nvim-options";
 const ENABLED_KEY = "typedb-studio-nvim-enabled";
 
@@ -29,6 +32,7 @@ export class NvimQueryBridge {
     relationTypes = "";
     lastRequest: EditorRequest | null = null;
     private pending = false;
+    private reapplying = false;
     private schemaFocus?: (request: EditorRequest, schema: Schema) => boolean;
     private retryTimer?: ReturnType<typeof setTimeout>;
     private refreshedRequest?: string;
@@ -37,8 +41,9 @@ export class NvimQueryBridge {
     }
     get outcome(): string {
         const execution = this.lastRequest?.execution;
-        return !execution ? "" : execution.status === "error" ? "Neovim statement failed. Showing context from existing data/schema."
-            : execution.kind === "read" ? "" : "Neovim committed the statement. Showing current context.";
+        return !execution ? "" : execution.status === "unknown" ? "Statement outcome unknown; check current data before rerunning."
+            : execution.status === "error" ? "Statement failed. Any displayed context is existing data/schema."
+            : execution.kind === "read" ? "" : "Statement committed. Context reads, when present, show current state.";
     }
     private events?: EventSource;
     private subscriptions?: Subscription;
@@ -98,6 +103,7 @@ export class NvimQueryBridge {
         });
         if (schemaFocus) this.subscriptions.add(this.snapshots.schemaContext$.subscribe(request => this.zone.run(() => {
             this.lastRequest = request;
+            this.reapplying = false;
             this.pending = true;
             this.schedule();
         })));
@@ -110,6 +116,7 @@ export class NvimQueryBridge {
             this.caretRequest = null; this.caretGeneration++;
             this.controls = [];
             this.lastRequest = request;
+            this.reapplying = false;
             this.pending = true;
             this.schedule();
         }));
@@ -158,6 +165,7 @@ export class NvimQueryBridge {
         clearTimeout(this.reapplyTimer);
         this.reapplyTimer = undefined;
         if (!this.schemaFocus) this.saveOptions();
+        this.reapplying = true;
         this.pending = !!this.lastRequest;
         this.schedule();
     }
@@ -300,7 +308,21 @@ export class NvimQueryBridge {
     private drain(): void {
         const request = this.lastRequest;
         if (!this.pending || !request) return;
-        if (!this.driverConnected) { this.message = "Query received. Connect to TypeDB to run it."; return; }
+        if (!this.driverConnected) { this.message = request.response
+            ? "Completed result received. Connect to its TypeDB server to display it."
+            : "Query received. Connect to TypeDB to run it."; return; }
+        if (request.connectionOrigin) {
+            const params = this.driver.connection$.value?.params;
+            const addresses = params && ("addresses" in params ? params.addresses : params.translatedAddresses.map(a => a.external));
+            const normalise = (address: string) => {
+                try { const url = new URL(address); if (url.hostname === "127.0.0.1") url.hostname = "localhost"; return url.origin; }
+                catch { return address; }
+            };
+            if (!addresses?.some(address => normalise(address) === normalise(request.connectionOrigin!))) {
+                this.message = `Connect Studio to ${request.connectionOrigin} to view this completed result.`;
+                return;
+            }
+        }
         if (this.busy && !this.schemaFocus) { this.message = "Latest Neovim query queued until the current run finishes."; return; }
         const database = request.database ?? this.driver.database$.value?.name;
         if (!database) { this.message = "Query received. Choose a database."; return; }
@@ -362,7 +384,13 @@ export class NvimQueryBridge {
                 relationTypes: this.relationTypes.split(",").map(label => label.trim()).filter(Boolean),
             };
             if (this.operationContext && !schema) throw new Error("Could not load the current schema for operation context.");
-            const prepared = this.operationContext
+            const supplied = request.response && !this.reapplying;
+            if (supplied && !request.graph) {
+                this.message = this.outcome || "The executed statement returned no graph. See the Neovim result.";
+                this.note = "Previous graph retained; it does not represent this failed statement.";
+                return;
+            }
+            const prepared = supplied ? request.graph! : this.operationContext
                 ? prepareOperationContext(request.query, request.execution!, options, schema!)
                 : { ...prepareGraphQuery(request.query, options,
                     label => schema?.entities[label] ?? schema?.relations[label] ?? schema?.attributes[label]), schemaMode: false };
@@ -378,10 +406,11 @@ export class NvimQueryBridge {
                 this.state.outputTypeControl.setValue("graph");
                 this.note = context.note;
                 this.message = `Running Neovim context in ${database}…`;
-                this.state.runQuery(context.query, { limit: request.limit, schemaMode: context.schemaMode, projectTempDirectory: request.projectTempDirectory }).subscribe(result => {
+                this.state.runQuery(context.query, { limit: request.limit, schemaMode: context.schemaMode, projectTempDirectory: request.projectTempDirectory,
+                    response: supplied ? request.graph!.response : undefined }).subscribe(result => {
                     if (this.lastRequest !== request) return;
                     const empty = ["noQueryAnswers", "noInstancesFound"].includes(this.state.graphOutput.status);
-                    if (this.operationContext && !context.schemaMode && !fallback && (!result.success || empty) && !this.pending) {
+                    if (!supplied && this.operationContext && !context.schemaMode && !fallback && (!result.success || empty) && !this.pending) {
                         try {
                             const schemaContext = prepareSchemaContext(request.query, options, schema!);
                             queueMicrotask(() => {

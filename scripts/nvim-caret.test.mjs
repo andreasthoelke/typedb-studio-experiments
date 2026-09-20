@@ -42,7 +42,7 @@ function! ScrollOff(n)
 endfunction
 ]])
 local helper = dofile(vim.env.STUDIO_TEST_REPO .. '/contrib/nvim/typedb_graph.lua')
-helper.setup({url=vim.env.STUDIO_TEST_URL, mapping=false})
+helper.setup({url=vim.env.STUDIO_TEST_URL, mapping=false, control_prefix='<leader>gv'})
 vim.api.nvim_win_set_cursor(0, {1, 7})
 local function press(key)
  vim.api.nvim_feedkeys(vim.api.nvim_replace_termcodes(key,true,false,true),'xt',false)

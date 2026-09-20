@@ -10,6 +10,58 @@ The earlier dedicated `/viewer` implementation is preserved on
 `feat/local-graph-viewer` at `78b4eff5`. The current implementation is on
 `feat/nvim-studio-query`; `/viewer` redirects to `/query?nvim=1`.
 
+## Complementary result floats
+
+Ordinary Neovim evaluation now has a shared execution path: the local bridge runs
+TypeDB once, returns a readable float result, and sends the same structured
+answer to Studio. Concept rows and flat fetch documents render as tables; nested
+fetch documents preserve their JSON structure. Schema operations include a
+current-schema table when a context read can be derived. Failed writes keep the
+original error and can include a separately labelled table of current data.
+That table does not imply the failed write succeeded or that its exact intended
+record already exists.
+
+Inside the float, **gr** shows raw JSON, **gt** restores the formatted view, and
+**gq** shows the executed and context queries. These stay attached to that float,
+even after another evaluation. Original errors, full untruncated cell values and
+query structure are available in raw JSON.
+
+**I** moves to the next table column and **Y** to the previous one, keeping the
+current row. These controls also work in generated-schema inspection floats.
+Floats start with line wrapping disabled, as do normal windows in the local
+Neovim configuration. Use `:setlocal wrap` when you want wrapping in a window.
+
+The initial Query graph renders the shared answer. Use **Neovim → Read graph
+context** for a subsequent read with the neighbours/seed/relation options; option
+changes also request context. Schema following and Explorer expansion work as
+before. A browser reconnect renders the completed answer without executing the
+source statement again. Connect Studio to the same HTTP server/database as the
+bridge to receive these results.
+
+The bridge uses `TYPEDB_ADDRESS`, `TYPEDB_USERNAME`, `TYPEDB_PASSWORD` from its
+launching environment (defaults: `http://localhost:8000`, `admin`, `password`).
+The existing keys/ranges are preserved for commands using `Tdb_runQueryShow`.
+The specialised generated-schema inspector continues to use its existing helper.
+An old/unavailable bridge falls back to the console only before submitting a run.
+After submission, a lost response reports **outcome unknown** and never retries a
+possible write. Inspect the current data before explicitly running it again.
+
+For an existing Neovim session, reload the integration and restart its viewer job
+when convenient:
+
+```vim
+:luafile ~/.config/nvim/plugin/ftype/typedb_graph.lua
+:source ~/.config/nvim/plugin/ftype/typedb.vim
+:TypeDBGraphStop
+:TypeDBGraphStart
+```
+
+Set `g:typedb_structured_results = 0` to use the legacy console evaluation path.
+See [the result-rendering design](nvim-result-rendering-plan.md) for the HTTP
+contract, supported context patterns, implementation and isolated tests. The
+mirror-only behavior described later applies to `/api/viewer/query`; completed
+`/api/viewer/run` results are ingested instead of rerun.
+
 ## Everyday use in this Neovim setup
 
 The configuration loader in `~/.config/nvim/plugin/ftype/typedb_graph.lua` loads
@@ -765,10 +817,12 @@ docking the side panel below the graph changes what `Ctrl-w j` does without any
 setting. A pane that is not on the current route, or is hidden behind another
 output tab, is skipped. `Ctrl-w Ctrl-h` and the like work too, as in Vim.
 
-Focusing a pane deliberately takes the keyboard away from the graph. After
-`Ctrl-w e`, **h j k l** scroll the Explorer instead of moving the caret, and
-**f** can then reach a control that was below the fold. `Ctrl-w g` gives the
-graph its keys back.
+After focusing the Explorer or a Snaps, Elements or Themes panel, **Ctrl-e/y**
+scroll that pane down/up. They never pan the graph while a side pane has focus,
+even at the scroll boundary. **h j k l** continue moving the graph caret (in
+caret mode), so you can inspect another node without leaving the Explorer.
+**f** can reach controls below the fold after scrolling. `Ctrl-w g` or clicking
+the graph returns Ctrl-e/y to graph panning. Text inputs retain editing keys.
 
 **Past the last pane, focus leaves the window.** `Ctrl-w h` from the leftmost
 pane, or `Ctrl-w l` from the rightmost, moves to the next window on screen. This
@@ -804,8 +858,20 @@ package.path = package.path .. ';/path/to/typedb-studio/contrib/hammerspoon/?.lu
 require('typedb_panes')
 ```
 
-Without it the cardinal directions still work, on Hammerspoon's built-in
-geometric focus.
+The helper chooses windows by geometry, independent of recent focus. With
+Schema, Query and Neovim arranged left to right, west from Neovim reaches Query
+even after jumping directly there from Schema. Far motions select the outermost
+window in one operation. Without the helper, cardinal directions use
+Hammerspoon's built-in geometric focus.
+
+After updating an already loaded helper, reload only this module in the
+Hammerspoon console:
+
+```lua
+package.loaded["typedb_panes"] = nil; require("typedb_panes")
+```
+
+Do not restart Hammerspoon or call `hs.reload()`; it owns the terminal sessions.
 
 The arrangement this was built for is the schema route, the query route and the
 Neovim terminal side by side. Opening the two routes as their own windows rather

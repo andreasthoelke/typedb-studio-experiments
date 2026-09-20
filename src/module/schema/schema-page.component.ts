@@ -110,15 +110,13 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
     private frameSchemaFocus(visualiser: GraphVisualiser, canvas: GraphCanvasComponent): void {
         cancelAnimationFrame(this.focusFrame);
         const revision = visualiser.elementSelection.revision;
-        let frames = 0;
         const focus = () => {
             this.focusFrame = 0;
             if (!this.bridge.enabled || visualiser !== this.state.visualiser.visualiser || canvas.inlineSnap ||
                 visualiser.elementSelection.revision !== revision || visualiser.interactionHandler.state.selectedNode != null) return;
-            // A newly loaded schema starts at random positions. Give its existing
-            // layout visible frames before freezing/framing it. Background tabs
-            // naturally defer rAF until they can render, rather than freezing unseen.
-            if (visualiser.layout.isRunning && ++frames < 60) {
+            // Wait for actual settling, not a frame-count timeout which can freeze
+            // an unfinished simulation. Hidden tabs defer both layout and framing.
+            if (visualiser.layout.isRunning) {
                 this.focusFrame = requestAnimationFrame(focus);
                 return;
             }
@@ -136,6 +134,9 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
     onGraphCanvasRebuilt(el: HTMLElement): void {
         this.state.visualiser.destroy();
         this.state.visualiser.canvasEl$.next(el);
+        const visualiser = this.state.visualiser.visualiser;
+        const canvas = this.graphCanvasComponents.first;
+        if (visualiser && canvas && this.contextQuery && !this.restoredSnap) this.frameSchemaFocus(visualiser, canvas);
     }
 
     onGraphStatusAction(action: string) {
@@ -196,7 +197,7 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
         ).subscribe((queryResponses) => {
             this.restoredSnap = null;
             if (!this.state.visualiser.visualiser) {
-                queryResponses.forEach(x => this.state.visualiser.push(x));
+                this.state.visualiser.pushAll(queryResponses);
             }
             this.cdr.detectChanges();
         });

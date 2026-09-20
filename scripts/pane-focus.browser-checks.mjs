@@ -36,7 +36,7 @@ export async function checkPaneFocus(page, escalated, label) {
         return Math.abs(tx - fx) >= Math.abs(ty - fy) ? (tx > fx ? 'l' : 'h') : (ty > fy ? 'j' : 'k');
     };
 
-    // The graph owns the keyboard at rest; entering the Explorer must hand it over.
+    // Pane focus routes scrolling independently of graph caret navigation.
     await page.evaluate(() => window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser?.endNavigation());
     await chord('e');
     assert.equal(await active(), 'explorer', `${label}: Ctrl+w e focuses the Explorer`);
@@ -49,6 +49,56 @@ export async function checkPaneFocus(page, escalated, label) {
     assert.equal(await active(), 'explorer', `${label}: and back again`);
     await chord(towards('explorer', 'graph'));
     assert.equal(await active(), 'graph', `${label}: a motion towards the graph reaches it`);
+
+    // Ctrl-e/y belongs to the actual focused scroller; graph caret motions still work.
+    await page.getByRole('tab', {name:'Snaps',exact:true}).click();
+    for (const [id, key] of [['explorer','e'],['panel','b']]) {
+        await chord(key);
+        const metrics = await page.evaluate(id => {
+            const pane=document.querySelector('[tsPane="'+id+'"]');
+            const scroller=pane.querySelector('.panel-scroll');
+            const filler=document.createElement('div');filler.dataset.scrollFixture='true';filler.style.height='2500px';
+            scroller.append(filler);scroller.scrollTop=0;
+            const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;
+            v.stopLayout();v.stopCameraAnimation();
+            return {height:scroller.clientHeight,scroll:scroller.scrollHeight,camera:{...v.sigma.getCamera().getState()}};
+        },id);
+        assert.ok(metrics.scroll>metrics.height, label+': panel actually overflows');
+        await page.keyboard.press('Control+e');
+        const after=await page.evaluate(id=>document.querySelector('[tsPane="'+id+'"] .panel-scroll').scrollTop,id);
+        assert.ok(after>0,label+': Ctrl-e scrolls '+id);
+        await page.keyboard.press('Control+y');
+        assert.ok(await page.evaluate(id=>document.querySelector('[tsPane="'+id+'"] .panel-scroll').scrollTop,id)<after);
+        assert.deepEqual(await page.evaluate(()=>({...window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.sigma.getCamera().getState()})),metrics.camera,label+': scrolling does not pan the graph');
+        await page.evaluate(()=>{
+            const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;
+            v.enterNavigation();v.stopCameraAnimation();
+            window.__paneMotions=[];window.__paneMove=v.moveNavigation;
+            v.moveNavigation=function(direction,...args){window.__paneMotions.push(direction);return window.__paneMove.call(this,direction,...args);};
+        });
+        for(const motion of ['h','j','k','l']) await page.keyboard.press(motion);
+        assert.deepEqual(await page.evaluate(()=>window.__paneMotions),['left','down','up','right']);
+        assert.equal(await active(),id,'Caret motion keeps the active pane, including when inspector content is replaced');
+        const afterMotion=await page.evaluate(()=>{
+            const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;
+            v.stopCameraAnimation();return {...v.sigma.getCamera().getState()};
+        });
+        await page.keyboard.press('Control+e');
+        await page.waitForTimeout(250);
+        assert.deepEqual(await page.evaluate(()=>({...window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.sigma.getCamera().getState()})),afterMotion,'Panel still owns Ctrl-e after inspector replacement');
+        await page.evaluate(()=>{
+            const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;
+            v.moveNavigation=window.__paneMove;v.stopCameraAnimation();
+            document.querySelectorAll('[data-scroll-fixture]').forEach(e=>e.remove());
+        });
+    }
+    await chord('g');
+    const graphCamera=await page.evaluate(()=>({...window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.sigma.getCamera().getState()}));
+    await page.keyboard.press('Control+e');
+    await page.waitForTimeout(250);
+    assert.notDeepEqual(await page.evaluate(()=>({...window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.sigma.getCamera().getState()})),graphCamera,'Ctrl-e pans when the graph is focused');
+    await chord('e');
+    await chord('g');
 
     // Vim's own chord history, within the page.
     await chord('p');

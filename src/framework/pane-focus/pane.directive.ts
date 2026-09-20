@@ -11,9 +11,8 @@ import { PaneFocusService } from "../../service/pane-focus.service";
 /** Marks a region as a `<c-w>` navigation target.
  *
  *  `tsPaneScroller` names the element that should actually receive focus,
- *  which matters because Vimium scrolls the focused element's nearest
- *  scrollable ancestor: pointing at the pane's own scroll container is what
- *  makes j/k/d/u scroll the Explorer after `<c-w>e`. It is looked up lazily
+ *  so Ctrl-e/y can scroll the pane's own container after `<c-w>e` while
+ *  graph caret motions remain available. It is looked up lazily
  *  on each focus, since docking and tab switches rebuild these subtrees. */
 @Directive({
     selector: "[tsPane]",

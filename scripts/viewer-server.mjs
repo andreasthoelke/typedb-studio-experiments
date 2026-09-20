@@ -1,10 +1,11 @@
 import { createServer, request as httpRequest } from 'node:http';
-import { randomUUID } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { createReadStream, existsSync } from 'node:fs';
 import { stat } from 'node:fs/promises';
 import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawn } from 'node:child_process';
+import { createRunExecutor, prepareRun } from './viewer-run.mjs';
 import { maxPngBytes, saveGraphPng, saveGraphSnap, validExportName, validProjectTempDirectory, graphSnapshotDirectory,
     selectSnapshotProject, listGraphSnaps, readGraphSnap, deleteGraphSnap } from './viewer-export.mjs';
 
@@ -33,7 +34,7 @@ const hammerspoonMethod = compass => `focusWindow${compass[0].toUpperCase()}${co
 const hammerspoonDirection = (direction, compass, far) =>
     `if typedbFocusWindow then typedbFocusWindow('${direction}') else ` +
     `for _ = 1, ${far ? 8 : 1} do local w = hs.window.focusedWindow(); if not w then break end; ` +
-    `w:${hammerspoonMethod(compass)}(nil, true, true); local n = hs.window.focusedWindow(); ` +
+    `w:${hammerspoonMethod(compass)}(nil, false, true); local n = hs.window.focusedWindow(); ` +
     `if not n or n:id() == w:id() then break end end end`;
 const hammerspoonLua = {
     west: hammerspoonDirection('west', 'west', false),
@@ -78,11 +79,14 @@ function json(response, status, body) {
     response.end(JSON.stringify(body));
 }
 
-/** A loopback-only query bridge and PNG saver. Database credentials stay in Studio. */
-export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/browser'), devPort, windowFocus = focusWindow } = {}) {
+/** Loopback bridge; the executor's credentials come only from server configuration. */
+export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/browser'), devPort, windowFocus = focusWindow,
+    runExecutor = createRunExecutor() } = {}) {
     const clients = new Set();
     const projects = new Map();
     let latest;
+    const runs = new Map();
+    let runQueue = Promise.resolve();
 
     function send(client, request, event = 'query') {
         // Reconnect and replay the latest request instead of buffering indefinitely.
@@ -103,7 +107,7 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
         try {
             const url = new URL(request.url, 'http://127.0.0.1');
             if (url.pathname === '/api/viewer/health' && request.method === 'GET') {
-                return json(response, 200, { service: 'typedb-studio-bridge', viewerControls: true, caretNavigation: true, pngExport: true, projectSnapshots: true, graphSnaps: true, snapLibrary: true, imageFolders: true, windowFocus: true, viewers: clients.size, latestRequestId: latest?.id ?? null });
+                return json(response, 200, { service: 'typedb-studio-bridge', structuredRuns: true, viewerControls: true, caretNavigation: true, pngExport: true, projectSnapshots: true, graphSnaps: true, snapLibrary: true, imageFolders: true, windowFocus: true, viewers: clients.size, latestRequestId: latest?.id ?? null });
             }
             const database = url.searchParams.get('database');
             const projectTempDirectory = url.searchParams.get('projectTempDirectory') ?? projects.get(database);
@@ -162,7 +166,7 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                 response.on('close', () => { clients.delete(response); clearInterval(heartbeat); });
                 return;
             }
-            if (['/api/viewer/query', '/api/viewer/caret', '/api/viewer/control', '/api/viewer/focus'].includes(url.pathname) && request.method === 'POST') {
+            if (['/api/viewer/run', '/api/viewer/query', '/api/viewer/caret', '/api/viewer/control', '/api/viewer/focus'].includes(url.pathname) && request.method === 'POST') {
                 if (request.headers['content-type']?.split(';')[0].trim() !== 'application/json') {
                     return json(response, 415, { error: 'Send application/json.' });
                 }
@@ -221,6 +225,46 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                 }
                 if (body.projectTempDirectory !== undefined && !validProjectTempDirectory(body.projectTempDirectory)) {
                     return json(response, 400, { error: 'Expected an absolute projectTempDirectory.' });
+                }
+                if (url.pathname === '/api/viewer/run') {
+                    if (!body.database || typeof body.runId !== 'string' || !/^[\w-]{16,100}$/.test(body.runId)
+                        || body.execution !== undefined || (body.publish !== undefined && typeof body.publish !== 'boolean')
+                        || (body.schemaMode !== undefined && !['define', 'redefine', 'undefine'].includes(body.schemaMode))) {
+                        return json(response, 400, { error: 'Expected database, unique runId (16–100 characters), and optional schemaMode; execution is server-owned.' });
+                    }
+                    try { prepareRun(body.query, body.schemaMode); }
+                    catch (error) { return json(response, 400, { error: error.message }); }
+                    const input = { runId: body.runId, query: body.query, database: body.database, limit: body.limit ?? 1000,
+                        schemaMode: body.schemaMode, publish: body.publish !== false, projectTempDirectory: body.projectTempDirectory };
+                    const fingerprint = createHash('sha256').update(JSON.stringify(input)).digest('hex');
+                    let entry = runs.get(body.runId);
+                    if (entry && entry.fingerprint !== fingerprint) return json(response, 409, { error: 'runId already belongs to another request.' });
+                    if (!entry) {
+                        // Retain IDs for the server lifetime, even after dropping heavy results.
+                        // Never execute an old ID again because a response cache was evicted.
+                        if (runs.size >= 10000) return json(response, 503, { error: 'Run ID capacity reached; restart the bridge before another evaluation.' });
+                        entry = { fingerprint };
+                        runs.set(body.runId, entry);
+                        entry.promise = runQueue.then(async () => {
+                            const completed = await runExecutor(input);
+                            if (body.projectTempDirectory) projects.set(body.database, body.projectTempDirectory);
+                            if (input.publish) {
+                                latest = { ...completed };
+                                delete latest.lines;
+                                for (const client of clients) send(client, latest);
+                            }
+                            return completed;
+                        });
+                        runQueue = entry.promise.catch(() => {});
+                        entry.promise.finally(() => {
+                            entry.done = true;
+                            const cached = [...runs.values()].filter(e => e.done && e.promise);
+                            for (const old of cached.slice(0, Math.max(0, cached.length - 20))) old.promise = null;
+                        }).catch(() => {});
+                    }
+                    if (!entry.promise) return json(response, 410, { error: 'This run was already processed; its result has expired. It will not execute again.' });
+                    try { return json(response, 200, await entry.promise); }
+                    catch { return json(response, 500, { error: 'Run processing failed after acceptance. Execution outcome may be unknown; do not automatically retry.' }); }
                 }
                 const execution = body.execution;
                 if (execution !== undefined && (!execution || !['read', 'write', 'schema'].includes(execution.kind)

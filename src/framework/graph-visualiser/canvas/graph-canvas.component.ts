@@ -116,6 +116,8 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         this.cancelKeySequence();
         if (!event.composedPath().some(target => target instanceof HTMLElement && target.closest(".graph-finder"))) this.finderOpen = false;
         if (event.composedPath().includes(this.host.nativeElement)) GraphCanvasComponent.keyboardOwner = this;
+        if (event.type === "pointerdown" && event.composedPath().includes(this.host.nativeElement)
+            && event.target instanceof HTMLCanvasElement) this.paneFocus.focus("graph");
     };
 
     private onGraphKey = (event: KeyboardEvent): void => {
@@ -137,6 +139,8 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         // Ctrl-[ cancel an armed deletion before considering a global clear.
         if (["Shift", "Alt", "Control", "Meta"].includes(event.key)) return;
         const action = graphShortcut(event, this.navigationMode, this.leaderPending);
+        if ((action === "panUp" || action === "panDown") && this.paneFocus.focusedPane
+            && this.paneFocus.focusedPane !== "graph") { this.cancelKeySequence(); return; }
         if (!action) {
             if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing) this.cancelKeySequence();
             return;

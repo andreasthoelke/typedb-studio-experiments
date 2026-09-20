@@ -18,8 +18,8 @@
 -- schema window, query window, terminal from left to right, and rearranging
 -- them needs no change.
 --
--- Without this file the bridge falls back to inline Lua doing the same thing,
--- which is the same behaviour minus the `previous` history below.
+-- Without this file the bridge falls back to Hammerspoon's built-in directional
+-- focus, without the `previous` history or single-operation far motions below.
 
 local M = {}
 
@@ -31,15 +31,33 @@ local M = {}
 -- the last *motion's* origin.
 local origin = nil
 
-local cardinal = {
-    west = 'focusWindowWest', east = 'focusWindowEast',
-    north = 'focusWindowNorth', south = 'focusWindowSouth',
-}
-
--- A `far-` motion repeats the step until nothing lies further that way, so one
--- keypress crosses the whole screen. Bounded so a window manager that keeps
--- reporting a move cannot spin.
-local maxFarSteps = 8
+-- Rank by geometry only. Hammerspoon's frontmost=true option can promote a
+-- farther Chrome window when it slightly overlaps its nearer sibling.
+local axes = { west = {-1, 0}, east = {1, 0}, north = {0, -1}, south = {0, 1} }
+function M.target(current, windows, direction)
+    local far = direction:match('^far%-(.+)$')
+    local axis = axes[far or direction]
+    if not axis then return nil end
+    local f = current:frame()
+    local cx, cy = f.x + f.w / 2, f.y + f.h / 2
+    local best, bestScore, bestForward
+    for _, window in ipairs(windows) do
+        if window:id() ~= current:id() and window:isStandard() and window:isVisible() then
+            local r = window:frame()
+            local dx, dy = r.x + r.w / 2 - cx, r.y + r.h / 2 - cy
+            local forward = dx * axis[1] + dy * axis[2]
+            local lateral = math.abs(dx * axis[2] - dy * axis[1])
+            if forward > lateral then
+                local score = math.sqrt(dx * dx + dy * dy) + lateral
+                local better = not best or (far and forward > bestForward)
+                    or ((not far or forward == bestForward) and (score < bestScore
+                        or (score == bestScore and window:id() < best:id())))
+                if better then best, bestScore, bestForward = window, score, forward end
+            end
+        end
+    end
+    return best
+end
 
 function M.focus(direction)
     local current = hs.window.focusedWindow()
@@ -52,21 +70,14 @@ function M.focus(direction)
         end
         return
     end
-    local far = direction:match('^far%-(.+)$')
-    local method = cardinal[far or direction]
-    if not method or not current then return end
-    local moved = false
-    for _ = 1, far and maxFarSteps or 1 do
-        local before = hs.window.focusedWindow()
-        if not before then break end
-        -- strict: only windows genuinely in that direction, so a motion off
-        -- the edge of the screen does nothing rather than wrapping around.
-        before[method](before, nil, true, true)
-        local after = hs.window.focusedWindow()
-        if not after or after:id() == before:id() then break end
-        moved = true
+    if not current then return end
+    local target = M.target(current, hs.window.orderedWindows(), direction)
+    if target then
+        origin = current
+        -- One focus operation even for far motions; OS focus updates need not
+        -- be synchronous, so do not repeatedly read focusedWindow in a loop.
+        target:focus()
     end
-    if moved then origin = current end
 end
 
 typedbFocusWindow = M.focus

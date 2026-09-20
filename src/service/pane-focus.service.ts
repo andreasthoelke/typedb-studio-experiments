@@ -22,11 +22,8 @@ interface PaneRegistration { element: HTMLElement; focusTarget: () => HTMLElemen
  *  query window, Neovim) navigable without any of them knowing the others
  *  exist.
  *
- *  Focusing a pane deliberately hands the keyboard away from the graph: the
- *  canvas's own `focusin` listener drops ownership, so hjkl stop moving the
- *  caret and become Vimium's scroll keys for the newly focused container.
- *  That is the point of the feature — it is what makes `f` hints reachable
- *  on controls that were scrolled out of view. */
+ *  Pane focus routes Ctrl-e/y to that pane's scroller. Plain graph caret
+ *  motions remain available from side panels, while inputs keep editing keys. */
 @Injectable({ providedIn: "root" })
 export class PaneFocusService {
     private readonly zone = inject(NgZone);
@@ -110,9 +107,35 @@ export class PaneFocusService {
         return this.activePane && panes.some(pane => pane.id === this.activePane) ? this.activePane : null;
     }
 
+    get focusedPane(): PaneId | null { return this.origin(this.geometry()); }
+
+    private scrollPane(event: KeyboardEvent): boolean {
+        if (!event.ctrlKey || event.altKey || event.metaKey || event.shiftKey || event.isComposing || event.defaultPrevented
+            || !["e", "y"].includes(event.key.toLowerCase())) return false;
+        if (event.composedPath().some(target => target instanceof HTMLElement && (target.isContentEditable
+            || target.closest("input, textarea, select, [role='textbox'], [role='dialog'], [role='menu']")))) return false;
+        if (document.querySelector(".cdk-overlay-pane .mat-mdc-dialog-container, .cdk-overlay-pane .mat-mdc-menu-panel, .cdk-overlay-pane .mat-mdc-select-panel")) return false;
+        const id = this.focusedPane;
+        if (!id || id === "graph" || id === "query") return false;
+        const pane = this.panes.get(id)!;
+        const scrollable = (el: HTMLElement) => this.visible(el) && el.scrollHeight > el.clientHeight
+            && /auto|scroll/.test(getComputedStyle(el).overflowY);
+        let target = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        while (target && pane.element.contains(target) && !scrollable(target)) target = target.parentElement;
+        if (!target || !pane.element.contains(target)) target = [pane.focusTarget(), pane.element,
+            ...pane.element.querySelectorAll<HTMLElement>(".panel-scroll, [role='tabpanel']")]
+            .find((el): el is HTMLElement => !!el && scrollable(el)) ?? null;
+        // A panel at its boundary still owns this chord; never pan the graph behind it.
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (target) target.scrollTop += (event.key.toLowerCase() === "e" ? 1 : -1)
+            * (parseFloat(getComputedStyle(target).lineHeight) || 20) * 2;
+        return true;
+    }
+
     private onKey = (event: KeyboardEvent): void => {
         if (!this.panes.size) return;
         if (!this.chordPending) {
+            if (this.scrollPane(event)) return;
             if (!panePrefix(event)) return;
             event.preventDefault();
             event.stopImmediatePropagation();

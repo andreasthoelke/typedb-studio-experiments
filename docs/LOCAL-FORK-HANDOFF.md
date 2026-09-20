@@ -1,6 +1,6 @@
 # Local Studio fork: maintainer handoff
 
-Updated 2026-09-15. Read this first, then [the workflow guide](local-graph-viewer.md).
+Updated 2026-09-20. Read this first, then [the workflow guide](local-graph-viewer.md).
 This is a personal, evolving graph exploration tool integrated with Neovim.
 An upstream PR is not a goal. Keep working in this repository and reuse Studio's
 existing components where helpful; improve the design as actual use suggests.
@@ -117,7 +117,8 @@ Manual checks when modifying live graph lifecycle:
 | Explorer tabs and inspectors | `src/framework/graph-visualiser/side-panel/`, `explorer/` |
 | Theme persistence / display-attribute loading | `src/service/graph-style.service.ts`, `graph-label.service.ts` |
 
-Neovim POSTs to `/api/viewer/query`. The helper pushes events over **SSE** at
+Mirror-only requests POST to `/api/viewer/query`; ordinary evaluations use
+`/api/viewer/run` (see Shared Neovim execution results below). The helper pushes events over **SSE** at
 `/api/viewer/events`; no custom WebSocket or dependency on Vite HMR is needed.
 It retains the latest pending request. An enabled Query tab prepares a graph read
 and runs it through normal Studio execution. An enabled Schema tab passes a focus
@@ -188,10 +189,11 @@ Project context inferred from a Neovim schema file can be overridden in Snaps.
   a chord is pending (`chordPending`), because listener order between the two is
   not guaranteed. The prefix must keep working inside the query editor and other
   editable fields — the one deliberate exception to the rule below — or focus
-  could enter the editor and never leave. Focusing a pane hands the keyboard
-  away from the graph through the existing `focusin` listener; that is the
-  feature, not a regression, since it is what lets Vimium scroll the pane and
-  put `f` hints on controls below the fold. Panes are resolved from live rects,
+  could enter the editor and never leave. Ctrl-e/y scroll the focused side
+  pane, including at scroll boundaries where they must not pan the graph.
+  Plain hjkl still move the graph caret from a side pane; editable controls
+  retain their editing keys. Clicking the canvas restores graph focus and pan
+  shortcuts. Panes are resolved from live rects,
   so no layout table exists to fall out of date when the dock flips. Motions
   that find no pane escalate; nothing in the browser, the bridge or the Lua
   knows the user's column order.
@@ -249,10 +251,13 @@ It checks parallel Query/Schema delivery, role/player focus, no data run in the
 Schema tab, pause/resume and replay, docking with subsequent selection edits,
 schema refresh, snap provenance and return to live, and unknown-type fallback.
 The normal unit suite includes the bounded selection algorithm and lexical cases.
-Automatic schema framing waits up to 60 visible animation frames for a running
-layout, and cancels when the user changes selection, opens a snap, pauses following,
-or replaces/destroys the renderer. Avoid freezing a freshly loaded graph at its
-initial random positions, especially in the second/background tab.
+Schema loading rebuilds the simulation after the complete response batch, so
+owns/plays/relates edges participate from the first rendered frame. Automatic
+schema framing waits until layout actually settles, and cancels when the user
+changes selection, opens a snap, pauses following, or replaces/destroys the
+renderer. A renderer rebuilt while layout was running resumes it; settled snap
+positions stay intact. Do not introduce a frame-count deadline that freezes a
+fresh graph at random positions, especially in a background tab.
 
 ## Editable snap runs
 
@@ -647,3 +652,49 @@ checks real omitted-role queries for motivation/composition via
 `role-edges.browser-checks.mjs`. These use isolated servers and profiles.
 Arrowheads remain a future per-role direction setting; no Sigma upgrade or
 submodule change was needed.
+
+
+## Shared Neovim execution results (2026-09-20)
+
+Read [the implemented result-rendering design](nvim-result-rendering-plan.md) for
+the contract, activation, connection environment and regression tests. Ordinary
+`Tdb_runQueryShow` evaluations now use `/api/viewer/run`; the bridge executes once
+and returns formatted lines plus structured answers to Neovim while publishing
+those same answers to Studio. `/api/viewer/query` remains the legacy/mirror path.
+The externally owned `typedb.vim` has a three-line adapter call; implementation
+lives in `contrib/nvim/typedb_result.vim` and `typedb_graph.lua`.
+
+**Never retry a run through the console after dispatch.** Lost responses have an
+unknown outcome. Only capability preflight failure permits legacy fallback.
+Run IDs deduplicate within the bridge process; this is not a durable transaction
+journal. A key conflict remains a failed statement even when a separate read
+shows related existing data. Keep those two outcomes distinct.
+
+Completed concept-row answers enter the existing QueryPageState output pipeline
+without another driver query. Initial rows match the float; explicit Read graph
+context / option edits use ordinary independent reads. Schema refresh/focus and
+label/role lookups still read current data. Connection-origin matching prevents
+mixing same-named databases on different servers. Full raw answers and query
+structure stay attached to each float (`gr`, `gt`, `gq`). Span/row linking is future
+work, not an implemented interaction.
+
+New checks: `pnpm test:nvim-results`, `pnpm test:viewer-results`; runner unit tests
+are part of `pnpm test:viewer`. The browser check owns a temporary TypeDB instance
+and storage, so it can exercise inserts and duplicate-key failures without using
+the specimen database or the user's jobs. No submodule changes.
+
+Follow-up fixes: schema-inspection floats now attach the same raw/table/query
+controls as evaluation floats. `I`/`Y` navigate table columns on the same row;
+divider-based positions support Unicode and pipes in cell values. Local
+`init.vim`, `floatingWin.vim`, `lua/utils/general.lua`, Telescope previews and
+Glance previews default to nowrap.
+`scripts/nvim-result.test.mjs` checks both kinds of float.
+
+Window direction uses geometry without Hammerspoon's frontmost preference, and
+far motions select once rather than looping over asynchronously updated focus.
+`node --test scripts/hammerspoon-panes.test.mjs` checks this with delayed-focus
+fixtures; real session focus remains a user check. Reload only the helper module
+as described in the workflow guide, never Hammerspoon itself. Browser shortcut
+checks cover panel Ctrl-e/y, independent caret motions, and graph-focused panning;
+the isolated result browser test also checks complete schema simulation topology
+and framing only after layout stops.

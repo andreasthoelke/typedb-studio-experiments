@@ -192,6 +192,114 @@ function M.mirror(query, database, execution)
   M.send(query, database, { quiet = true, execution = execution })
 end
 
+-- Synchronous to fit the existing Vimscript runner/refresh lifecycle. Only a
+-- preflight failure can return nil and permit the legacy console path.
+function M.run(query, database)
+  if vim.g.typedb_structured_results == false or vim.g.typedb_structured_results == 0 then return nil end
+  local temp = projectTempDirectory()
+  local ready
+  M.ensure_running(function(ok) ready = ok end)
+  vim.wait(8000, function() return ready ~= nil end, 20)
+  if not ready then return nil end
+  local check = vim.system({ 'curl', '--silent', '--fail', '--max-time', '2', config.url .. '/api/viewer/health' }, {text=true}):wait()
+  local ok, healthResult = pcall(vim.json.decode, check.stdout or '')
+  if check.code ~= 0 or not ok or not healthResult.structuredRuns then
+    notifyError('Structured runner unavailable; using the console. Restart the bridge when convenient to enable tables.')
+    return nil
+  end
+  local runId = tostring(vim.uv.hrtime()) .. '-' .. tostring(vim.fn.getpid())
+  local body = { runId = runId, query = query, database = database, limit = config.limit, projectTempDirectory = temp,
+    publish = vim.g.typedb_graph_auto ~= false and vim.g.typedb_graph_auto ~= 0 }
+  local result = vim.system({ 'curl', '--silent', '--show-error', '--max-time', '75', '--write-out', '\n%{http_code}',
+    '-H', 'Content-Type: application/json', '--data-binary', '@-', config.url .. '/api/viewer/run' },
+    { stdin = vim.json.encode(body), text = true }):wait()
+  local status = tonumber((result.stdout or ''):match('\n(%d%d%d)$'))
+  local payload = (result.stdout or ''):gsub('\n%d%d%d$', '')
+  local decoded, response = pcall(vim.json.decode, payload)
+  if result.code == 0 and decoded and type(response) == 'table' and response.execution and response.lines then return response end
+  -- The POST may already have committed. Never run the console after this point.
+  local message = result.code == 0 and decoded and type(response) == 'table' and response.error
+    or 'Bridge response lost. The statement may have committed; inspect current data before running it again.'
+  local rejected = result.code == 0 and (status == 400 or status == 403 or status == 404 or status == 413 or status == 415)
+  return { id = runId, query = query, database = database,
+    execution = { kind = 'read', status = rejected and 'error' or 'unknown', error = message },
+    lines = { rejected and 'TypeDB request rejected before execution' or 'TypeDB result unavailable', message,
+      'Request: ' .. runId, 'No automatic retry was made.' } }
+end
+
+-- Buffer-local view switches keep each float tied to its own completed run.
+function M.attach_result(window, result, tableLines)
+  tableLines = tableLines or result.lines
+  if not vim.api.nvim_win_is_valid(window) then return end
+  local buffer = vim.api.nvim_win_get_buf(window)
+  vim.wo[window].wrap = false
+  vim.b[buffer].tdb_result = result
+  local function show(lines, syntax)
+    if not vim.api.nvim_buf_is_valid(buffer) then return end
+    vim.bo[buffer].modifiable = true
+    vim.api.nvim_buf_set_lines(buffer, 0, -1, false, lines)
+    vim.bo[buffer].syntax = syntax
+    vim.bo[buffer].modifiable = false
+    if vim.api.nvim_win_is_valid(window) then vim.api.nvim_win_set_cursor(window, {1, 0}) end
+  end
+  vim.keymap.set('n', 'gt', function() show(tableLines, '') end, {buffer=buffer, silent=true, desc='TypeDB table/result'})
+  vim.keymap.set('n', 'gr', function()
+    local raw = vim.deepcopy(result); raw.lines = nil
+    -- vim.inspect is not JSON; use the decoder/encoder without changing values.
+    local encoded = vim.json.encode(raw)
+    local pretty = encoded
+    if vim.fn.executable('python3') == 1 then
+      local formatted = vim.fn.system({'python3', '-m', 'json.tool', '--no-ensure-ascii'}, encoded)
+      if vim.v.shell_error == 0 then pretty = formatted end
+    end
+    show(vim.split(pretty, '\n', {trimempty=true}), 'json')
+  end, {buffer=buffer, silent=true, desc='TypeDB raw JSON'})
+  vim.keymap.set('n', 'gq', function()
+    local query = '# Executed statement\n' .. result.query
+    if result.graph and result.graph.source == 'context' then query = query .. '\n\n# ' .. result.graph.note .. '\n' .. result.graph.query end
+    show(vim.split(query, '\n'), 'typeql')
+  end, {buffer=buffer, silent=true, desc='TypeDB executed/context queries'})
+  -- Boundaries come from the table's divider, not from values containing pipes.
+  local function column(direction)
+    local win = vim.api.nvim_get_current_win()
+    if vim.api.nvim_win_get_buf(win) ~= buffer or vim.bo[buffer].syntax == 'json' then return end
+    local cursor = vim.api.nvim_win_get_cursor(win)
+    local lines = vim.api.nvim_buf_get_lines(buffer, 0, -1, false)
+    local divider
+    for row = math.min(cursor[1] + 1, #lines), 1, -1 do
+      local line = lines[row]
+      local residue = line:gsub('─', ''):gsub('┼', ''):gsub('[|%-%s]', '')
+      if residue == '' and (line:find('┼', 1, true) or line:find('|', 1, true)) then divider = line; break end
+      if row < cursor[1] and line == '' then break end
+    end
+    if not divider then return end
+    local starts = { divider:sub(1, 1) == '|' and 2 or 0 }
+    local separator = divider:find('┼', 1, true) and '┼' or '|'
+    local from = 1
+    while true do
+      local at, last = divider:find(separator, from, true)
+      if not at then break end
+      if at > 1 and last < #divider then table.insert(starts, vim.fn.strdisplaywidth(divider:sub(1, last)) + 1) end
+      from = last + 1
+    end
+    local line = lines[cursor[1]]
+    local current = vim.fn.strdisplaywidth(line:sub(1, cursor[2]))
+    local index = 0
+    for i, start in ipairs(starts) do if start <= current then index = i end end
+    local destination = starts[math.max(1, math.min(#starts, index + direction))]
+    local byte = 0
+    for i = 0, vim.fn.strchars(line) do
+      local prefix = vim.fn.strcharpart(line, 0, i)
+      byte = #prefix
+      if vim.fn.strdisplaywidth(prefix) >= destination then break end
+    end
+    vim.api.nvim_win_set_cursor(win, {cursor[1], math.min(byte, math.max(0, #line - 1))})
+  end
+  vim.keymap.set('n', 'I', function() column(1) end, {buffer=buffer, silent=true, desc='Next result column'})
+  vim.keymap.set('n', 'Y', function() column(-1) end, {buffer=buffer, silent=true, desc='Previous result column'})
+  vim.bo[buffer].syntax = ''
+end
+
 -- Resolve before starting the bridge: termopen and result floats can change buffers.
 projectTempDirectory = function()
   local override = vim.b.typedb_graph_temp_dir or config.temp_dir
@@ -328,6 +436,7 @@ function M.window_maps()
 end
 
 function M.setup(options)
+  vim.cmd.source(vim.fn.fnamemodify(debug.getinfo(1, 'S').source:sub(2), ':p:h') .. '/typedb_result.vim')
   config = vim.tbl_extend('force', config, options or {})
   config.url = config.url:gsub('/+$', '')
   -- Off by default: these are the only global (non buffer-local) maps this

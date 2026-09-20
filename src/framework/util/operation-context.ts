@@ -4,7 +4,7 @@ import type { Schema, SchemaConcept } from "../../service/schema-state.service";
 
 export interface EditorExecution {
     kind: "read" | "write" | "schema";
-    status: "success" | "error";
+    status: "success" | "error" | "unknown";
     error?: string;
 }
 export interface OperationContext { query: string; note: string; schemaMode: boolean; }

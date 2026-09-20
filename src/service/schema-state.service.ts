@@ -448,6 +448,7 @@ export class VisualiserState {
                 const layout = Layouts.createD3ForceSupervisor(graph);
                 this.visualiser = new GraphVisualiser(graph, sigma, layout, this.styleService);
                 this.restoreState(this.savedState, sigma);
+                if (this.savedState.layoutRunning) layout.startOrRedraw();
             }
         });
     }
@@ -468,6 +469,13 @@ export class VisualiserState {
         if (snap.view.selectedNode) this.visualiser.interactionHandler.focusType(snap.view.selectedNode);
         this.database = snap.database;
         this.status = "ok";
+    }
+
+    /** Schema arrives as several answers (types, owns, plays, relates, ...).
+     * Rebuild the simulation with the complete topology before any rAF tick. */
+    pushAll(responses: ApiResponse<QueryResponse>[]): void {
+        for (const response of responses) this.push(response);
+        if (this.visualiser?.graph.order) this.visualiser.reLayout();
     }
 
     push(res: ApiResponse<QueryResponse>) {
@@ -510,7 +518,7 @@ export class VisualiserState {
         const graph = sigma.getGraph().copy() as ReturnType<typeof newGraph>;
         const camera = sigma.getCamera().copy();
         const settings = sigma.getSettings();
-        return { graph, camera, settings };
+        return { graph, camera, settings, layoutRunning: this.visualiser?.layout.isRunning ?? false };
     }
 
     restoreState(state: SigmaState, sigma: Sigma) {
@@ -532,6 +540,7 @@ export class VisualiserState {
 }
 
 export interface SigmaState {
+    layoutRunning?: boolean;
     graph: ReturnType<typeof newGraph>;
     camera: Camera;
     settings: any;

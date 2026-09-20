@@ -6,7 +6,7 @@
 
 import { inject, Injectable } from "@angular/core";
 import { FormControl } from "@angular/forms";
-import { BehaviorSubject, combineLatest, map, NEVER, Observable, pairwise, shareReplay, startWith, Subject, switchMap, takeUntil } from "rxjs";
+import { BehaviorSubject, combineLatest, map, NEVER, Observable, of, pairwise, shareReplay, startWith, Subject, switchMap, takeUntil } from "rxjs";
 import { DriverAction, queryRunActionOf } from "../concept/action";
 import { GraphVisualiser } from "../framework/graph-visualiser/engine";
 import { createSigmaRenderer, defaultSigmaSettings } from "../framework/graph-visualiser/engine/sigma-settings";
@@ -426,7 +426,7 @@ export class QueryPageState {
         this.runQuery(currentTab.query);
     }
 
-    runQuery(query: string, externalRead?: { limit: number; schemaMode?: boolean; projectTempDirectory?: string }): Observable<RunResult> {
+    runQuery(query: string, externalRead?: { limit: number; schemaMode?: boolean; projectTempDirectory?: string; response?: ApiResponse<QueryResponse> }): Observable<RunResult> {
         if (externalRead && splitTypeQLQueries(query).length > 1) {
             throw new Error("Editor graph requests must contain one query.");
         }
@@ -467,6 +467,17 @@ export class QueryPageState {
             : this.snapshots.forDatabase(newRun.graph.database);
         newRun.graph.applyLabelOverrides(this.appData.nodeLabelPrefs.getAll(newRun.graph.database!));
         newRun.graph.onGraphUpdated = () => { void this.graphLabels.load(newRun.graph); };
+
+        // A completed bridge result is rendered as an ordinary run, never executed again.
+        if (externalRead?.response) {
+            newRun.graph.query = query;
+            outputQueryResponseToRun(newRun, externalRead.response, {
+                driver: this.driver, snackbar: this.snackbar, rowLimit: externalRead.limit, readOnly: true,
+            });
+            newRun.log.flush();
+            this._queryRunning$.next(false);
+            return of({ success: !isApiErrorResponse(externalRead.response) });
+        }
 
         const result$ = executeQueryToRun(newRun, query, {
             driver: this.driver,
