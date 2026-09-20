@@ -7,7 +7,9 @@ existing components where helpful; improve the design as actual use suggests.
 
 ## Current entry points
 
-- Working branch: `feat/nvim-studio-query`.
+- Public home: https://github.com/andreasthoelke/typedb-studio-experiments.
+- Personal remote: `origin`; original TypeDB remote: `upstream`.
+- Local working branch: `feat/nvim-studio-query`; published default branch: `main`.
 - Browser: **http://localhost:1430/query?nvim=1**, normal Studio with fullscreen,
   Explorer, and editable query tabs. Use `/schema?nvim=1` in a second tab for
   parallel schema context, or enable **Follow Neovim** on `/schema`.
@@ -203,7 +205,7 @@ Project context inferred from a Neovim schema file can be overridden in Snaps.
   which hides the cause. Check `~/.config/karabiner/karabiner.json` before
   debugging the page.
 - **Vimium runs earlier.** Keep UI f hints with the site's character exclusions
-  `abcdghjklnoprstyzASDHJKLNOY.;/?>+-=` and custom mappings `map , passNextKey`,
+  `abcdghjklnoprstyzASDGHJKLNOY.;/?>+-=` and custom mappings `map , passNextKey`,
   `unmap <c-e>` and `unmap <c-y>`. Comma and f must
   not be excluded. Studio accepts the forwarded f as graph hints. See the workflow
   guide for setup and custom-chord caveats. Validate in an isolated extension
@@ -698,3 +700,47 @@ as described in the workflow guide, never Hammerspoon itself. Browser shortcut
 checks cover panel Ctrl-e/y, independent caret motions, and graph-focused panning;
 the isolated result browser test also checks complete schema simulation topology
 and framing only after layout stops.
+
+
+## Panel, caret and refresh follow-up (2026-09-20)
+
+Explorer's scroll container is `.detail-content`, unlike the other panels'
+`.panel-scroll`. Both the focus target and scroll fallback must include it.
+`PaneFocusService` owns Ctrl-e/y, gg/G and Ctrl-f/d; the canvas explicitly yields
+these keys regardless of listener registration order. `data-pane-tabs` names the
+tab groups. The result pane registers `output` while a visible graph registers
+`graph`; geometry ignores the containing output pane while graph is visible.
+Local Query/Schema default to maximised graph mode. Vimium setup in the workflow
+guide includes G and modified-key limitations; no live extension settings were
+changed by the agent.
+
+Float result maps set nowait and also expose <leader><leader>r/t/q. Neovim's
+longer gr mappings caused timeout ambiguity. Remote prefix is backslash by
+default, and controls deliberately still broadcast to both following views.
+
+Tuple role caret targets the player in Query and the role type in Schema.
+Has-only variables infer schema candidates through plays/owns. Attribute node
+identity uses type + value even when the HTTP concept also contains an IID.
+Bounded geo expansions remain additive; they do not replay source mutations.
+
+Schema refresh must discard saved docking state *after* destroy saves it; an
+old renderer resurrected during refresh otherwise causes new responses to be
+skipped. Queue refreshes that arrive while a read is running, and reject stale
+responses after a database/server change. Compare connection parameters rather
+than ConnectionConfig object identity: selectDatabase emits the DB before it
+replaces that object. Query canvas attachment rejects stale queued callbacks,
+avoids needless same-canvas rebuilds, and resumes an interrupted force layout.
+
+`viewer-followup.browser-checks.mjs` extends the isolated result suite with real
+Query and Schema Explorer scrolling, top/bottom keys, output/editor tab cycling,
+startup maximisation, role/player/attribute caret resolution and a schema refresh
+with a forced canvas rebuild. All fixture writes use the disposable test server.
+
+The isolated TypeDB CE 3.12.3 instance also intermittently logged a panic in
+`concept/type_/type_manager/type_cache/type_cache.rs:76` (`index out of bounds:
+the len is 1 but the index is 1`) after a new relation family was defined with
+browser readers active. This is separate from the renderer lifecycle fix. The
+bridge correctly returned unknown outcome and did not retry. The test declares
+that family before opening browser readers, then exercises additive attribute
+schema changes with readers active. Do not infer that all missing updates are
+fixed by the UI changes, or reproduce this against the user's live database.

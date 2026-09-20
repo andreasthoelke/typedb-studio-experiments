@@ -74,6 +74,7 @@ export class SchemaState {
     queryResponses$ = new BehaviorSubject<ApiOkResponse<ConceptRowsQueryResponse>[] | null>(null);
     readonly value$ = new BehaviorSubject<Schema | null>(null);
     isRefreshing = false;
+    private refreshQueued = false;
     readonly interactionDisabledReason$ = combineLatest([this.driver.status$, this.driver.database$]).pipe(map(([status, db]) => {
         if (status !== "connected") return NO_SERVER_CONNECTED;
         else if (db == null) return NO_DATABASE_SELECTED;
@@ -120,7 +121,7 @@ export class SchemaState {
     }
 
     refresh() {
-        if (this.isRefreshing) return;
+        if (this.isRefreshing) { this.refreshQueued = true; return; }
 
         this.driver.database$.pipe(first()).subscribe(db => {
             this.visualiser.dropSavedState();
@@ -133,13 +134,20 @@ export class SchemaState {
             }
 
             this.initialiseOutput();
+            // selectDatabase emits the database before replacing ConnectionConfig.
+            // Compare server parameters, not that transient object's identity.
+            const server = () => JSON.stringify({ ...this.driver.connection$.value?.params, database: undefined });
+            const connection = server();
             const responses: ApiOkResponse<ConceptRowsQueryResponse>[] = [];
             this.isRefreshing = true;
             // Server defaults this to 10k rows, which is exceeded by hierarchy/owns/plays/relates
             // queries on very large schemas — silently truncating the tree. Lift the cap so we get
             // a complete picture even on big schemas.
             this.driver.runBackgroundReadQueries(schemaQueriesList, { answerCountLimit: 100000 }).pipe(
-                finalize(() => { this.isRefreshing = false; })
+                finalize(() => {
+                    this.isRefreshing = false;
+                    if (this.refreshQueued) { this.refreshQueued = false; this.refresh(); }
+                })
             ).subscribe({
                 next: (res) => {
                     if (res.ok.answerType !== `conceptRows`) throw `Unexpected answerType: '${res.ok.answerType}' (expected 'conceptRows')`;
@@ -147,6 +155,7 @@ export class SchemaState {
                 },
                 error: (err) => { this.handleQueryError(err); },
                 complete: () => {
+                    if (this.driver.database$.value?.name !== db.name || server() !== connection) return;
                     this.queryResponses$.next(responses);
                     if (this.visualiser.status === "running") {
                         if (responses[0].ok.answers.length) this.visualiser.status = "ok";
@@ -170,6 +179,9 @@ export class SchemaState {
 
     private initialiseOutput() {
         this.visualiser.destroy();
+        // destroy() saves the previous graph for docking. A database refresh
+        // must discard that saved graph before a remount can resurrect it.
+        this.visualiser.dropSavedState();
         this.visualiser.status = "running";
         this.visualiser.database = this.driver.requireDatabase().name;
     }

@@ -118,7 +118,7 @@ export class QueryPageComponent implements OnInit, AfterViewInit, AfterViewCheck
     // (+) button context menu state
     newTabContextMenuPosition = { x: 0, y: 0 };
 
-    graphMaximised = false;
+    graphMaximised = ["localhost", "127.0.0.1"].includes(location.hostname);
     graphSelectionMode: "types" | "instances" = "instances";
 
     get currentRun(): RunOutputState | null {

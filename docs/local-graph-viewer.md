@@ -22,7 +22,7 @@ That table does not imply the failed write succeeded or that its exact intended
 record already exists.
 
 Inside the float, **gr** shows raw JSON, **gt** restores the formatted view, and
-**gq** shows the executed and context queries. These stay attached to that float,
+**gq** shows the executed and context queries. These mappings use `nowait` to avoid waiting for longer Neovim mappings such as `grr`; the less frequent alternatives are **<leader><leader>r**, **<leader><leader>t** and **<leader><leader>q**. These stay attached to that float,
 even after another evaluation. Original errors, full untruncated cell values and
 query structure are available in raw JSON.
 
@@ -609,9 +609,9 @@ padded viewport. Zoom changes only when its body is too large. Use **zz** to cen
 explicitly. Ctrl-n/p remain Schema-only navigation and do not add Query data.
 
 Neovim can also control all following viewers without switching applications.
-The default buffer-local prefix is **<leader>gv** (Space g v in this config):
+The default buffer-local prefix is **`\`**. Remote commands intentionally reach both following Query and Schema views:
 
-| Neovim sequence after `<leader>gv` | Viewer action |
+| Neovim sequence after `\` | Viewer action |
 | --- | --- |
 | `zz / zt / zb / zh / zl` | Centre / top / bottom / left / right caret placement |
 | `Ctrl-h / Ctrl-l` | Pan camera left / right |
@@ -903,7 +903,7 @@ In Vimium's options, add a rule for `http://localhost:1430/*` (use the actual ho
 and port) with this **Excluded keys** value:
 
 ```text
-abcdghjklnoprstyzASDHJKLNOY.;/?>+-=
+abcdghjklnoprstyzASDGHJKLNOY.;/?>+-=
 ```
 
 Then add this **Custom key mapping**:
@@ -912,6 +912,8 @@ Then add this **Custom key mapping**:
 map , passNextKey
 unmap <c-e>
 unmap <c-y>
+unmap <c-d>
+unmap <c-f>
 ```
 
 Keep **comma and f out of the exclusion list**. Bare **f** then remains Vimium's
@@ -929,7 +931,7 @@ nothing; if you would rather keep Vimium's **p**, use **Ctrl-w Ctrl-p** instead,
 which Vimium does not bind. Note also that **x** is *not* in the list, so it still
 reaches Vimium's close-tab: do not use it as a throwaway key while testing chords. Ctrl-n/p work in the focused picker input
 without additional Vimium mappings. Vimium maps Ctrl-e/y to page scrolling by
-default; the two unmap lines release camera scrolling to Studio.
+default; the unmap lines release scrolling and tab navigation to Studio.
 Space, Enter, Escape, Backspace, Ctrl-h/l/y/e/o/[ and Ctrl-Shift directions and
 Option motions pass through in the tested default configuration. If your own
 mappings bind these, unmap those conflicting bindings as well.
@@ -1142,3 +1144,44 @@ relation / toward player / none**: `motivation:driver` toward the relation,
 `motivation:target` toward the player, and symmetric `tension:pole` without an
 arrow. This needs deliberate per-role semantics and correct placement against
 Studio's custom node shapes.
+
+
+## Panel navigation and startup
+
+Local `/query` and `/schema` routes start with the graph maximised. The existing
+maximise toggle returns to the surrounding editor/tool panes; this is Studio's
+own graph mode, not the browser's permission-gated fullscreen API.
+
+With a side panel focused, **Ctrl-e/y** scroll its content, **gg** goes to the
+top and **G** to the bottom. Explorer uses its actual instance/type detail
+scroller, including after a graph caret move replaces the inspected content.
+Graph caret motion remains available from panels.
+
+**Ctrl-f** selects the next tab and **Ctrl-d** the previous tab, wrapping at the
+ends. The focused pane determines the tab group: Explorer/Snaps;
+Elements/Themes/Customise; Log/Table/Graph/Raw; or the query tabs above the result.
+These tab commands also work while editing a query. Dialogs and menus keep their
+keys. A panel with no tab group has nothing to cycle.
+
+Vimium 2.4's site exclusion field accepts characters, so adding **G** to the
+localhost rule enables the bottom command. Modified chords require the custom
+`unmap` lines above, which apply globally in Vimium. To keep those modified
+Vimium shortcuts everywhere else, an alternative is to disable Vimium entirely
+for `http://localhost:1430/*`, at the cost of its UI hints on Studio. Studio cannot
+intercept a key that the extension consumes before page listeners. Apply your preferred option in Vimium's settings.
+
+## Caret illustrations and the two graph profiles
+
+On a relation name, `geo` targets the relation. On a tuple role, or `links` just
+before that role, Query targets the role player while Schema targets the scoped
+role. Attribute variables resolve by their type and value. Variables without an
+explicit `isa` can resolve to schema types through the paragraph's role and
+ownership constraints, including inherited plays/owns.
+
+The Query graph starts with the shared answer or labelled read context. A
+subsequent `geo` can add a bounded illustration of a missing relation or player;
+it does not imply that the initial result was incomplete. Schema keeps the full
+schema as a stable context and highlights a relevant subset. **Isolate & layout**
+uses that subset when a smaller working view is helpful. This remains a pragmatic
+context policy, not an attempt to reconstruct every possible relationship on
+every evaluation.

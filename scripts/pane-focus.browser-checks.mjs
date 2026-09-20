@@ -69,6 +69,10 @@ export async function checkPaneFocus(page, escalated, label) {
         assert.ok(after>0,label+': Ctrl-e scrolls '+id);
         await page.keyboard.press('Control+y');
         assert.ok(await page.evaluate(id=>document.querySelector('[tsPane="'+id+'"] .panel-scroll').scrollTop,id)<after);
+        await page.keyboard.press('G');
+        assert.ok(await page.evaluate(id=>{const s=document.querySelector('[tsPane="'+id+'"] .panel-scroll');return s.scrollTop+s.clientHeight>=s.scrollHeight-1;},id),'G scrolls to bottom');
+        await page.keyboard.press('g');await page.keyboard.press('g');
+        assert.equal(await page.evaluate(id=>document.querySelector('[tsPane="'+id+'"] .panel-scroll').scrollTop,id),0,'gg scrolls to top');
         assert.deepEqual(await page.evaluate(()=>({...window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.sigma.getCamera().getState()})),metrics.camera,label+': scrolling does not pan the graph');
         await page.evaluate(()=>{
             const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;
@@ -92,6 +96,11 @@ export async function checkPaneFocus(page, escalated, label) {
             document.querySelectorAll('[data-scroll-fixture]').forEach(e=>e.remove());
         });
     }
+    await chord('b');
+    const selectedTab=()=>page.evaluate(()=>document.querySelector('[data-pane-tabs="panel"] [data-pane-tab].active')?.textContent.trim());
+    const originalTab=await selectedTab();
+    await page.keyboard.press('Control+f');assert.notEqual(await selectedTab(),originalTab);
+    await page.keyboard.press('Control+d');assert.equal(await selectedTab(),originalTab);
     await chord('g');
     const graphCamera=await page.evaluate(()=>({...window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.sigma.getCamera().getState()}));
     await page.keyboard.press('Control+e');

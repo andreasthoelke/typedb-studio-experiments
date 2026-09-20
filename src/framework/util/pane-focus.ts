@@ -10,7 +10,7 @@
  *  only the panes it actually shows and motions are resolved from live rects,
  *  so docking the side panel below the graph changes the answers without any
  *  layout table needing an update. */
-export type PaneId = "tool" | "query" | "graph" | "explorer" | "panel";
+export type PaneId = "tool" | "query" | "graph" | "output" | "explorer" | "panel";
 
 export type PaneDirection = "left" | "right" | "up" | "down";
 export interface PaneRect { left: number; top: number; width: number; height: number }

@@ -116,17 +116,49 @@ export function editorCaretTarget(request: Pick<EditorCaretRequest, "source" | "
     if (!target && !attribute) return null;
     const schemaLabel = attribute ?? (target && (roleName(target) ?? known(target)));
     const owner = inStatement && statementOwners.get(inStatement);
-    // Relation syntax names the relation, not its first player. An explicit
-    // variable under/right of the cursor still lets the user inspect that player.
-    const variable = target?.kind === "variable" ? target.text : owner;
+    // A tuple role (and `links` immediately before it) points to its player in
+    // Query and to the scoped role in Schema. The relation name keeps its owner.
+    const targetIndex = target ? all.indexOf(target) : -1;
+    const player = target && target.depth > 0 && roleName(target) && all[targetIndex + 1]?.text === ":"
+        && all[targetIndex + 2]?.kind === "variable" ? all[targetIndex + 2].text : undefined;
+    const variable = player ?? (target?.kind === "variable" ? target.text : owner);
     // A direct schema name also identifies visible instances of that type. A
     // scoped role identifies its relation; an unresolved variable stays unresolved.
     const instance = variable ? bindings.get(variable) : schemaLabel ? {
         typeLabel: roles.has(schemaLabel) ? schemaLabel.split(":")[0] : schemaLabel, attributes: [],
     } : undefined;
-    const schemaLabels = schemaLabel ? [schemaLabel] : instance?.typeLabel ? [instance.typeLabel] : [];
+    const schemaLabels = schemaLabel ? [schemaLabel] : instance?.typeLabel ? [instance.typeLabel]
+        : instance && variable ? inferredPlayerTypes(variable, instance, bindings, schema) : [];
     return { schemaLabels, identifier: attribute ?? target!.text, instance,
         ...(variable && instance ? { context: { focus: variable, bindings: Object.fromEntries(bindings) } } : {}) };
+}
+
+/** Infer a has-only player's possible types from its roles and ownership,
+ * including inherited plays/owns. Never guess from the variable's spelling. */
+function inferredPlayerTypes(variable: string, instance: EditorInstanceTarget,
+    bindings: Map<string, EditorInstanceTarget>, schema: Schema): string[] {
+    const requiredRoles = [...bindings.values()].flatMap(binding => (binding.players ?? [])
+        .filter(p => p.variable === variable && p.role && binding.typeLabel)
+        .map(p => {
+            let relation = schema.relations[binding.typeLabel!];
+            while (relation) {
+                const role = relation.relatedRoles.find(r => r.label.split(":").at(-1) === p.role);
+                if (role) return role.label;
+                relation = relation.supertype!;
+            }
+            return `${binding.typeLabel}:${p.role}`;
+        }));
+    const attributes = [...instance.attributes, ...instance.attributeVariables ?? []].map(a => a.label);
+    if (!requiredRoles.length && !attributes.length) return [];
+    return Object.values({ ...schema.entities, ...schema.relations }).filter(type => {
+        const owns = new Set<string>(), plays = new Set<string>(), seen = new Set<string>();
+        for (let t: typeof type | undefined = type; t && !seen.has(t.label); t = t.supertype) {
+            seen.add(t.label);
+            t.ownedAttributes?.forEach(a => owns.add(a.label));
+            t.playedRoles?.forEach(r => plays.add(r.label));
+        }
+        return attributes.every(a => owns.has(a)) && requiredRoles.every(r => plays.has(r));
+    }).map(type => type.label);
 }
 
 /** Build a bounded illustrative read from supported constraints, never from a

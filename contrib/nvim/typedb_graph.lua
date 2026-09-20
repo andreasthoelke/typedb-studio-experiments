@@ -242,8 +242,13 @@ function M.attach_result(window, result, tableLines)
     vim.bo[buffer].modifiable = false
     if vim.api.nvim_win_is_valid(window) then vim.api.nvim_win_set_cursor(window, {1, 0}) end
   end
-  vim.keymap.set('n', 'gt', function() show(tableLines, '') end, {buffer=buffer, silent=true, desc='TypeDB table/result'})
-  vim.keymap.set('n', 'gr', function()
+  local function map(keys, callback, options)
+    options.nowait = true
+    vim.keymap.set('n', keys, callback, options)
+    vim.keymap.set('n', '<leader><leader>' .. keys:sub(2), callback, options)
+  end
+  map('gt', function() show(tableLines, '') end, {buffer=buffer, silent=true, desc='TypeDB table/result'})
+  map('gr', function()
     local raw = vim.deepcopy(result); raw.lines = nil
     -- vim.inspect is not JSON; use the decoder/encoder without changing values.
     local encoded = vim.json.encode(raw)
@@ -254,7 +259,7 @@ function M.attach_result(window, result, tableLines)
     end
     show(vim.split(pretty, '\n', {trimempty=true}), 'json')
   end, {buffer=buffer, silent=true, desc='TypeDB raw JSON'})
-  vim.keymap.set('n', 'gq', function()
+  map('gq', function()
     local query = '# Executed statement\n' .. result.query
     if result.graph and result.graph.source == 'context' then query = query .. '\n\n# ' .. result.graph.note .. '\n' .. result.graph.query end
     show(vim.split(query, '\n'), 'typeql')

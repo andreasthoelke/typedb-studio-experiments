@@ -2,7 +2,7 @@
   <article #articleRef class="query-page" style="display: flex; flex-direction: row;">
     <ts-schema-tool-window tsPane="tool" resizable [percent]="panelSizes[0]" (percentChange)="onPanelResize(0, $event)" [title]="'Query Editor'"/>
     <div class="main-panes" resizable [percent]="panelSizes[1]" (percentChange)="onPanelResize(1, $event)">
-      <div tsPane="query" tsPaneScroller=".query-tab-panel.active .cm-content" resizable [percent]="panelSizes[3]" (percentChange)="onPanelResize(3, $event)" class="query-pane card-top">
+      <div data-pane-tabs="query" tsPane="query" tsPaneScroller=".query-tab-panel.active .cm-content" resizable [percent]="panelSizes[3]" (percentChange)="onPanelResize(3, $event)" class="query-pane card-top">
         <div class="query-tabs-container">
             @if ((queryTabsState.openTabs$ | async)!.length > 0) {
               <div class="query-tabs-header-row">
@@ -11,7 +11,7 @@
                 </button>
                 <div class="query-tabs-scroll" #tabsScrollContainer (scroll)="onTabsScroll()" (wheel)="onTabsWheel($event)">
                   @for (tab of (queryTabsState.openTabs$ | async); track tab.id; let i = $index) {
-                    <div class="query-tab"
+                    <div class="query-tab" data-pane-tab
                          [class.active]="queryTabsState.selectedTabIndex$.value === i"
                          (click)="onQueryTabChange(i)"
                          (contextmenu)="openQueryTabContextMenu($event, tab, i)"
@@ -79,7 +79,7 @@
             }
           </div>
         </div>
-      <div resizable [percent]="panelSizes[4]" (percentChange)="onPanelResize(4, $event)" class="results-pane card-bottom">
+      <div resizable [percent]="panelSizes[4]" (percentChange)="onPanelResize(4, $event)" class="results-pane card-bottom" tsPane="output">
         <div class="run-tabs-header-row">
           <button mat-icon-button class="tab-scroll-button left" [class.visible]="canScrollRunsLeft" (click)="scrollRunTabsLeft()">
             <i class="fa-light fa-chevron-left"></i>
@@ -115,7 +115,7 @@
           </button>
           <div class="flex-spacer"></div>
           <div class="run-tabs-controls">
-            <mat-button-toggle-group [formControl]="state.outputTypeControl" [matTooltip]="(state.outputDisabledReason$ | async) || ''" matTooltipPosition="below">
+            <mat-button-toggle-group data-pane-tabs="output" [formControl]="state.outputTypeControl" [matTooltip]="(state.outputDisabledReason$ | async) || ''" matTooltipPosition="below">
               @for (outputType of state.outputTypes; track outputType) {
                 <mat-button-toggle [value]="outputType">{{ outputType }}</mat-button-toggle>
               }

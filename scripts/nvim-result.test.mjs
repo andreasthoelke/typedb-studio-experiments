@@ -21,6 +21,7 @@ test('Neovim paragraph adapter displays a shared result and switches views', {ti
     const script = join(root,'test.lua');
     await writeFile(script, String.raw`
 vim.g.mapleader = ' '
+vim.keymap.set('n', 'grr', function() error('Conflicting longer global mapping') end)
 vim.api.nvim_buf_set_name(0, vim.env.STUDIO_TEST_ROOT .. '/source.tql')
 _G.Tdb_graph = dofile(vim.env.STUDIO_TEST_REPO .. '/contrib/nvim/typedb_graph.lua')
 _G.Tdb_graph.setup({url=vim.env.STUDIO_TEST_URL,mapping=false})
@@ -58,6 +59,9 @@ assert(vim.deep_equal(vim.api.nvim_win_get_cursor(win),{4,10}), vim.inspect(vim.
 press('Y')
 assert(vim.deep_equal(vim.api.nvim_win_get_cursor(win),{4,0}))
 press('gr')
+assert(vim.fn.maparg('gr', 'n', false, true).nowait == 1)
+press('  t')
+press('  r')
 assert(vim.bo[buf].syntax == 'json')
 local raw = table.concat(vim.api.nvim_buf_get_lines(buf,0,-1,false),'\n')
 assert(vim.json.decode(raw).response.ok.answers[1].data.name.value == 'Ann')

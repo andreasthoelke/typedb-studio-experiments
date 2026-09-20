@@ -126,6 +126,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         // between window-capture handlers is not guaranteed, so ask rather
         // than rely on the pane service having stopped propagation first.
         if (this.paneFocus.chordPending) { this.cancelKeySequence(); return; }
+        if (this.paneFocus.handlesPanelKey(event)) { this.cancelKeySequence(); return; }
         const owner = GraphCanvasComponent.keyboardOwner;
         if (owner && owner !== this && owner.isKeyboardVisible()) { this.cancelKeySequence(); return; }
         // Includes CodeMirror, native controls, shadow-DOM editors, and open Material overlays.
@@ -495,6 +496,9 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     }
 
     ngAfterViewChecked() {
+        // Startup/input changes must apply the same stacking-context fix as
+        // clicking the maximise button. Hidden output tabs release that mode.
+        document.body.classList.toggle("graph-fullscreen", this.maximised && !this.host.nativeElement.closest(".invisible, [hidden]"));
         if (this.scrollFinder) {
             this.scrollFinder = false;
             const list = this.finderOptions?.nativeElement;
@@ -554,6 +558,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     }
 
     ngOnDestroy() {
+        if (this.maximised) document.body.classList.remove("graph-fullscreen");
         this.cancelKeySequence();
         window.removeEventListener("keydown", this.onGraphKey, true);
         window.removeEventListener("pointerdown", this.ownKeyboard, true);

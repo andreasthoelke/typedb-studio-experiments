@@ -43,9 +43,9 @@ The original error's first line and caret excerpt stay visible; raw JSON retains
 the full error chain. Cells elide after 72 display columns, with complete values
 retained in raw JSON. Within a result float:
 
-- `gr`: raw result JSON, including errors, query structure and context.
-- `gt`: return to the formatted table/result.
-- `gq`: the executed statement and any separate context query.
+- `gr` or `<leader><leader>r`: raw result JSON, including errors, query structure and context.
+- `gt` or `<leader><leader>t`: return to the formatted table/result.
+- `gq` or `<leader><leader>q`: the executed statement and any separate context query.
 - `I` / `Y`: next / previous table column, keeping the same row. Column bounds
   come from the divider, so pipes inside values and multibyte text work too.
 
@@ -53,6 +53,7 @@ Result windows start with wrapping disabled. The local Neovim configuration
 also defaults normal windows and other utility floats to `nowrap`; use
 `:setlocal wrap` when wanted.
 
+Result mappings use `nowait`, avoiding longer global `gr` prefixes.
 Each float keeps its own result, so another execution cannot change the older
 float's raw/query views. Python 3 prettifies the raw JSON view, as in the existing
 local tooling; query execution and table formatting run in Node. Without Python, raw JSON remains

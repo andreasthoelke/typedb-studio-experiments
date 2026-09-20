@@ -276,7 +276,8 @@ export class QueryPageState {
         const run = currentRun(this.currentTabOutputState);
         if (run) {
             requestAnimationFrame(() => {
-                run.graph.detach();
+                if (run.graph.destroyed || this._graphCanvasEl !== el || currentRun(this.currentTabOutputState) !== run) return;
+                if (run.graph.canvasEl !== el) run.graph.detach();
                 run.graph.attach(el);
                 run.graph.resize();
             });
@@ -1236,6 +1237,7 @@ export class GraphOutputState {
     private _canvasEl: HTMLElement | null = null;
     private _preservedGraph: Graph | null = null;
     private _preservedCamera: { x: number; y: number; ratio: number; angle: number } | null = null;
+    private _layoutWasRunning = false;
     private _pendingResponses: ApiResponse<QueryResponse>[] = [];
     /** Retain off-graph label values when the renderer is rebuilt or detached. */
     private _displayAttributeResponses: Array<{ res: ApiResponse<QueryResponse>; ownerVar: string; attrVar: string }> = [];
@@ -1382,6 +1384,7 @@ export class GraphOutputState {
 
     detach(): void {
         if (this.visualiser) {
+            this._layoutWasRunning = this.visualiser.layout.isRunning;
             if (this._restoredView) this._restoredView = this.visualiser.captureSnap(this.query ?? "", this.schemaMode);
             this._pendingLabelOverrides = new Map(this.visualiser.labelOverridesByType);
             this._preservedGraph = this.visualiser.graph;
@@ -1397,7 +1400,7 @@ export class GraphOutputState {
         this.canvasEl = canvasEl;
         if (this._preservedGraph && (this._preservedGraph.nodes().length > 0 || this._restoredView) && !this.visualiser) {
             const sigma = createSigmaRenderer(canvasEl, defaultSigmaSettings as any, this._preservedGraph);
-            const layout = this._restoredView ? Layouts.createD3ForceSupervisor(this._preservedGraph) : Layouts.createD3ForceStatic(this._preservedGraph);
+            const layout = Layouts.createD3ForceSupervisor(this._preservedGraph);
             this.visualiser = new GraphVisualiser(this._preservedGraph, sigma, layout, this._styleService);
             for (const p of this._displayAttributeResponses) this.visualiser.recordDisplayAttributes(p.res, p.ownerVar, p.attrVar);
             if (this._pendingLabelOverrides) this.visualiser.applyLabelOverrides(this._pendingLabelOverrides);
@@ -1414,6 +1417,7 @@ export class GraphOutputState {
                 this.visualiser.sigma.getCamera().setState(this._preservedCamera);
                 this._preservedCamera = null;
             }
+            if (this._layoutWasRunning) layout.startOrRedraw();
         }
     }
 

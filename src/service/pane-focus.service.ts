@@ -37,6 +37,8 @@ export class PaneFocusService {
     lastAction = "";
     private previousPane: PaneId | null = null;
     private chordTimer?: ReturnType<typeof setTimeout>;
+    private topPending: PaneId | null = null;
+    private topTimer?: ReturnType<typeof setTimeout>;
     private listening = false;
     private bridgeAbsent = false;
     /** True while the most recent focus event was this window being entered
@@ -86,7 +88,8 @@ export class PaneFocusService {
     }
 
     private geometry(): PaneGeometry[] {
-        return [...this.panes].filter(([, pane]) => this.visible(pane.element))
+        const graphVisible = this.panes.has("graph") && this.visible(this.panes.get("graph")!.element);
+        return [...this.panes].filter(([id, pane]) => this.visible(pane.element) && !(id === "output" && graphVisible))
             .map(([id, pane]) => {
                 const rect = pane.element.getBoundingClientRect();
                 return { id, rect: { left: rect.left, top: rect.top, width: rect.width, height: rect.height } };
@@ -109,26 +112,66 @@ export class PaneFocusService {
 
     get focusedPane(): PaneId | null { return this.origin(this.geometry()); }
 
+    /** Guard in the canvas too: capture-listener registration order can vary. */
+    handlesPanelKey(event: KeyboardEvent): boolean {
+        if (event.altKey || event.metaKey || event.isComposing) return false;
+        if (event.ctrlKey && !event.shiftKey && ["d", "f"].includes(event.key.toLowerCase())) return true;
+        return !!this.focusedPane && !["graph", "query"].includes(this.focusedPane)
+            && ((!event.ctrlKey && ["g", "G"].includes(event.key)) || (event.ctrlKey && ["e", "y"].includes(event.key)));
+    }
+
     private scrollPane(event: KeyboardEvent): boolean {
-        if (!event.ctrlKey || event.altKey || event.metaKey || event.shiftKey || event.isComposing || event.defaultPrevented
-            || !["e", "y"].includes(event.key.toLowerCase())) return false;
-        if (event.composedPath().some(target => target instanceof HTMLElement && (target.isContentEditable
-            || target.closest("input, textarea, select, [role='textbox'], [role='dialog'], [role='menu']")))) return false;
+        if (event.altKey || event.metaKey || event.isComposing || event.defaultPrevented) return false;
+        const cycle = event.ctrlKey && !event.shiftKey && ["d", "f"].includes(event.key.toLowerCase());
+        if (event.composedPath().some(target => target instanceof HTMLElement &&
+            (target.closest("[role='dialog'], [role='menu']") || (!cycle && (target.isContentEditable
+            || target.closest("input, textarea, select, [role='textbox']")))))) return false;
         if (document.querySelector(".cdk-overlay-pane .mat-mdc-dialog-container, .cdk-overlay-pane .mat-mdc-menu-panel, .cdk-overlay-pane .mat-mdc-select-panel")) return false;
         const id = this.focusedPane;
+        if (cycle && id) {
+            const scope = document.querySelector(`[data-pane-tabs="${id === "graph" ? "output" : id}"]`);
+            const tabs = [...scope?.querySelectorAll<HTMLElement>("[data-pane-tab], .mat-button-toggle-button") ?? []]
+                .filter(tab => !tab.hasAttribute("disabled") && tab.getAttribute("aria-disabled") !== "true");
+            if (!tabs.length) return false;
+            event.preventDefault(); event.stopImmediatePropagation();
+            if (!event.repeat) {
+                const index = tabs.findIndex(tab => tab.classList.contains("active") || tab.getAttribute("aria-checked") === "true");
+                tabs[(index + (event.key.toLowerCase() === "f" ? 1 : -1) + tabs.length) % tabs.length].click();
+                // Tab changes can replace the focused scroll container.
+                setTimeout(() => this.focus(id === "graph" ? "output" : id));
+            }
+            return true;
+        }
         if (!id || id === "graph" || id === "query") return false;
+        const line = event.ctrlKey && !event.shiftKey && ["e", "y"].includes(event.key.toLowerCase());
+        const top = !event.ctrlKey && event.key === "g";
+        const bottom = !event.ctrlKey && event.key === "G";
+        if (!line && !top && !bottom) { this.topPending = null; return false; }
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (top && this.topPending !== id) {
+            if (!event.repeat) {
+                this.topPending = id; clearTimeout(this.topTimer);
+                this.topTimer = setTimeout(() => this.topPending = null, 1000);
+            }
+            return true;
+        }
+        this.topPending = null; clearTimeout(this.topTimer);
         const pane = this.panes.get(id)!;
         const scrollable = (el: HTMLElement) => this.visible(el) && el.scrollHeight > el.clientHeight
             && /auto|scroll/.test(getComputedStyle(el).overflowY);
         let target = document.activeElement instanceof HTMLElement ? document.activeElement : null;
         while (target && pane.element.contains(target) && !scrollable(target)) target = target.parentElement;
         if (!target || !pane.element.contains(target)) target = [pane.focusTarget(), pane.element,
-            ...pane.element.querySelectorAll<HTMLElement>(".panel-scroll, [role='tabpanel']")]
+            ...pane.element.querySelectorAll<HTMLElement>(".panel-scroll, .detail-content, [role='tabpanel']")]
             .find((el): el is HTMLElement => !!el && scrollable(el)) ?? null;
         // A panel at its boundary still owns this chord; never pan the graph behind it.
         event.preventDefault(); event.stopImmediatePropagation();
-        if (target) target.scrollTop += (event.key.toLowerCase() === "e" ? 1 : -1)
-            * (parseFloat(getComputedStyle(target).lineHeight) || 20) * 2;
+        if (target) {
+            if (top) target.scrollTop = 0;
+            else if (bottom) target.scrollTop = target.scrollHeight;
+            else target.scrollTop += (event.key.toLowerCase() === "e" ? 1 : -1)
+                * (parseFloat(getComputedStyle(target).lineHeight) || 20) * 2;
+        }
         return true;
     }
 
@@ -156,7 +199,8 @@ export class PaneFocusService {
         const panes = this.geometry();
         const from = this.origin(panes);
         if (action.startsWith("jump:")) {
-            const target = action.slice(5) as PaneId;
+            let target = action.slice(5) as PaneId;
+            if (target === "graph" && !panes.some(pane => pane.id === "graph")) target = "output";
             if (panes.some(pane => pane.id === target)) this.focus(target, `Ctrl+w ${action}`);
             else this.lastAction = `Ctrl+w ${target} (not on this page)`;
             return;
@@ -184,6 +228,10 @@ export class PaneFocusService {
     }
 
     focus(id: PaneId, label = ""): void {
+        this.topPending = null;
+        clearTimeout(this.topTimer);
+        if (id === "output" && this.panes.has("graph") && this.visible(this.panes.get("graph")!.element)) id = "graph";
+        if (id === "graph" && (!this.panes.has("graph") || !this.visible(this.panes.get("graph")!.element))) id = "output";
         const pane = this.panes.get(id);
         if (!pane) return;
         const target = pane.focusTarget() ?? pane.element;

@@ -1,98 +1,87 @@
-[![TypeDB](https://github.com/typedb/.github/raw/master/profile/banner.png)](https://typedb.com/)
+# TypeDB Studio Experiments
 
-[![Netlify Status](https://api.netlify.com/api/v1/badges/5e9c0038-d5ec-48d8-8217-27654feae68c/deploy-status)](https://app.netlify.com/sites/typedb-studio/deploys)
-[![CircleCI](https://circleci.com/gh/typedb/typedb-studio/tree/master.svg?style=shield)](https://circleci.com/gh/typedb/typedb-studio/tree/master)
-[![GitHub release](https://img.shields.io/github/release/typedb/typedb-studio.svg)](https://github.com/typedb/typedb-studio/releases/latest)
-[![Discord](https://img.shields.io/discord/665254494820368395?color=7389D8&label=discord&logo=discord&logoColor=ffffff)](https://typedb.com/discord)
+An independent experimental fork of [TypeDB Studio](https://github.com/typedb/typedb-studio), exploring a close conversation between **TypeQL source, query results, and interactive graphs**.
 
-# TypeDB Studio
+TypeDB Studio and the foundations of this application were created by TypeDB and its contributors. This repository builds on their work; it is not an official TypeDB product or release. The upstream Git history, source notices, and [Mozilla Public License 2.0](LICENSE) are retained.
 
-This checkout is also a personal Neovim/graph exploration fork. Start with the
-[local workflow guide](docs/local-graph-viewer.md) or the
-[maintainer handoff](docs/LOCAL-FORK-HANDOFF.md).
+## The idea
 
-TypeDB Studio is an interactive visual environment for managing and querying [TypeDB](https://typedb.com) databases.
+Writing a query is often part of learning what a model means. A table can tell us what came back, but a graph can help us see why: which entities participate in a relation, which role each one plays, and how a small expression fits into a larger schema.
 
-With Studio, database users can efficiently manage databases, execute queries, and explore query results,
-all within a unified environment.
+This project explores a workspace in which those representations stay close together. TypeQL remains the place to think and write. Neovim gives immediate, readable feedback. Studio offers two complementary views: the instances involved in an expression, and the types and roles that make that expression possible. Moving the editor cursor can become a way to ask the graph a more specific question.
 
-- [Install TypeDB Studio Desktop](https://typedb.com/docs/home/install/studio/)
-- [Open studio.typedb.com](https://studio.typedb.com)
-- [Read docs](https://typedb.com/docs/tools/studio)
+The aim is to make modelling an iterative, inspectable activity: write a little, see what it means, follow a connection, revise the model, and keep a useful view for later. Graphs here are working material. They can be expanded, reduced, arranged, annotated through styles, and saved as snapshots that retain their data and context.
 
-## Quickstart
+This is an exploration, not a finished visual language. Some context selection is deliberately pragmatic. A useful illustration may include related data beyond the returned rows, but it must remain distinguishable from the result of the executed statement. Errors stay errors; a helpful view of existing data must never suggest that a failed write succeeded.
 
-### Connect to TypeDB
+## What is here
 
-Select TypeDB edition below, and follow the instructions:
+- **Complementary editor and graph results.** A local bridge executes a statement once and shares its structured result with Neovim and following Studio windows. Concept rows and flat fetch results become readable tables; raw JSON and query views remain available.
+- **Parallel Query and Schema views.** One shows instances and relationships; the other provides a more stable map of types and roles, with focus derived from the source expression.
+- **Navigation from TypeQL.** Jump from a variable, type or role to its graph counterpart. Bounded read-only illustrations can add missing context without replaying source writes.
+- **Keyboard graph exploration.** A spatial caret, independent selection, directional movement, camera controls, pane navigation, and focused panel scrolling/tab cycling.
+- **Editable working graphs.** Explore attributes and role players, inspect semantic role edges, adjust per-type/per-role styles, and isolate a useful subset for layout.
+- **Snapshots and exports.** Save the rendered graph, positions, styles, selection, query provenance and expansions. Reopen connected snapshots as editable views, or inspect them offline.
 
-#### Cloud
-1. In the TypeDB Cloud website, navigate to your cluster and click *Connect*. Then, click *Connect with TypeDB Studio*. This will launch TypeDB Studio.
-2. Fill in your password and hit *Connect*. Your password can be found in your downloaded credentials file (if you have one).
+The normal Studio query editor remains available. Neovim integration is optional. The current workflow is developed primarily on macOS with Neovim, a browser, and a local TypeDB 3.x server; cross-window navigation optionally uses Hammerspoon.
 
-#### Enterprise
-1. Launch TypeDB Studio.
-2. Enter the address of the HTTP endpoint of your cluster. By default, this is at port 8000.
-3. Enter your username and password.
-4. Click `Connect`.
+## Try the local viewer
 
-#### Community Edition
-1. Launch TypeDB Studio.
-2. Enter the address of the HTTP endpoint of your cluster. By default, this is at port 8000 and for local instances you can use `http://localhost:8000`.
-3. Enter your username and password - defaults are `admin` and `password`.
-4. Click `Connect`.
-
-### Select a database
-
-To select a database to work with, use the dropdown menu on the right of the database icon in the top toolbar. You can also create new databases here.
-
-TypeDB Studio will automatically select a *default* database if there are no others present.
-
-## Build from source
-
-To send Neovim queries into Studio's Query page and fullscreen graph, see the [local integration guide](docs/local-graph-viewer.md).
-
-TypeDB Studio is a Web application powered by [Angular](https://angular.dev), with desktop application support provided by [Tauri](https://tauri.app).
-
-There is a wide variety of Web toolchains; the process below is one way to compile TypeDB Studio from source.
-
-### Install toolchains and dependencies
-
-First, install [nvm](https://github.com/nvm-sh/nvm) on MacOS or Linux, [nvm-windows](https://github.com/coreybutler/nvm-windows) on Windows. Then:
+Use Node **22.16+ within 22.x**, pnpm **10.12.1**, and a TypeDB **3.x** server. The integration tests currently exercise TypeDB CE **3.12.3**.
 
 ```sh
-nvm install 22.16.0
-nvm use 22.16.0
-npm install --global corepack@0.17.0
-corepack enable
-corepack prepare pnpm@10.12.1 --activate
-pnpm i -g @angular/cli
-pnpm i
+git clone --recurse-submodules https://github.com/andreasthoelke/typedb-studio-experiments.git
+cd typedb-studio-experiments
+pnpm install --frozen-lockfile
+pnpm viewer:dev
 ```
 
-(Optional) Install [Rust](https://www.rust-lang.org/tools/install). Only required if you want to compile as a desktop application.
+Open [Query](http://localhost:1430/query?nvim=1) and [Schema](http://localhost:1430/schema?nvim=1) in separate browser windows, and connect them to the same TypeDB server/database. Local Query and Schema routes start with the graph maximised; the existing maximise toggle returns to the editor and surrounding panes.
 
-### Launch local development server (Angular)
+The bridge reads `TYPEDB_ADDRESS`, `TYPEDB_USERNAME` and `TYPEDB_PASSWORD` from its environment. Defaults target local development at `http://localhost:8000` with TypeDB's default `admin` / `password` credentials. The viewer binds to loopback; it is a local development tool, not a hosted multi-user service.
+
+For a static build, use `pnpm build:viewer` followed by `pnpm viewer`.
+
+## Neovim and the rest of the workspace
+
+The reusable Studio-side integration is included here:
+
+- [Neovim bridge and navigation mappings](contrib/nvim/typedb_graph.lua)
+- [Neovim result-float adapter](contrib/nvim/typedb_result.vim)
+- [Optional Hammerspoon window-navigation helper](contrib/hammerspoon/typedb_panes.lua)
+- [Setup, keymaps and workflow guide](docs/local-graph-viewer.md)
+- [Execution and result-rendering contract](docs/nvim-result-rendering-plan.md)
+
+The surrounding paragraph evaluation and float utilities come from my public [dotvim configuration](https://github.com/andreasthoelke/dotvim), particularly [the TypeDB integration](https://github.com/andreasthoelke/dotvim/blob/main/plugin/ftype/typedb.vim) and [floating-window helpers](https://github.com/andreasthoelke/dotvim/blob/main/plugin/utils/floatingWin.vim). These are references to a personal configuration, with local paths and other dependencies; they are not a requirement to adopt the entire setup, nor a standalone Neovim plugin distribution. The bridge in this repository is the current source for the Studio integration.
+
+Remote view controls default to `\` and intentionally reach both following views. The division of responsibility between Query and Schema is still evolving; the [workflow guide](docs/local-graph-viewer.md) records the current behavior and limitations.
+
+## Development and upstream updates
+
+This repository keeps the original project history so useful upstream changes can be merged normally. In a fresh clone:
 
 ```sh
-ng serve --open
+git remote add upstream https://github.com/typedb/typedb-studio.git
+git fetch upstream
+git switch -c integrate-upstream
+git merge upstream/development
+git submodule update --init --recursive
 ```
 
-### Other build commands
+Review and test that integration branch before merging it into `main`. Dependencies, TypeQL syntax and graph behavior can change together; upstream merges are not automatic updates. See the [maintainer handoff](docs/LOCAL-FORK-HANDOFF.md) before changing graph lifecycle or bridge behavior, and the [retained upstream README](docs/UPSTREAM-README.md) for the original application/build introduction.
 
-Launch Tauri server for local development of desktop app:
 ```sh
-npx tauri dev
+pnpm test:viewer
+pnpm test:nvim-results
+pnpm build:viewer
+node scripts/viewer-shortcuts.browser.mjs
+pnpm test:viewer-results
 ```
 
-Build web app distribution:
-```sh
-pnpm build
-```
+The browser tests require Chrome/Playwright. The result integration test also requires a TypeDB 3.x server binary (`TYPEDB_TEST_BINARY`); it starts its own temporary instance and database. Other live browser scripts are development fixtures with documented schema prerequisites, not a universal test suite for arbitrary databases.
 
-Build desktop app distribution:
-```sh
-npx tauri build
-```
+## Attribution and license
 
-_Instructions are accurate at the time of writing (25 Jun 2025); see [.circleci/config.yml](.circleci/config.yml) and [.circleci/prepare.bat](.circleci/prepare.bat) for the most up-to-date build process that we use in our CircleCI automation._
+Based on [TypeDB Studio](https://github.com/typedb/typedb-studio) by TypeDB and its contributors. The code is distributed under the repository's [MPL-2.0 license](LICENSE); existing source notices are preserved. Submodules and third-party dependencies retain their own licenses. TypeDB names and branding identify the upstream project and are not a claim of affiliation or endorsement.
+
+Feedback and code reading are welcome. This repository shares an evolving experiment in understanding TypeQL through linked textual and visual representations, with the rough edges and tradeoffs documented alongside the implementation.

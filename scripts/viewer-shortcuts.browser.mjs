@@ -68,7 +68,7 @@ try {
         await page.evaluate(()=>{window.vimiumProbe=[];window.addEventListener('keydown',event=>window.vimiumProbe.push(event.key),true);});
         await page.keyboard.press('l');
         assert.deepEqual(await page.evaluate(()=>window.vimiumProbe),[],'Default Vimium consumes l before page listeners');
-        await worker.evaluate(async origin=>{await Settings.onLoaded();await Settings.set('keyMappings','map , passNextKey\nunmap <c-e>\nunmap <c-y>');await Settings.set('exclusionRules',[{pattern:origin+'/*',passKeys:'abcdghjklnoprstyzASDHJKLNOY.;/?>+-='}]);},origin);
+        await worker.evaluate(async origin=>{await Settings.onLoaded();await Settings.set('keyMappings','map , passNextKey\nunmap <c-e>\nunmap <c-y>\nunmap <c-d>\nunmap <c-f>');await Settings.set('exclusionRules',[{pattern:origin+'/*',passKeys:'abcdghjklnoprstyzASDGHJKLNOY.;/?>+-='}]);},origin);
         await page.reload();await page.waitForSelector('ts-graph-canvas');
         await page.evaluate(()=>{const c=window.ng.getComponent(document.querySelector('ts-graph-canvas'));Object.defineProperty(c,'snapshotDatabase',{get:()=> 'shortcut-test'});window.ng.applyChanges(c);});
         await page.waitForFunction(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).snapFiles.length===3);

@@ -271,7 +271,7 @@ export class NvimQueryBridge {
                     if (isApiErrorResponse(response)) throw new Error(response.err.message);
                     if (response.ok.answerType !== "conceptRows") return;
                     const nodeKey = (concept: any) => concept && ["entity", "relation", "attribute"].includes(concept.kind)
-                        ? visualiser.instanceNodeKey(concept.kind, concept.type.label, "iid" in concept ? concept.iid : String(concept.value)) : null;
+                        ? visualiser.instanceNodeKey(concept.kind, concept.type.label, concept.kind === "attribute" ? String(concept.value) : concept.iid) : null;
                     // Respect deliberate hiding. Missing concepts may be added, but
                     // an explicitly hidden target does not bring its neighbourhood back.
                     const rows = response.ok.answers.filter(row => {

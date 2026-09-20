@@ -15,14 +15,14 @@ import { findGraphContextSeed, GraphContextSeed, isGraphContextRelationCompatibl
 @Component({
     selector: "ts-nvim-query-controls",
     template: `
-      <button mat-stroked-button [matMenuTriggerFor]="settings" [matTooltip]="bridge.message">
+      <button mat-stroked-button #settingsTrigger="matMenuTrigger" [matMenuTriggerFor]="settings" [matTooltip]="bridge.message">
         Neovim{{ bridge.lastRequest?.execution?.status === 'unknown' ? ' · outcome unknown' : bridge.lastRequest?.execution?.status === 'error' ? ' · failed statement' : '' }}{{ bridge.connected ? '' : ' · disconnected' }}
       </button>
       <mat-menu #settings="matMenu">
         <div class="settings" (click)="$event.stopPropagation()" (keydown)="onSettingsKeydown($event)">
           <p role="status">{{ bridge.message }}</p>
           @if (bridge.lastRequest?.response) {
-            <button mat-stroked-button (click)="bridge.reapply()"
+            <button mat-stroked-button (click)="settingsTrigger.closeMenu(); bridge.reapply()"
               matTooltip="Read current data with these context options. The completed statement is not executed again.">Read graph context</button>
           }
           <mat-checkbox [(ngModel)]="bridge.neighbours" (ngModelChange)="bridge.scheduleReapply()">Include linked neighbours</mat-checkbox>

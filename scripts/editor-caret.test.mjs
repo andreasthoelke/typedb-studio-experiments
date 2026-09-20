@@ -38,7 +38,7 @@ test('anonymous relation lines focus relations; explicit variable positions focu
  assert.deepEqual(t.context.bindings['$of'].attributes,[{label:'occurrence-id',literal:'"occ-fear"'}]);
  const subject=target(6,source.split('\n')[6].indexOf('subject'));
  assert.deepEqual(subject.schemaLabels,['occurrence-of:subject']);
- assert.equal(subject.instance.typeLabel,'occurrence-of');
+ assert.equal(subject.instance.typeLabel,'mental-state');
  const slot=target(7,source.split('\n')[7].indexOf('$sg'));
  assert.deepEqual(slot.schemaLabels,['slot-def']);assert.equal(slot.instance.attributes[0].literal,'"conflict-stage/goal"');
 });
@@ -103,4 +103,22 @@ test('untyped variables acquire connected relation and ownership patterns for il
   assert.ok(q,q);assert.match(q,/links/);assert.ok(q.endsWith('limit 20;'));
   if(line===3) {assert.match(q,/isa occurrence-of/);assert.match(q,/isa role-binding/);assert.match(q,/has title/);}
  }
+});
+
+
+test('links and tuple roles target the player, inferred schema type and attribute variables stay navigable',()=>{
+ schema.attributes.intensity={kind:'attributeType',label:'intensity',subtypes:[]};
+ schema.relations.tension={kind:'relationType',label:'tension',relatedRoles:[{label:'tension:pole'}],ownedAttributes:[schema.attributes.intensity],playedRoles:[]};
+ schema.entities['mental-state'].playedRoles=[{label:'tension:pole'}];
+ schema.entities['mental-state'].ownedAttributes=[schema.attributes.title];
+ const text='match\n  $tension isa tension, links (pole: $state), has intensity $intensity;\n  $state has title $name;\nfetch { "state": $name, "intensity": $intensity };';
+ for(const word of ['links','pole']) {
+  const t=target(1,text.split('\n')[1].indexOf(word),text);
+  assert.equal(t.instance.variable,'$state');assert.deepEqual(t.schemaLabels,['tension:pole']);
+  assert.match(editorIllustrationQuery(t,schema),/pole: \$focus/);
+ }
+ const state=target(2,2,text);assert.deepEqual(state.schemaLabels,['mental-state']);
+ const intensity=target(1,text.split('\n')[1].indexOf('$intensity'),text);
+ assert.equal(intensity.instance.typeLabel,'intensity');assert.deepEqual(intensity.schemaLabels,['intensity']);
+ assert.match(editorIllustrationQuery(intensity,schema),/has intensity \$focus/);
 });

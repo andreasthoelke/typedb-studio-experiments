@@ -55,7 +55,7 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
 
     private static readonly DEFAULT_PANEL_SIZES = [20, 80, 75, 25];
     panelSizes = [...SchemaPageComponent.DEFAULT_PANEL_SIZES];
-    graphMaximised = false;
+    graphMaximised = ["localhost", "127.0.0.1"].includes(location.hostname);
     contextQuery = "";
     restoredSnap: GraphSnap | null = null;
     restoreSavedView = (snap: GraphSnap): void => {
