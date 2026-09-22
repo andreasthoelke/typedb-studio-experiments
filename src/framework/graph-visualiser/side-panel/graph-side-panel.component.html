@@ -1,29 +1,14 @@
-<!-- Inspector + tabbed panel are direct flex children of :host so the host's
-     inline-style flex-direction (set via @HostBinding) is what the child
-     resizable directive reads via getComputedStyle(parent). Keyed on dock so
-     the resizable subtree is rebuilt when the axis flips (the resize directive
-     locks orientation at init). -->
-@if (dock === 'bottom') {
-  <ng-container *ngTemplateOutlet="explorer"></ng-container>
-  <ng-container *ngTemplateOutlet="panel"></ng-container>
-} @else {
-  <ng-container *ngTemplateOutlet="explorer"></ng-container>
-  <ng-container *ngTemplateOutlet="panel"></ng-container>
-}
-
-<ng-template #explorer>
-  <!-- The dock-side kebab is anchored to the inspector pane's top-right so it
-       sits beside the "Inspector" title regardless of dock orientation (the
-       inspector is full-width when docked right, the left pane when bottom). -->
-  <div class="explorer-pane" tsPane="explorer" tsPaneScroller=".panel-scroll, .detail-content" data-pane-tabs="explorer" resizable [percent]="inspectorPercent" (percentChange)="inspectorPercent = $event">
-    <div class="side-panel-header">
-      <div class="tab-bar inspector-tabs" role="tablist" aria-label="Explorer and snaps">
-        <button class="tab" data-pane-tab role="tab" [class.active]="inspectorTab === 'explorer'"
-                [attr.aria-selected]="inspectorTab === 'explorer'" [disabled]="!snapshotNodeKey && !edgeInspection"
-                (click)="inspectorTab = 'explorer'">Explorer</button>
-        <button class="tab" data-pane-tab role="tab" [class.active]="inspectorTab === 'snaps'"
-                [attr.aria-selected]="inspectorTab === 'snaps'" (click)="inspectorTab = 'snaps'">Snaps</button>
-      </div>
+<div class="panel" data-pane-tabs="panel" tsPane="panel" tsPaneScroller=".panel-scroll, .detail-content">
+  <div class="side-panel-header">
+    <div class="tab-bar inspector-tabs" role="tablist" aria-label="Graph panels">
+      @for (tab of panelTabs; track tab.id) {
+        <button class="tab" data-pane-tab role="tab" [attr.data-panel-tab]="tab.id"
+                [class.active]="topTab === tab.id" [attr.aria-selected]="topTab === tab.id"
+                (click)="topTab = tab.id">{{ tab.label }}
+          @if (tab.id === 'elements' && isHighlightActive) { <span class="highlight-indicator"></span> }
+        </button>
+      }
+    </div>
       <button class="dock-kebab" [matMenuTriggerFor]="dockMenu"
               matTooltip="Dock side" [matTooltipShowDelay]="500">
         <i class="fa-light fa-ellipsis"></i>
@@ -36,13 +21,9 @@
           <i class="fa-light fa-sidebar-flip"></i><span>Dock to right</span>
         </button>
       </mat-menu>
-    </div>
-
-    @if (inspectorTab === 'snaps') {
-      <div class="panel-scroll" role="tabpanel" aria-label="Snaps">
-        <ng-container *ngTemplateOutlet="snapsTemplate"></ng-container>
-      </div>
-    } @else {
+  </div>
+  @if (topTab === 'explorer') {
+    <div class="explorer-pane panel-content">
     @if (!edgeInspection && !snapshotMode && showSelectionModeToggle && hasSelection) {
       <div class="selection-mode-toggle">
         <button class="mode-button"
@@ -97,31 +78,18 @@
                         [run]="run"
                         [visualiser]="visualiser"/>
     }
-    }
-  </div>
-</ng-template>
-
-<ng-template #panel>
-  <div class="panel" data-pane-tabs="panel" tsPane="panel" tsPaneScroller=".panel-scroll" resizable [percent]="lowerPanelPercent" (percentChange)="lowerPanelPercent = $event">
-    <!-- Top-level tabs -->
-    <div class="tab-bar">
-      <button class="tab" data-pane-tab [class.active]="topTab === 'elements'" (click)="topTab = 'elements'">Elements @if (isHighlightActive) { <span class="highlight-indicator"></span> }</button>
-      <button class="tab" data-pane-tab [class.active]="topTab === 'presets'" (click)="topTab = 'presets'">Themes</button>
-      <button class="tab" data-pane-tab [class.active]="topTab === 'customise'" (click)="topTab = 'customise'">Customise</button>
     </div>
-
-    <div class="panel-scroll">
-      @if (topTab === 'elements') {
-        <ts-graph-side-panel-elements-tab [typeFilter]="initialTypeFilter" [visualiser]="visualiser" [run]="run"></ts-graph-side-panel-elements-tab>
-      }
-      @if (topTab === 'presets') {
-        <ts-graph-styles-themes-tab [visualiser]="visualiser"></ts-graph-styles-themes-tab>
-      }
-      @if (topTab === 'customise') {
-        <ts-graph-side-panel-customise-tab [visualiser]="visualiser" [edgeStyleRequest]="edgeStyleRequest"></ts-graph-side-panel-customise-tab>
+  } @else {
+    <div class="panel-scroll" role="tabpanel" [attr.aria-label]="topTab">
+      @switch (topTab) {
+        @case ('source') { <ng-container *ngTemplateOutlet="sourceTemplate"></ng-container> }
+        @case ('snaps') { <ng-container *ngTemplateOutlet="snapsTemplate"></ng-container> }
+        @case ('elements') { <ts-graph-side-panel-elements-tab [typeFilter]="initialTypeFilter" [visualiser]="visualiser" [run]="run"/> }
+        @case ('presets') { <ts-graph-styles-themes-tab [visualiser]="visualiser"/> }
+        @case ('customise') { <ts-graph-side-panel-customise-tab [visualiser]="visualiser" [edgeStyleRequest]="edgeStyleRequest"/> }
       }
     </div>
-
+  }
     <!-- Footer actions (always visible) -->
     <div class="panel-footer">
       @if (visualiser?.hasAppearanceOverrides) {
@@ -136,5 +104,5 @@
         </button>
       </div>
     </div>
-  </div>
-</ng-template>
+
+</div>

@@ -1,3 +1,4 @@
+import type { GraphSource } from "../../framework/util/graph-source";
 /*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -57,6 +58,7 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
     panelSizes = [...SchemaPageComponent.DEFAULT_PANEL_SIZES];
     graphMaximised = ["localhost", "127.0.0.1"].includes(location.hostname);
     contextQuery = "";
+    contextSource?: GraphSource;
     restoredSnap: GraphSnap | null = null;
     restoreSavedView = (snap: GraphSnap): void => {
         if (this.state.isRefreshing || !this.state.value$.value) throw new Error("Wait for the database schema to load before exploring a snap.");
@@ -66,6 +68,7 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
         this.state.visualiser.restoreSnapshot(snap);
         this.restoredSnap = snap;
         this.contextQuery = snap.query;
+        this.contextSource = snap.sourceLocation;
         this.cdr.detectChanges();
     };
     private focusFrame = 0;
@@ -98,6 +101,7 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
         if (!keys.length) return false;
         if (request.projectTempDirectory) this.snapshots.remember(this.state.visualiser.database!, request.projectTempDirectory);
         this.contextQuery = request.query;
+        this.contextSource = request.sourceLocation;
         canvas.closeInlineSnap();
         visualiser.interactionHandler.clearSelection();
         visualiser.elementSelection.replace(keys);
@@ -160,7 +164,7 @@ export class SchemaPageComponent implements OnInit, AfterViewInit, OnDestroy {
             }, command => this.graphCanvasComponents?.first?.runViewerCommand(command) ?? Promise.resolve(false));
         });
         this.driver.database$.pipe(map(db => db?.name), distinctUntilChanged(), takeUntilDestroyed(this.destroyRef))
-            .subscribe(() => { this.contextQuery = ""; this.restoredSnap = null; });
+            .subscribe(() => { this.contextQuery = ""; this.contextSource = undefined; this.restoredSnap = null; });
         const saved = this.appData.panelLayout.get("schema");
         if (saved && saved.length === SchemaPageComponent.DEFAULT_PANEL_SIZES.length) {
             this.panelSizes = saved;

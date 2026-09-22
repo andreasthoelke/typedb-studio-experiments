@@ -257,16 +257,28 @@ export class GraphInstanceExplorerComponent implements OnChanges {
     /** True once this relation has been added to the graph for the currently
      *  inspected instance (its source→relation link was loaded). */
     isRelationAdded(rel: RelationInstanceData): boolean {
-        if (!this.run || !this.instanceIID) return false;
-        return this.graphViewState.isInstanceConnectionLoaded(
-            this.run, this.instanceIID, relationInstanceKey(rel.relationIID));
+        return !!this.visualiser?.nodeKeyByIid(rel.relationIID);
     }
 
     /** Frame the already-added relation node in the graph (without changing the
      *  panel selection). */
     revealRelation(rel: RelationInstanceData) {
-        const key = this.visualiser?.instanceNodeKey("relation", rel.relationTypeLabel, rel.relationIID);
-        if (key) this.visualiser?.revealNodes([key]);
+        const key = this.visualiser?.nodeKeyByIid(rel.relationIID);
+        if (!key || !this.visualiser) return;
+        this.visualiser.setNodeAppearance(key, "viewHidden", false);
+        this.visualiser.correspondenceNodes = new Set([key]);
+        this.visualiser.revealNodes([key]);
+        this.visualiser.sigma.refresh();
+    }
+
+    inspectRelation(rel: RelationInstanceData) {
+        const key = this.visualiser?.nodeKeyByIid(rel.relationIID);
+        if (key) { this.visualiser?.setNodeAppearance(key, "viewHidden", false); this.visualiser?.pointCaret(key, "none", true); }
+    }
+
+    relationVisible(rel: RelationInstanceData): boolean {
+        const key = this.visualiser?.nodeKeyByIid(rel.relationIID);
+        return !!key && !this.visualiser?.graph.getNodeAttribute(key, "viewHidden");
     }
 
     /** Frame the inspected instance itself in the graph (it's always present).
@@ -352,9 +364,8 @@ export class GraphInstanceExplorerComponent implements OnChanges {
     /** True once this role-player link has been loaded for the current instance
      *  — either directly, or implicitly by adding its parent relation. */
     isLinkAdded(relationIID: string, link: LinkData): boolean {
-        if (!this.run || !this.instanceIID) return false;
-        return this.graphViewState.isInstanceConnectionLoaded(
-            this.run, this.instanceIID, linkInstanceKey(relationIID, link.playerIID));
+        const v = this.visualiser, relation = v?.nodeKeyByIid(relationIID), player = v?.nodeKeyByIid(link.playerIID);
+        return !!v && !!relation && !!player && v.graph.edges(relation, player).length > 0;
     }
 
     /** Frame the already-added role-player in the graph (without changing the

@@ -57,6 +57,7 @@ try {
  snap.view.bbox={x:[-150,650],y:[-400,400]};snap.view.camera={x:.5,y:.5,ratio:1,angle:0};
  await writeFile(join(directory,'roles-00.snap.json'),JSON.stringify(snap));
  await page.goto(origin+'/snap');await page.waitForSelector('ts-graph-canvas');
+ await page.evaluate(style=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).liveStyleService.applyCapturedPreset(style),snap.style);
  await page.locator('input[type="file"][accept=".snap.json,.json"]').setInputFiles(join(directory,'roles-00.snap.json'));
  await page.waitForFunction(()=>!!window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser);
  await page.evaluate(()=>{const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;v.stopLayout();v.applyEdgeCurvature();v.pointCaret('composition');});
@@ -86,11 +87,13 @@ try {
  await row.locator('input[type="color"]').evaluate(el=>{el.value='#b82244';el.dispatchEvent(new Event('input',{bubbles:true}));});
  let data=await read();assert.equal(data.host.lineStyle,'dash-dot');assert.equal(data.slot.lineStyle,'dotted');assert.equal(data['other-host'].lineStyle,'dotted');
  assert.equal(data.host.color,'#b82244');assert.equal(data.host.size,6,'2 * 2.5 plus inspection accent');assert.equal(data['other-host'].size,2);
+ await page.getByRole('tab',{name:'Explorer',exact:true}).click();
  await page.getByRole('button',{name:'Go to player',exact:true}).click();
  await page.waitForFunction(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.navigation.caret==='depiction');
  assert.equal(await page.getByLabel('Edge inspector',{exact:true}).count(),0);
  await page.evaluate(()=>{const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;v.restoreLabels();});
  assert.equal((await read()).host.label,'host');
+ await page.getByRole('tab',{name:'Customise',exact:true}).click();
  await page.getByRole('textbox',{name:'Filter role styles',exact:true}).fill('composition');
  assert.equal(await page.locator('[data-edge-style="depiction-slot:host"]').count(),0);
  await page.getByRole('textbox',{name:'Filter role styles',exact:true}).fill('');
@@ -100,6 +103,7 @@ try {
  const file=await(await response).json();assert.ok(file.filename);
  await page.evaluate(async filename=>{const c=window.ng.getComponent(document.querySelector('ts-graph-canvas'));await c.openSavedSnap(filename);},file.filename);
  data=await read();assert.equal(data.host.lineStyle,'dash-dot');assert.equal(data.host.color,'#b82244');assert.equal(data.host.size,5);assert.equal(data.host.label,'host');
+ await page.getByRole('tab',{name:'Customise',exact:true}).click();
  await page.evaluate(()=>{const c=window.ng.getComponent(document.querySelector('ts-graph-side-panel-customise-tab'));c.clearEdgeLabelOverride('composition:host');});
  data=await read();assert.equal(data.host.lineStyle,'dotted');assert.equal(data.host.size,2);assert.equal(data.host.color,'#304f69');
  const png=await page.evaluate(async()=>[...new Uint8Array(await (await window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.exportPng('currentView')).arrayBuffer())]);

@@ -16,11 +16,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 0 4px 0 16px;
+  gap: 0;
+  padding: 0;
   border-bottom: 1px solid var(--theme-secondary-deep-grey);
 
-  .inspector-tabs { flex: 1; border-bottom: none; align-self: stretch; }
+  .inspector-tabs { flex: 1; min-width: 0; overflow-x: auto; border-bottom: none; align-self: stretch; }
+  .tab { position: relative; flex: 1 0 auto; padding: 8px 2px; font-size: 11px;
+    .highlight-indicator { position: absolute; top: 3px; right: 1px; margin: 0; }
+  }
   .tab:disabled { opacity: 0.4; cursor: default; }
 }
 
@@ -29,7 +32,7 @@
   border: none;
   cursor: pointer;
   color: var(--theme-secondary-light-grey);
-  padding: 4px 8px;
+  padding: 4px;
   display: flex;
   align-items: center;
   border-radius: 3px;
@@ -999,3 +1002,5 @@
 }
 
 .snapshot-details p { white-space: normal; overflow-wrap: anywhere; }
+
+.panel-content { flex: 1; min-height: 0; }

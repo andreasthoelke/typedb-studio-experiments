@@ -158,6 +158,7 @@ export class QueryPageComponent implements OnInit, AfterViewInit, AfterViewCheck
     private runTabsScrollObserver?: ResizeObserver;
 
     ngOnInit() {
+        if (this.graphMaximised && !this.currentRun) this.state.outputTypeControl.setValue("graph");
         this.bridgeRouteSubscription = this.route.queryParamMap.subscribe(params => this.bridge.attach(params.get("nvim"), undefined,
             () => {
                 const canvas = this.graphCanvasComponents?.first;

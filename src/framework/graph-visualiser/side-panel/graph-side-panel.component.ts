@@ -3,7 +3,6 @@ import { Component, DoCheck, TemplateRef, EventEmitter, HostBinding, inject, Inp
 import { NgTemplateOutlet } from "@angular/common";
 import { MatTooltipModule } from "@angular/material/tooltip";
 import { MatMenuModule } from "@angular/material/menu";
-import { ResizableDirective } from "@hhangular/resizable";
 import { Subscription } from "rxjs";
 import { GraphStyleService, GraphSidePanelDock } from "../../../service/graph-style.service";
 import { RunOutputState } from "../../../service/query-page-state.service";
@@ -25,28 +24,14 @@ import { PaneDirective } from "../../pane-focus/pane.directive";
     imports: [
         NgTemplateOutlet,
         MatTooltipModule, MatMenuModule,
-        ResizableDirective, PaneDirective,
+        PaneDirective,
         ElementsTabComponent, ThemesTabComponent, CustomiseTabComponent,
         GraphInstanceExplorerComponent, GraphTypeExplorerComponent,
     ],
 })
 export class GraphSidePanelComponent implements OnChanges, OnDestroy, DoCheck {
 
-    // Force the dock-driven layout via inline style. The view-encapsulated SCSS
-    // sets these too, but on tab switch the host's stylesheet sometimes lags one
-    // frame behind the child resizable directive's `ngAfterViewInit`. That
-    // directive calls `getComputedStyle(parent).flexDirection` on the inspector
-    // pane's parent (which is :host now that the Inspector + tabbed panel are
-    // direct flex children again); without the inline style it reads the
-    // browser default "row" and latches into the wrong orientation.
-    @HostBinding("style.flexDirection") get hostFlexDirection(): string {
-        return this.dock === "bottom" ? "row" : "column";
-    }
-    @HostBinding("style.display") readonly hostDisplay = "flex";
-
-    /** Dock class on the host: `.dock-bottom` flips the inner Inspector/tabbed
-     *  split to horizontal; `.dock-right` carries the divider border on the
-     *  left edge. */
+    // One tabbed pane in either dock; the outer canvas owns resizing.
     @HostBinding("class.dock-bottom") get isDockBottom(): boolean { return this.dock === "bottom"; }
     @HostBinding("class.dock-right") get isDockRight(): boolean { return this.dock === "right"; }
 
@@ -65,12 +50,22 @@ export class GraphSidePanelComponent implements OnChanges, OnDestroy, DoCheck {
     @Output() explorePreview = new EventEmitter<void>();
     @Input() initialTypeFilter = "";
     @Input() snapsTemplate: TemplateRef<unknown> | null = null;
-    inspectorTab: "explorer" | "snaps" = "snaps";
+    @Input() sourceTemplate: TemplateRef<unknown> | null = null;
+    readonly panelTabs = [
+        { id: "explorer", label: "Explorer" }, { id: "snaps", label: "Snaps" },
+        { id: "elements", label: "Elements" }, { id: "presets", label: "Themes" },
+        { id: "customise", label: "Customise" }, { id: "source", label: "Source" },
+    ] as const;
+    topTab: "explorer" | "snaps" | "elements" | "presets" | "customise" | "source" = "snaps";
+    get inspectorTab(): "explorer" | "snaps" { return this.topTab === "explorer" ? "explorer" : "snaps"; }
+    set inspectorTab(value: "explorer" | "snaps") { this.topTab = value; }
     private inspectedEdge: string | null = null;
     edgeStyleRequest = 0;
     private inspectedNode: string | null = null;
     private selectionRenderer: GraphVisualiser["sigma"] | null = null;
-    private onGraphElementClicked = () => { this.inspectorTab = "explorer"; };
+    private onGraphElementClicked = () => {
+        if (this.topTab === "explorer" || this.topTab === "snaps") this.inspectorTab = "explorer";
+    };
     private inspectedVisualiser: GraphVisualiser | null = null;
 
     ngDoCheck(): void {
@@ -83,7 +78,7 @@ export class GraphSidePanelComponent implements OnChanges, OnDestroy, DoCheck {
             this.inspectorTab = node && !this.snapshotMode ? "explorer" : "snaps";
         } else if (this.inspectedNode !== node || this.inspectedEdge !== edge) {
             this.inspectedNode = node; this.inspectedEdge = edge;
-            this.inspectorTab = node || edge ? "explorer" : "snaps";
+            if (this.topTab === "explorer" || this.topTab === "snaps") this.inspectorTab = node || edge ? "explorer" : "snaps";
         }
     }
 
@@ -124,10 +119,6 @@ export class GraphSidePanelComponent implements OnChanges, OnDestroy, DoCheck {
      *  types, which aren't `SchemaConcept`s (no own attributes/subtypes) but
      *  are still inspectable as a label + kind. */
     selectedTypeForTypeMode: SchemaConcept | SchemaRole | null = null;
-
-    // Internal vertical split between Inspector and the tabbed lower pane.
-    inspectorPercent = 50;
-    lowerPanelPercent = 50;
 
     private schemaState = inject(SchemaState);
     private selectionSub: Subscription | null = null;
@@ -208,7 +199,6 @@ export class GraphSidePanelComponent implements OnChanges, OnDestroy, DoCheck {
     }
 
     styleService = inject(GraphStyleService);
-    topTab: "elements" | "presets" | "customise" = "elements";
 
     get isHighlightActive(): boolean {
         return !!this.visualiser?.elementSelection.active || this.styleService.isHighlightActive();

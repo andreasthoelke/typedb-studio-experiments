@@ -123,7 +123,7 @@
             @if (bridge.enabled && !graphMaximised) { <ts-nvim-query-controls/> }
           </div>
         </div>
-        @if ((driver.status$ | async) === "connected" && (driver.database$ | async) && state.currentTabRuns.length > 0) {
+        @if ((driver.status$ | async) === "connected" && (driver.database$ | async)) {
           <div class="answers-outer-container">
             <div class="answers-container answers-text-container" [hidden]="state.outputTypeControl.value !== 'log'" [class.has-scrollbar]="logHasScrollbar">
               <mat-form-field class="code-text-field">

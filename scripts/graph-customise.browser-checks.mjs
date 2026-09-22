@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 /** UI preferences and caret style following on the current temporary working graph. */
 export async function checkGraphCustomise(page, label) {
     const tab=page.locator('ts-graph-side-panel-customise-tab');
-    const open=async()=>{await page.getByRole('button',{name:'Customise',exact:true}).click();await tab.waitFor();};
+    const open=async()=>{await page.getByRole('tab',{name:'Customise',exact:true}).click();await tab.waitFor();};
     const section=name=>tab.getByRole('button',{name,exact:true});
     const expanded=async()=>Promise.all(['Settings','Kinds','Types','Edges'].map(name=>section(name).getAttribute('aria-expanded')));
     await open();
@@ -30,7 +30,7 @@ export async function checkGraphCustomise(page, label) {
     await page.mouse.click(target.x,target.y);
     await page.waitForFunction(type=>document.querySelector('.style-row.caret-style')?.getAttribute('data-type-label')===type,target.type);
     assert.deepEqual(await expanded(),choices);
-    await page.getByRole('button',{name:'Elements',exact:true}).click();await open();
+    await page.getByRole('tab',{name:'Elements',exact:true}).click();await open();
     assert.deepEqual(await expanded(),choices,'Section expansion survives tab destruction');
     await page.screenshot({path:join(tmpdir(),`studio-customise-${label.replaceAll(' ','-')}.png`)});
     // Collapsing Types remains an explicit choice even as the caret moves.
@@ -60,7 +60,7 @@ export async function checkGraphCustomise(page, label) {
     const dockBottom=await menu.count()>0;
     await (dockBottom?menu:page.getByRole('menuitem',{name:'Dock to right',exact:true})).click();
     await open();assert.deepEqual(await expanded(),choices,'Section expansion survives docking');
-    await page.getByRole('button',{name:'Elements',exact:true}).click();
+    await page.getByRole('tab',{name:'Elements',exact:true}).click();
     if(label==='saved preview') {
         const fresh=await page.context().newPage();
         try {
@@ -68,7 +68,7 @@ export async function checkGraphCustomise(page, label) {
             for(const reload of [false,true]) {
                 if(reload) await fresh.reload();
                 await fresh.waitForSelector('ts-graph-canvas');
-                await fresh.getByRole('button',{name:'Customise',exact:true}).click();
+                await fresh.getByRole('tab',{name:'Customise',exact:true}).click();
                 const freshTab=fresh.locator('ts-graph-side-panel-customise-tab');
                 const values=await Promise.all(['Settings','Kinds','Types','Edges'].map(name=>freshTab.getByRole('button',{name,exact:true}).getAttribute('aria-expanded')));
                 assert.deepEqual(values,choices,'Expansion survives a fresh page and full reload');

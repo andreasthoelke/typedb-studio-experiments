@@ -3,7 +3,7 @@ import type { GraphDirection, GraphNavigationMode } from "./graph-navigation";
 export type GraphViewCommand = "centreCaret" | "caretTop" | "caretBottom" | "caretLeft" | "caretRight"
     | "panLeft" | "panRight" | "panUp" | "panDown" | "zoomIn" | "zoomOut" | "focus" | "back" | "relayout" | "snap";
 
-export type GraphShortcut = "previous" | "next" | "live" | "snap" | "find" | "help" | "focus" | "relayout" | "zoomIn" | "zoomOut"
+export type GraphShortcut = "syncCaret" | "uiHints" | "isolate" | "previous" | "next" | "live" | "snap" | "find" | "help" | "focus" | "relayout" | "zoomIn" | "zoomOut"
     | "caret" | "clear" | "remove" | "deleteLeader" | "removeCaret" | "leader" | "hintLeader" | "centreLeader" | "centreCaret" | "hints" | "cancelLeader"
     | GraphDirection | `nudge:${GraphDirection}` | "historyLeader" | "back" | "panLeft" | "panRight" | "panUp" | "panDown" | "caretTop" | "caretBottom" | "caretLeft" | "caretRight";
 export type GraphKeyEvent = Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey" | "isComposing" | "defaultPrevented" | "repeat">;
@@ -31,7 +31,7 @@ export function graphShortcut(event: GraphKeyEvent, mode: GraphNavigationMode = 
     } else if (event.key === "Escape") action = leader === "d" ? "cancelLeader" : "clear";
     else if (leader) {
         if (event.altKey || event.shiftKey) return null;
-        action = leader === "space" ? (event.key === "h" ? "previous" : event.key === "l" ? "next" : "cancelLeader")
+        action = leader === "space" ? (event.key === "h" ? "previous" : event.key === "l" ? "next" : event.key === "Enter" ? "syncCaret" : "cancelLeader")
             : leader === "comma" ? (event.key === "f" ? "hints" : "cancelLeader")
             : leader === "d" ? (event.key === "d" ? "removeCaret" : event.key === "Enter" ? "remove" : "cancelLeader")
             : leader === "g" ? (event.key === ";" ? "back" : "cancelLeader")
@@ -43,10 +43,10 @@ export function graphShortcut(event: GraphKeyEvent, mode: GraphNavigationMode = 
         if (mode === "caret" && movement[motionKey]) action = event.shiftKey && !event.altKey ? `nudge:${movement[motionKey]}` : movement[motionKey];
         else if (event.altKey) return null;
         else {
-            // f also accepts the one key forwarded by Vimium's `map , passNextKey`.
-            const actions: Record<string, GraphShortcut> = { "+": "zoomIn", "=": "zoomIn", "-": "zoomOut", Enter: "focus", r: "relayout",
-                c: "caret", z: "centreLeader", g: "historyLeader", d: "deleteLeader", " ": "leader", ",": "hintLeader", f: "hints", Backspace: "live", s: "snap", "/": "find", "?": "help" };
-            action = actions[event.key] ?? null;
+            // Bare f addresses controls; comma-f addresses graph nodes.
+            const actions: Record<string, GraphShortcut> = { "+": "zoomIn", "=": "zoomIn", "-": "zoomOut", Enter: "focus", r: "relayout", R: "isolate",
+                c: "caret", z: "centreLeader", g: "historyLeader", d: "deleteLeader", " ": "leader", ",": "hintLeader", f: "uiHints", Backspace: "live", s: "snap", "/": "find", "?": "help" };
+            action = event.shiftKey && letter === "r" ? "isolate" : actions[event.key] ?? null;
         }
     }
     const repeatable: GraphShortcut[] = ["left", "right", "up", "down", "downLeft", "upRight", "upLeft", "downRight", "back", "panLeft", "panRight", "panUp", "panDown", "zoomIn", "zoomOut"];

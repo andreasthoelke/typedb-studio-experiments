@@ -1,3 +1,4 @@
+import type { GraphSource } from "../framework/util/graph-source";
 import { Injectable, NgZone } from "@angular/core";
 import { combineLatest, firstValueFrom, Subscription } from "rxjs";
 import { ApiResponse, QueryResponse, isApiErrorResponse } from "@typedb/driver-http";
@@ -15,7 +16,7 @@ import { prepareOperationContext, prepareSchemaContext, EditorExecution, Operati
 import { prepareGraphQuery } from "../framework/util/graph-query";
 
 export interface EditorRequest { id: string; query: string; database?: string; limit: number; execution?: EditorExecution; projectTempDirectory?: string;
-    connectionOrigin?: string; response?: ApiResponse<QueryResponse>;
+    sourceLocation?: GraphSource; connectionOrigin?: string; response?: ApiResponse<QueryResponse>;
     graph?: { query: string; response: ApiResponse<QueryResponse>; schemaMode: boolean; source: "result" | "context"; note: string };
 }
 const OPTIONS_KEY = "typedb-studio-nvim-options";
@@ -406,7 +407,7 @@ export class NvimQueryBridge {
                 this.state.outputTypeControl.setValue("graph");
                 this.note = context.note;
                 this.message = `Running Neovim context in ${database}…`;
-                this.state.runQuery(context.query, { limit: request.limit, schemaMode: context.schemaMode, projectTempDirectory: request.projectTempDirectory,
+                this.state.runQuery(context.query, { limit: request.limit, schemaMode: context.schemaMode, sourceLocation: request.sourceLocation, projectTempDirectory: request.projectTempDirectory,
                     response: supplied ? request.graph!.response : undefined }).subscribe(result => {
                     if (this.lastRequest !== request) return;
                     const empty = ["noQueryAnswers", "noInstancesFound"].includes(this.state.graphOutput.status);

@@ -45,7 +45,7 @@
                          [visualiser]="state.visualiser.visualiser"
                          [status]="state.visualiser.status"
                          [schemaMode]="true"
-                         [contextQuery]="contextQuery"
+                         [contextQuery]="contextQuery" [contextSource]="contextSource"
                          [restoreSavedView]="restoreSavedView"
                          [loadedSnap]="restoredSnap"
                          [graphPercent]="panelSizes[2]" (graphPercentChange)="onPanelResize(2, $event)"

@@ -62,9 +62,10 @@ try {
  snap.view.bbox={x:[0,810],y:[-720,0]};snap.view.camera={x:.5,y:.5,ratio:1,angle:0};
  await writeFile(join(directory,'gallery-00.snap.json'),JSON.stringify(snap));
  await page.goto(origin+'/snap');await page.waitForSelector('ts-graph-canvas');
+ await page.evaluate(style=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).liveStyleService.applyCapturedPreset(style),snap.style);
  await page.locator('input[type="file"][accept=".snap.json,.json"]').setInputFiles(join(directory,'gallery-00.snap.json'));
  await page.waitForFunction(()=>!!window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser);
- await page.getByRole('button',{name:'Customise',exact:true}).click();
+ await page.getByRole('tab',{name:'Customise',exact:true}).click();
  const choose=async(label,option)=>{await page.getByRole('combobox',{name:label,exact:true}).click();await page.getByRole('option',{name:option,exact:true}).click();};
  await choose('Outline dash for entity','Dotted');
  await page.getByRole('button',{name:'Types',exact:true}).click();

@@ -29,7 +29,7 @@ export async function checkPaneFocus(page, escalated, label) {
         })));
 
     const panes = await geometry();
-    for (const id of ['graph', 'explorer', 'panel']) assert.ok(panes[id], `${label}: the ${id} pane is registered`);
+    for (const id of ['graph', 'panel']) assert.ok(panes[id], `${label}: the ${id} pane is registered`);
     const centre = rect => [rect.left + rect.width / 2, rect.top + rect.height / 2];
     const towards = (from, to) => {
         const [fx, fy] = centre(panes[from]), [tx, ty] = centre(panes[to]);
@@ -39,20 +39,14 @@ export async function checkPaneFocus(page, escalated, label) {
     // Pane focus routes scrolling independently of graph caret navigation.
     await page.evaluate(() => window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser?.endNavigation());
     await chord('e');
-    assert.equal(await active(), 'explorer', `${label}: Ctrl+w e focuses the Explorer`);
-    assert.ok(await page.evaluate(() => document.querySelector('.explorer-pane')?.contains(document.activeElement)),
-        `${label}: focus really lands inside the Explorer, which is what Vimium scrolls`);
-
-    await chord(towards('explorer', 'panel'));
-    assert.equal(await active(), 'panel', `${label}: a motion towards the tabbed panel reaches it in either dock`);
-    await chord(towards('panel', 'explorer'));
-    assert.equal(await active(), 'explorer', `${label}: and back again`);
-    await chord(towards('explorer', 'graph'));
-    assert.equal(await active(), 'graph', `${label}: a motion towards the graph reaches it`);
+    assert.equal(await active(), 'panel', `${label}: Ctrl+w e focuses the shared panel`);
+    assert.equal(await page.locator('[data-panel-tab="explorer"]').getAttribute('aria-selected'), 'true');
+    await chord(towards('panel', 'graph'));
+    assert.equal(await active(), 'graph', `${label}: motion from the shared panel reaches the graph`);
 
     // Ctrl-e/y belongs to the actual focused scroller; graph caret motions still work.
     await page.getByRole('tab', {name:'Snaps',exact:true}).click();
-    for (const [id, key] of [['explorer','e'],['panel','b']]) {
+    for (const [id, key] of [['panel','b']]) {
         await chord(key);
         const metrics = await page.evaluate(id => {
             const pane=document.querySelector('[tsPane="'+id+'"]');
@@ -111,7 +105,7 @@ export async function checkPaneFocus(page, escalated, label) {
 
     // Vim's own chord history, within the page.
     await chord('p');
-    assert.equal(await active(), 'explorer', `${label}: Ctrl+w p returns to the previous pane`);
+    assert.equal(await active(), 'panel', `${label}: Ctrl+w p returns to the previous pane`);
 
     // The key after the prefix belongs to the chord, never to the graph. If
     // the canvas saw these motion keys it would move the camera.

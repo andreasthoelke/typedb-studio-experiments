@@ -1,3 +1,6 @@
+import { GraphSource, sourceHeading } from "../../util/graph-source";
+import { conceptType, correspondsToType } from "../../util/graph-correspondence";
+import { UIHints } from "../../util/ui-hints";
 import { toSignal } from "@angular/core/rxjs-interop";
 /*
  * This Source Code Form is subject to the terms of the Mozilla Public
@@ -5,7 +8,7 @@ import { toSignal } from "@angular/core/rxjs-interop";
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { Component, ChangeDetectorRef, Injector, DestroyableInjector, ElementRef, EventEmitter, HostBinding, inject, Input, DoCheck, OnChanges, OnDestroy, Output, ViewChild, AfterViewInit, AfterViewChecked } from "@angular/core";
+import { Component, ChangeDetectorRef, ElementRef, EventEmitter, HostBinding, inject, Input, DoCheck, OnChanges, OnDestroy, Output, ViewChild, AfterViewInit, AfterViewChecked } from "@angular/core";
 import { NgTemplateOutlet } from "@angular/common";
 import { MatTooltipModule } from "@angular/material/tooltip";
 
@@ -51,10 +54,8 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     private liveStatus: GraphCanvasStatus = "ok";
     private snapVisualiser: GraphVisualiser | null = null;
     inlineSnap: GraphSnap | null = null;
-    snapInjector: DestroyableInjector | null = null;
     private snapStyles: GraphStyleService | null = null;
     private snapStylesSub?: Subscription;
-    private injector = inject(Injector);
     protected paneFocus = inject(PaneFocusService);
     private host = inject<ElementRef<HTMLElement>>(ElementRef);
     private static keyboardOwner: GraphCanvasComponent | null = null;
@@ -120,7 +121,59 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
             && event.target instanceof HTMLCanvasElement) this.paneFocus.focus("graph");
     };
 
+    private caretChannel = typeof BroadcastChannel === "undefined" ? null : new BroadcastChannel("studio-graph-caret-v1");
+    private readonly caretSender = crypto.randomUUID();
+    private caretRequest: string | null = null;
+    private caretReplyTimer: ReturnType<typeof setTimeout> | null = null;
+
+    private get caretScope(): string {
+        const params = this.driver.connection$.value?.params;
+        const addresses = params ? ("addresses" in params ? params.addresses : params.translatedAddresses.map(a => a.external)) : [];
+        return JSON.stringify([addresses, this.snapshotDatabase]);
+    }
+
+    private syncCaret(): void {
+        if (this.queryRunning) return;
+        const v = this.visualiser, key = v?.navigation.caret;
+        const label = key && v?.graph.hasNode(key) ? conceptType(v.graph.getNodeAttribute(key, "metadata").concept) : null;
+        if (!label || !this.snapshotDatabase || !this.caretChannel) { this.lastShortcut = "Space Enter: place the caret on a typed node first"; this.snackbar.info(this.lastShortcut); return; }
+        const request = crypto.randomUUID(); this.caretRequest = request;
+        this.caretChannel.postMessage({ sender: this.caretSender, request, scope: this.caretScope, schema: !this.schemaMode, label });
+        this.lastShortcut = `Finding ${label} in the ${this.schemaMode ? "query" : "schema"} view…`;
+        if (this.caretReplyTimer) clearTimeout(this.caretReplyTimer);
+        this.caretReplyTimer = setTimeout(() => {
+            if (this.caretRequest === request) { this.lastShortcut = "Space Enter: no other loaded view answered"; this.snackbar.info(this.lastShortcut); this.cdr.markForCheck(); }
+        }, 1500);
+    }
+
+    private onCaretMessage = (event: MessageEvent): void => {
+        const msg = event.data;
+        if (!msg || msg.sender === this.caretSender || msg.scope !== this.caretScope) return;
+        if (msg.reply === this.caretRequest && msg.to === this.caretSender) {
+            if (this.caretReplyTimer) clearTimeout(this.caretReplyTimer);
+            this.caretRequest = null;
+            this.lastShortcut = msg.count ? `Space Enter: ${msg.count} related node${msg.count === 1 ? "" : "s"} in the other view` : "Space Enter: no matching visible nodes loaded in the other view";
+            if (!msg.count) this.snackbar.info(this.lastShortcut);
+            this.cdr.markForCheck(); return;
+        }
+        if (typeof msg.request !== "string" || typeof msg.label !== "string" || msg.schema !== this.schemaMode
+            || !this.isKeyboardVisible() || this.queryRunning || !this.visualiser) return;
+        const v = this.visualiser;
+        const keys = v.graph.nodes().filter(key => !v.graph.getNodeAttribute(key, "viewHidden")
+            && correspondsToType(v.graph.getNodeAttribute(key, "metadata").concept, msg.label, this.schemaMode));
+        v.correspondenceNodes = new Set(keys);
+        const primary = keys.includes(v.navigation.caret ?? "") ? v.navigation.caret! : keys[0];
+        if (primary) v.pointCaret(primary, "none", true);
+        else v.sigma.refresh();
+        this.lastShortcut = keys.length ? `Related: ${msg.label} · ${keys.length} loaded node${keys.length === 1 ? "" : "s"}` : `No visible ${msg.label} nodes loaded`;
+        this.caretChannel?.postMessage({ sender: this.caretSender, to: msg.sender, reply: msg.request, scope: msg.scope, count: keys.length });
+        this.cdr.markForCheck();
+    };
+
+    private readonly uiHints = new UIHints();
+
     private onGraphKey = (event: KeyboardEvent): void => {
+        if (this.uiHints.active) { this.uiHints.key(event); return; }
         if (!this.isKeyboardVisible() || document.hidden) { this.cancelKeySequence(); return; }
         // A pending <c-w> owns the next key wherever focus is. Listener order
         // between window-capture handlers is not guaranteed, so ask rather
@@ -129,10 +182,35 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         if (this.paneFocus.handlesPanelKey(event)) { this.cancelKeySequence(); return; }
         const owner = GraphCanvasComponent.keyboardOwner;
         if (owner && owner !== this && owner.isKeyboardVisible()) { this.cancelKeySequence(); return; }
+        if (event.ctrlKey && !event.altKey && !event.metaKey && event.key === ","
+            && !document.querySelector(".cdk-overlay-pane [role='dialog'], .cdk-overlay-pane [role='listbox']")) {
+            const pane = this.paneFocus.focusedPane;
+            if (pane === "graph" || pane === "panel") {
+                event.preventDefault(); event.stopImmediatePropagation();
+                this.styleService.sidePanelDock = "bottom";
+                this.bottomPanePercent = Math.max(15, Math.min(85, this.bottomPanePercent + (pane === "graph" ? -10 : 10)));
+                this.graphPercent = 100 - this.bottomPanePercent;
+                this.cdr.markForCheck();
+                return;
+            }
+        }
+        const editing = event.composedPath().some(target => target instanceof HTMLElement &&
+            (target.isContentEditable || target.closest("input, textarea, select, [role='textbox']")));
+        if (!editing && !this.leaderPending && event.key === "f" && !event.ctrlKey && !event.altKey && !event.metaKey) {
+            event.preventDefault(); event.stopImmediatePropagation();
+            if (!event.repeat) this.uiHints.start();
+            return;
+        }
         // Includes CodeMirror, native controls, shadow-DOM editors, and open Material overlays.
         if (event.composedPath().some(target => target instanceof HTMLElement &&
             (target.isContentEditable || target.closest("input, textarea, select, [role='textbox'], [role='dialog'], [role='menu']")))) { this.cancelKeySequence(); return; }
         if (document.querySelector(".cdk-overlay-pane .mat-mdc-dialog-container, .cdk-overlay-pane .mat-mdc-menu-panel, .cdk-overlay-pane .mat-mdc-select-panel")) { this.cancelKeySequence(); return; }
+        if (this.leaderPending === "space" && !event.ctrlKey && !event.altKey && !event.metaKey && event.key === "s") {
+            event.preventDefault(); event.stopImmediatePropagation(); this.cancelKeySequence(); this.showSource(); return;
+        }
+        if (this.leaderPending === "space" && !event.ctrlKey && !event.altKey && !event.metaKey && event.key === "o") {
+            event.preventDefault(); event.stopImmediatePropagation(); this.cancelKeySequence(); void this.jumpToSource(); return;
+        }
         if ((this.leaderPending || this.nodeHints.length) && this.leaderVisualiser !== this.visualiser) this.cancelKeySequence();
         if (this.leaderPending === "d" && this.leaderCaret !== this.visualiser?.navigation.caret) { this.cancelKeySequence(); return; }
         if (this.nodeHints.length && this.onHintKey(event)) return;
@@ -170,11 +248,13 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
             if (!this.visualiser?.centreCaret(action === "caretLeft" ? 0.125 : action === "caretRight" ? 0.875 : 0.5,
                 action === "caretTop" ? 0.125 : action === "caretBottom" ? 0.875 : 0.5)) this.lastShortcut += " (no caret)";
         }
+        else if (action === "syncCaret") { this.syncCaret(); }
+        else if (action === "isolate") { if (!this.queryRunning) this.visualiser?.isolateSelection(); }
         else if (action === "hints") { this.startNodeHints(); }
         else if (action === "caret") {
             if (this.queryRunning) return;
             this.visualiser?.enterNavigation();
-            if (this.sidePanel && this.navigationMode !== "normal") this.sidePanel.inspectorTab = "explorer";
+            if (this.sidePanel && this.navigationMode !== "normal" && ["explorer", "snaps"].includes(this.sidePanel.topTab)) this.sidePanel.inspectorTab = "explorer";
         }
         else if (action === "left" || action === "right" || action === "up" || action === "down"
             || action === "downLeft" || action === "upRight" || action === "upLeft" || action === "downRight") {
@@ -291,6 +371,23 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     @Input() selectionMode: SelectionMode | null = null;
     /** Original source for schema context exports when there is no query run. */
     @Input() contextQuery = "";
+    @Input() contextSource?: GraphSource;
+    get sourceLocation(): GraphSource | undefined { return this.loadedSnap?.sourceLocation ?? this.run?.sourceLocation ?? this.contextSource; }
+    get sourceQuery(): string { return this.sourceLocation?.query ?? this.loadedSnap?.query ?? this.run?.query ?? this.contextQuery; }
+    get sourceTitle(): string { return this.sourceLocation?.title || sourceHeading(this.sourceQuery).title; }
+    get sourceComment(): string { return this.sourceLocation?.comment || sourceHeading(this.sourceQuery).comment; }
+    showSource(): void { if (this.sidePanel) this.sidePanel.topTab = "source"; }
+    async jumpToSource(): Promise<void> {
+        if (!this.sourceLocation) return;
+        try {
+            const response = await fetch("/api/viewer/source", { method: "POST", headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ sourceLocation: this.sourceLocation }) });
+            if (response.status === 404) throw new Error("Restart the Studio bridge with :TypeDBGraphStop then :TypeDBGraphStart to enable source links.");
+            const result = await response.json();
+            if (!response.ok) throw new Error(result.error || "Could not open source.");
+            this.snackbar.success("Source opened in Neovim.");
+        } catch (error) { this.snackbar.errorPersistent(error instanceof Error ? error.message : String(error)); }
+    }
     /** True for the schema visualiser surface (graphs schema type nodes, not
      *  data instances). Passed to the side panel so the type explorer hides
      *  instance-oriented UI (the "N in graph" count and connection chips). */
@@ -328,6 +425,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     private stylesSub: Subscription;
 
     constructor(private liveStyleService: GraphStyleService) {
+        if (this.caretChannel) this.caretChannel.onmessage = this.onCaretMessage;
         window.addEventListener("keydown", this.onGraphKey, true);
         window.addEventListener("pointerdown", this.ownKeyboard, true);
         window.addEventListener("focusin", this.ownKeyboard, true);
@@ -424,8 +522,6 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         this.inlineSnap = null;
         this.snapStylesSub?.unsubscribe();
         this.snapStyles = null;
-        this.snapInjector?.destroy();
-        this.snapInjector = null;
         this.finderVisualiser = null;
         this.ngOnChanges();
         this.updateControlTheme();
@@ -438,9 +534,8 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
 
     private restoreInlineSnap(snap: GraphSnap): void {
         if ((snap.schemaMode ? "schema" : "data") !== this.snapKind) throw new Error(`Open this snap from the ${snap.schemaMode ? 'schema' : 'query'} route.`);
-        if (!this.snapInjector) {
-            this.snapInjector = Injector.create({ providers: [GraphStyleService], parent: this.injector });
-            this.snapStyles = this.snapInjector.get(GraphStyleService);
+        if (!this.snapStyles) {
+            this.snapStyles = this.liveStyleService;
             this.snapStylesSub = this.snapStyles.styles$.subscribe(() => { this.updateControlTheme(); this.applyBackground(); });
         }
         this.inlineSnap = snap;
@@ -456,7 +551,6 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         const container = this.snapCanvasEl?.nativeElement;
         if (!container || !this.snapStyles) return;
         this.snapVisualiser?.destroy();
-        this.snapStyles.applyCapturedPreset(snap.style);
         const graph = newGraph();
         graph.import(snap.graph);
         const sigma = createSigmaRenderer(container, defaultSigmaSettings as any, graph);
@@ -513,6 +607,8 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         if (this.snapVisualiser && snapEl && snapEl !== this.snapVisualiser.sigma.getContainer() && !this.rehomingSnap) {
             this.rehomingSnap = true;
             const current = this.snapVisualiser.captureSnap(this.inlineSnap!.query, this.inlineSnap!.schemaMode, this.inlineSnap!.expansionQueries);
+            current.sourceLocation = this.inlineSnap!.sourceLocation;
+            current.database = this.inlineSnap!.database; current.project = this.inlineSnap!.project;
             setTimeout(() => {
                 if (!this.destroyed && this.inlineSnap) { this.renderInlineSnap(current); this.cdr.detectChanges(); }
                 this.rehomingSnap = false;
@@ -558,6 +654,9 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     }
 
     ngOnDestroy() {
+        this.uiHints.cancel();
+        this.caretChannel?.close();
+        if (this.caretReplyTimer) clearTimeout(this.caretReplyTimer);
         if (this.maximised) document.body.classList.remove("graph-fullscreen");
         this.cancelKeySequence();
         window.removeEventListener("keydown", this.onGraphKey, true);
@@ -801,6 +900,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
             if (!context || this.visualiser !== visualiser) return;
             const snap = visualiser.captureSnap(this.loadedSnap?.query || this.run?.query || this.run?.graph.query || this.contextQuery, this.loadedSnap?.schemaMode ?? this.schemaMode,
                 this.inlineSnap?.expansionQueries ?? this.run?.expansionQueries ?? this.loadedSnap?.expansionQueries ?? []);
+            snap.sourceLocation = this.sourceLocation;
             snap.view.finderText = this.finderText;
             snap.view.typeFilter = this.sidePanel?.elements?.typeFilter ?? "";
             snap.database = context.database;

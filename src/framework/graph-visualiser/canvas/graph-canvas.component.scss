@@ -431,3 +431,22 @@
   letter-spacing: 1px;
   text-transform: uppercase;
 }
+
+.graph-source-title {
+    position: absolute;
+    top: 56px;
+    left: 8px;
+    max-width: calc(100% - 150px);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    background: var(--theme-black);
+    color: inherit;
+    border: 0;
+    font-size: 12px;
+    cursor: pointer;
+}
+.graph-source {
+    pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
+    p { overflow-wrap: anywhere; }
+}

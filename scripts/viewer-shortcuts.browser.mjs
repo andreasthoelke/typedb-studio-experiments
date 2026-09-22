@@ -68,12 +68,12 @@ try {
         await page.evaluate(()=>{window.vimiumProbe=[];window.addEventListener('keydown',event=>window.vimiumProbe.push(event.key),true);});
         await page.keyboard.press('l');
         assert.deepEqual(await page.evaluate(()=>window.vimiumProbe),[],'Default Vimium consumes l before page listeners');
-        await worker.evaluate(async origin=>{await Settings.onLoaded();await Settings.set('keyMappings','map , passNextKey\nunmap <c-e>\nunmap <c-y>\nunmap <c-d>\nunmap <c-f>');await Settings.set('exclusionRules',[{pattern:origin+'/*',passKeys:'abcdghjklnoprstyzASDGHJKLNOY.;/?>+-='}]);},origin);
+        await worker.evaluate(async origin=>{await Settings.onLoaded();await Settings.set('exclusionRules',[{pattern:origin+'/*',passKeys:''}]);},origin);
         await page.reload();await page.waitForSelector('ts-graph-canvas');
         await page.evaluate(()=>{const c=window.ng.getComponent(document.querySelector('ts-graph-canvas'));Object.defineProperty(c,'snapshotDatabase',{get:()=> 'shortcut-test'});window.ng.applyChanges(c);});
         await page.waitForFunction(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).snapFiles.length===3);
         await page.waitForTimeout(700);
-        console.log('PASS real Vimium blocks default l; configured selective exclusions and comma passNextKey in isolated profile');
+        console.log('PASS real Vimium blocks default l; disabled Vimium entirely for Studio in isolated profile');
     }
     const names=await page.locator('.snap-chip-open').evaluateAll(nodes=>nodes.map(node=>node.getAttribute('aria-label')));
     // Focus is on the graph/body, never a chip: this was the original focus restriction.
@@ -170,8 +170,8 @@ try {
         window.workingOriginal=structuredClone(v.graph.export());
         window.workingCamera={...v.sigma.getCamera().getState()};
     });
-    await page.getByRole('button',{name:'Elements',exact:true}).click();
-    await page.getByRole('button',{name:'Isolate & layout',exact:true}).click();
+    await page.getByRole('tab',{name:'Elements',exact:true}).click();
+    await page.keyboard.press('Shift+r');
     await page.evaluate(()=>{
         const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;
         v.stopLayout();
@@ -191,24 +191,22 @@ try {
         }
         if(JSON.stringify(v.sigma.getCamera().getState())!==JSON.stringify(window.workingCamera)) throw new Error('Original camera lost: '+JSON.stringify({now:v.sigma.getCamera().getState(),original:window.workingCamera}));
     });
-    if(process.env.VIMIUM_PATH) {
-        // Bare f must remain the real extension's UI picker even though its label
-        // letters are excluded in normal mode. Activate a real Elements chip through it.
-        const button=page.locator('[aria-label="Kinds"] .highlight-chip').first();
-        await page.evaluate(()=>document.activeElement?.blur());
-        const expanded=await button.getAttribute('aria-pressed');
-        const box=await button.boundingBox();
-        await page.keyboard.press('f');await page.waitForSelector('.vimiumHintMarker');
-        assert.equal(await page.locator('.graph-node-hint').count(),0,'Bare f belongs to Vimium');
-        const hint=await page.locator('.vimiumHintMarker').evaluateAll((markers,box)=>{
-            return markers.map(el=>({text:el.textContent,rect:el.getBoundingClientRect()}))
-                .sort((a,b)=>Math.hypot(a.rect.x-box.x,a.rect.y-box.y)-Math.hypot(b.rect.x-box.x,b.rect.y-box.y))[0].text;
-        },box);
-        await page.keyboard.type(hint.toLowerCase());
-        await page.waitForFunction(expanded=>document.querySelector('[aria-label="Kinds"] .highlight-chip')?.getAttribute('aria-pressed')!==expanded,expanded);
-        assert.equal(await page.locator('.graph-node-hint').count(),0);
-        console.log('PASS bare Vimium f hints activate an Explorer UI control with selective exclusions');
-    }
+    // Native UI hints work with Vimium fully disabled, and activate a real control.
+    const hintButton=page.locator('[aria-label="Kinds"] .highlight-chip').first();
+    await page.evaluate(()=>document.activeElement?.blur());
+    const expanded=await hintButton.getAttribute('aria-pressed');
+    const box=await hintButton.boundingBox();
+    await page.keyboard.press('f');await page.waitForSelector('.studio-ui-hints span');
+    const uiHint=await page.evaluate(()=> {
+        const c=window.ng.getComponent(document.querySelector('ts-graph-canvas'));
+        const target=document.querySelector('[aria-label="Kinds"] .highlight-chip');
+        return c.uiHints.entries.find(entry=>entry.target===target)?.label;
+    });
+    assert.ok(uiHint, 'Visible kind chip has a native UI hint');
+    await page.keyboard.type(uiHint);
+    await page.waitForFunction(expanded=>document.querySelector('[aria-label="Kinds"] .highlight-chip')?.getAttribute('aria-pressed')!==expanded,expanded);
+    assert.equal(await page.locator('.studio-ui-hints').count(),0);
+    console.log('PASS native f hints activate a visible UI control');
     await checkGraphNavigation(page, 'saved preview');
     await checkGraphCustomise(page, 'saved preview');
     await checkPaneFocus(page, escalated, 'saved preview');

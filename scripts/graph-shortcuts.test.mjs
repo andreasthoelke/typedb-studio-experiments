@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { graphShortcut } from '../src/framework/util/graph-shortcuts.ts';
 const key = (name, extra = {}) => ({key:name,code:'',ctrlKey:false,metaKey:false,altKey:false,shiftKey:false,isComposing:false,defaultPrevented:false,repeat:false,...extra});
 test('graph commands, modal movement and Space snap sequences are distinct', () => {
-    for (const [name,action] of [['+','zoomIn'],['=','zoomIn'],['-','zoomOut'],['Enter','focus'],['r','relayout'],['Backspace','live'],['s','snap'],['/','find'],['?','help'],['c','caret'],[',','hintLeader'],['f','hints'],['d','deleteLeader'],['Escape','clear'],[' ','leader']]) assert.equal(graphShortcut(key(name)),action);
+    for (const [name,action] of [['+','zoomIn'],['=','zoomIn'],['-','zoomOut'],['Enter','focus'],['r','relayout'],['Backspace','live'],['s','snap'],['/','find'],['?','help'],['c','caret'],[',','hintLeader'],['f','uiHints'],['R','isolate'],['d','deleteLeader'],['Escape','clear'],[' ','leader']]) assert.equal(graphShortcut(key(name)),action);
     for (const [name,action] of [['h','left'],['l','right'],['j','down'],['k','up'],['n','downLeft'],['o','upRight'],['y','upLeft'],['.','downRight']]) {
         assert.equal(graphShortcut(key(name)),null);
         for (const mode of ['caret']) assert.equal(graphShortcut(key(name),mode),action);
@@ -85,4 +85,13 @@ test('deletion waits for dd or d Enter; cancellation and repeats never delete', 
         for (const name of ['d','Enter']) assert.equal(graphShortcut(key(name,{repeat:true}),mode,'d'),null);
         assert.equal(graphShortcut(key('D',{shiftKey:true}),mode,'d'),null);
     }
+});
+
+test('Space Enter synchronizes caret without changing plain Enter', () => {
+    assert.equal(graphShortcut(key('Enter'), 'caret', 'space'), 'syncCaret');
+    assert.equal(graphShortcut(key('Enter'), 'caret'), 'focus');
+});
+
+test('Shift-r isolates even when the browser reports a lowercase modified key', () => {
+    assert.equal(graphShortcut(key('r', {shiftKey:true})), 'isolate');
 });

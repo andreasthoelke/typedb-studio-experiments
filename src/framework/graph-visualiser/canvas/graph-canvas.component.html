@@ -7,10 +7,10 @@
      [class.dock-bottom]="dock === 'bottom'">
   @if (isVertical) {
     <ng-container *ngTemplateOutlet="canvasPane"></ng-container>
-    <ng-container *ngTemplateOutlet="sidePanel; injector: snapInjector"></ng-container>
+    <ng-container *ngTemplateOutlet="sidePanel"></ng-container>
   } @else {
     <ng-container *ngTemplateOutlet="canvasPane"></ng-container>
-    <ng-container *ngTemplateOutlet="sidePanel; injector: snapInjector"></ng-container>
+    <ng-container *ngTemplateOutlet="sidePanel"></ng-container>
   }
 </div>
 
@@ -19,13 +19,15 @@
     <div class="canvas-element" #canvasEl [style.visibility]="inlineSnap ? 'hidden' : null"></div>
     @if (inlineSnap) { <div class="canvas-element" #snapCanvasEl></div> }
     <ng-content/>
+    @if (sourceTitle) { <button class="graph-source-title" (click)="showSource()" [title]="sourceTitle">{{ sourceTitle }}</button> }
 
     @if (visualiser) {
       <div class="graph-search-bar graph-keyboard-status" aria-live="polite" aria-atomic="true">
         <span>{{ navigationMode === 'normal' ? 'Normal' : 'Caret' }}</span>
+        @if (visualiser.correspondenceNodes.size) { <span>· {{ visualiser.correspondenceNodes.size }} related</span> }
         @if (visualiser.elementSelection.active) { <span>· {{ visualiser.elementSelection.nodes.size }} selected</span> }
         @if (nodeHints.length) { <span>· Graph hints: {{ hintPrefix || 'type a label' }} · Esc cancel</span> }
-        @else if (leaderPending === 'space') { <span>· Space: h previous / l next snap</span> }
+        @else if (leaderPending === 'space') { <span>· Space: Enter sync caret / s source / o Neovim / h previous / l next snap</span> }
         @else if (leaderPending === 'comma') { <span>· ,f graph hints</span> }
         @else if (leaderPending === 'z') { <span>· z: z centre / t top / b bottom / h left / l right</span> }
         @else if (leaderPending === 'g') { <span>· g; previous caret visit</span> }
@@ -147,7 +149,7 @@
                        [schemaMode]="schemaMode"
                        [snapshotMode]="inspectionPreview"
                        [initialTypeFilter]="loadedSnap?.view?.typeFilter ?? ''"
-                       [snapsTemplate]="snaps"
+                       [snapsTemplate]="snaps" [sourceTemplate]="source"
                        [canExplorePreview]="!!restoreSavedView && !!inlineSnap"
                        (explorePreview)="explorePreview()"
                        (selectionModeChange)="selectionModeChange.emit($event)"/>
@@ -166,18 +168,20 @@
       <div class="shortcut-help">
         <p><kbd>Space h</kbd> previous snap · <kbd>Space l</kbd> next snap<br>
           <kbd>Backspace</kbd> close preview · <kbd>s</kbd> save snap<br>
-          <kbd>r</kbd> re-layout · <kbd>+</kbd> / <kbd>-</kbd> zoom around selection · <kbd>Enter</kbd> focus selection · <kbd>/</kbd> find nodes · <kbd>?</kbd> this help</p>
+          <kbd>r</kbd> re-layout · <kbd>R</kbd> isolate &amp; layout · <kbd>+</kbd> / <kbd>-</kbd> zoom around selection · <kbd>Enter</kbd> focus selection · <kbd>/</kbd> find nodes · <kbd>?</kbd> this help</p>
         <p><kbd>c</kbd> places the caret nearest the camera centre. Click a node or use <kbd>h j k l</kbd> to inspect it without changing highlights. Motions advance to the next node in the same visible column/row using node bounds. If none overlaps, direction, proximity and connections guide the jump. <kbd>Ctrl-o</kbd> (also <kbd>g;</kbd>) retraces caret visits without changing highlights.</p>
         <p>Diagonals: <kbd>n</kbd> ↙ down-left · <kbd>o</kbd> ↗ up-right · <kbd>y</kbd> ↖ up-left · <kbd>.</kbd> ↘ down-right. A connected node in that quadrant takes priority; otherwise, movement follows nearby nodes. Shift nudges all eight directions; Ctrl-Shift adds and Option removes at the motion destination.</p>
         <p><kbd>Ctrl-Shift</kbd> + move or <kbd>Shift</kbd> + click adds only the destination node. <kbd>Option/Alt</kbd> + move/click removes it. Repeating either edit keeps the same membership.</p>
-        <p><kbd>, f</kbd> shows graph-node hints (two letters, more for crowded views). Type a label to inspect; hold Shift or Option on the final letter to add or remove. <kbd>Esc</kbd> cancels hints.</p>
+        <p><kbd>f</kbd> hints visible controls. <kbd>, f</kbd> shows graph-node hints (two letters, more for crowded views). Type a label to inspect; hold Shift or Option on the final letter to add or remove. <kbd>Esc</kbd> cancels hints.</p>
         <p><kbd>zz</kbd> centres the caret without zooming. <kbd>zt / zb / zh / zl</kbd> place it ⅛ of the viewport from the top / bottom / left / right. · <kbd>Ctrl-y / Ctrl-e</kbd> pan up/down · <kbd>Ctrl-h / Ctrl-l</kbd> pan left/right · <kbd>Enter</kbd> fits highlights · <kbd>+ / -</kbd> zoom in/out around selection.</p>
         <p><kbd>Shift + h/j/k/l/n/o/y/.</kbd> nudges only the caret node by 5 screen pixels. Hold to repeat; the camera and highlights stay put.</p>
         <p><kbd>dd</kbd> removes the caret node from this view. <kbd>d Enter</kbd> removes the explicit selection. The first <kbd>d</kbd> only starts a one-second prefix; <kbd>Esc / Ctrl-[</kbd> cancels it. Restore context brings removed nodes back.</p>
         <p>Outside a picker or pending deletion, <kbd>Esc</kbd> / <kbd>Ctrl-[</kbd> clear selection and return to Normal.</p>
         <p><kbd>/</kbd> opens the node picker. <kbd>Ctrl-n / Ctrl-p</kbd> or arrows browse suggestions; <kbd>Enter</kbd> or a click sets the caret. <kbd>Esc / Ctrl-[</kbd> cancels the picker. Search never changes highlights.</p>
-        <p>Vimium: exclude <code>abcdghjklnoprstyzASDHJKLNOY.;/?&gt;+-=</code> on this site and add custom mapping <code>map , passNextKey</code>. Keep comma and f out of exclusions: bare <kbd>f</kbd> stays with Vimium, <kbd>,f</kbd> reaches graph hints. Also add <code>unmap &lt;c-e&gt;</code> and <code>unmap &lt;c-y&gt;</code> so camera scrolling reaches Studio.</p>
-        <p><kbd>Ctrl-w</kbd> moves focus between panes, as in Neovim. <kbd>Ctrl-w h/j/k/l</kbd> follow the panes' real positions, so docking the side panel changes where they lead. <kbd>Ctrl-w w</kbd> cycles and <kbd>Ctrl-w t/q/g/e/b</kbd> jump straight to the tool window, query editor, graph, Explorer or tabbed panel. A motion past the last pane moves to the next window on screen; <kbd>Ctrl-w H</kbd> and <kbd>Ctrl-w L</kbd> go straight to the leftmost or rightmost window. <kbd>Ctrl-w p</kbd> goes back to wherever focus was last, whether that was another pane here or another window. Focusing another pane hands the keyboard to it: <kbd>h j k l</kbd> then scroll that pane instead of moving the caret, which is what makes its controls reachable with <kbd>f</kbd>.</p>
+        <p><kbd>Space Enter</kbd> shows the caret's exact type in Schema, or matching loaded instances in Query. Dotted corners mark additional matches; selection stays unchanged. <kbd>Esc</kbd> clears the markers.</p>
+        <p>Disable Vimium completely for this Studio origin (an exclusion rule with an empty key list). Studio supplies both <kbd>f</kbd> control hints and <kbd>,f</kbd> graph hints.</p>
+
+        <p><kbd>Ctrl-w</kbd> moves focus between panes, as in Neovim. <kbd>Ctrl-w h/j/k/l</kbd> follow the panes' real positions, so docking the side panel changes where they lead. <kbd>Ctrl-w w</kbd> cycles and <kbd>Ctrl-w t/q/g/e/b</kbd> jump straight to the tool window, query editor, graph, Explorer or tabbed panel. A motion past the last pane moves to the next window on screen; <kbd>Ctrl-w H</kbd> and <kbd>Ctrl-w L</kbd> go straight to the leftmost or rightmost window. <kbd>Ctrl-w p</kbd> goes back to wherever focus was last, whether that was another pane here or another window. <kbd>Ctrl-e/y</kbd> scroll the focused panel; <kbd>gg/G</kbd> go to its top/bottom. <kbd>h j k l</kbd> still move the graph caret. <kbd>Ctrl-f/d</kbd> cycle Explorer, Snaps, Elements, Themes and Customise.</p>
         <p aria-live="polite">Last shortcut: {{ lastShortcut }}@if (paneFocus.lastAction) { <span> · Last pane motion: {{ paneFocus.lastAction }}</span> }</p>
       </div>
     }
@@ -224,5 +228,19 @@
       }
       <button (click)="snapFile.click()">Import snap file…</button>
     </details>
+  </section>
+</ng-template>
+
+<ng-template #source>
+  <section class="panel-section graph-source" aria-label="Query source">
+    @if (sourceTitle) { <h6>{{ sourceTitle }}</h6> }
+    @if (sourceLocation; as origin) {
+      <button class="highlight-action-button" (click)="jumpToSource()" [disabled]="!origin.server">Open in Neovim · Space o</button>
+      <p>{{ origin.path }}:{{ origin.line }}</p>
+    }
+    @if (sourceComment) { <details open><summary>Comment</summary><pre>{{ sourceComment }}</pre></details> }
+    @if (sourceQuery) { <details open><summary>Submitted query</summary><pre>{{ sourceQuery }}</pre></details> }
+    @else { <p>Send a snippet from Neovim to keep its title, comments and source position here.</p> }
+    @if (run?.query && sourceQuery !== run?.query) { <details><summary>Graph context query</summary><pre>{{ run?.query }}</pre></details> }
   </section>
 </ng-template>
