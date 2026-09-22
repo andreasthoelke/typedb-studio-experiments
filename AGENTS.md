@@ -12,6 +12,12 @@ This is an evolving personal fork; an upstream PR is not an objective. Keep thes
 documents current when behavior or setup changes. The existing user-owned viewer
 job may run inside Neovim; prefer isolated validation servers over restarting it.
 
+Make coherent, reasonably scoped commits as work reaches validated milestones,
+and push periodically to the user's `origin` repository. This is standing user
+authorization; do not ask again for routine commits or non-force pushes. Respect
+the branch's configured upstream (currently local `feat/nvim-studio-query` tracks
+`origin/main`), fetch before pushing, and never overwrite unrelated work.
+
 **Never quit, kill or relaunch Hammerspoon, and never run `hs.reload()`.** It
 launches the user's Alacritty/Neovim windows, and restarting it killed every
 running Neovim — taking down the terminal buffers that agents themselves run in,
@@ -71,6 +77,10 @@ These are common CSS pitfalls. Whenever a CSS issue takes at least a couple of i
 - **ngx-resizable inline `flex-direction: row` on parent**: The same library's `initParent` writes inline `flexDirection = 'row'` on the *parent* element when `ngAfterViewInit` reads an empty computed flex-direction (happens on second-mount timing inside `mat-tab`, when the host isn't fully attached when the directive inits). That inline `row` beats any normal class rule trying to set `column` on that parent — the dock-aware rule must be `!important`.
 - **Material button touch targets cause phantom dialog scrollbars**: `mat-mdc-button` renders a 48px-tall absolutely-positioned `.mat-mdc-button-touch-target` centered on the (here 32px) button, overhanging 8px above and below. Buttons that sit at the bottom of a scroll container (e.g. `mat-dialog-content`, which gets `padding-bottom: 0` in "with-actions" mode) spill that invisible 8px into scrollable overflow — the whole content area then shows a scrollbar even when everything visibly fits. Fix: give the actions row `padding-bottom: ≥8px` (or put buttons in `mat-dialog-actions`, outside the scroller). Diagnose via `clientHeight` vs `scrollHeight` on the scroller.
 - **Shared `styleUrls` leaks `:host` rules**: When several components list the same `.scss` file in `styleUrls`, Angular re-emits the file once per component, each time scoped with that component's encapsulation ID. `:host` rules therefore apply to every sharing component's host, not just the one the SCSS was "for" — so a host meant to be `display: flex; height: 100%; overflow: hidden` silently clobbers the others into the same shape (which broke side-panel tab scrolling — the tab hosts were forced flex/100%/hidden and clipped their own content instead of overflowing the parent scroll container). Either avoid sharing the SCSS file, or split `:host` rules into a dedicated `*.host.scss` that only the intended component imports.
+
+- **Shared tab row width**: Budget for the dock menu, header gaps/padding, and the Elements selection badge as well as all six tab labels. The selection badge uses an absolute position so it does not widen its tab. Unshrinkable tab buttons can overflow by only a few pixels and clip the active label. Keep compact horizontal padding, allow horizontal overflow for unusually narrow panels, and scroll keyboard-selected tabs into view. The workflow browser test logs every tab boundary and verifies the standard 25% side panel.
+
+- **Late Sigma canvas layers on Retina**: `createCanvas()` after Sigma's first resize does not initialise CSS width/height until a later resize. Set both CSS dimensions and device-pixel backing dimensions in the custom layer; otherwise arrows are stretched/displaced and only recover after resizing. Verify at deviceScaleFactor 2 before interacting.
 
 ## General Agent Guidelines
 

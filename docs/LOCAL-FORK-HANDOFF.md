@@ -1,6 +1,6 @@
 # Local Studio fork: maintainer handoff
 
-Updated 2026-09-20. Read this first, then [the workflow guide](local-graph-viewer.md).
+Updated 2026-09-22. Read this first, then [the workflow guide](local-graph-viewer.md).
 This is a personal, evolving graph exploration tool integrated with Neovim.
 An upstream PR is not a goal. Keep working in this repository and reuse Studio's
 existing components where helpful; improve the design as actual use suggests.
@@ -99,6 +99,13 @@ Manual checks when modifying live graph lifecycle:
 
 ## Architecture and ownership
 
+Structured-run IDs in the Neovim helper use explicitly formatted decimal clock
+values plus PID and a per-load sequence. Do not use `tostring(vim.uv.hrtime())`:
+LuaJIT switches to scientific notation at longer uptime, violating the bridge's
+`[\w-]{16,100}` contract. The headless result test covers long/short uptime and
+repeated clock values against an isolated bridge. Reloading the Lua loader alone
+adopts this fix; no server restart is needed.
+
 | Concern | Main code |
 | --- | --- |
 | Neovim job startup and query/outcome delivery | `contrib/nvim/typedb_graph.lua` |
@@ -151,11 +158,11 @@ Project context inferred from a Neovim schema file can be overridden in Snaps.
 - **Connected snaps restore as ordinary editable views.** QueryPageState creates
   a normal run from the saved graph, replaces an unpinned result, preserves pinned
   results, and creates a new query tab when the current tab is pinned. Root styles
-  adopt the saved preset, as for live Studio styling. The source query is inserted
+  retain the current preset; resolved node/edge appearance is reapplied on restore. The source query is inserted
   but never executed. Run `restoredSnap` marks provenance and enables ordinary
   instance/type Explorer controls. Schema uses `VisualiserState.restoreSnapshot`.
 - **Offline previews still use a separate renderer.** The canvas falls back to the
-  child style injector/inline overlay when disconnected, on another database, or
+  inline overlay with the current shared style service when disconnected, on another database, or
   awaiting schema. Explore live promotes the preview after the connection is ready.
   Backspace/Live view closes only previews. Keep `/snap` for standalone imports/tests;
   chips stay on their existing route.
@@ -204,12 +211,9 @@ Project context inferred from a Neovim schema file can be overridden in Snaps.
   frontmost application breaks only the browser half while Neovim keeps working,
   which hides the cause. Check `~/.config/karabiner/karabiner.json` before
   debugging the page.
-- **Vimium runs earlier.** Keep UI f hints with the site's character exclusions
-  `abcdghjklnoprstyzASDGHJKLNOY.;/?>+-=` and custom mappings `map , passNextKey`,
-  `unmap <c-e>` and `unmap <c-y>`. Comma and f must
-  not be excluded. Studio accepts the forwarded f as graph hints. See the workflow
-  guide for setup and custom-chord caveats. Validate in an isolated extension
-  profile; never change the user's active browser settings implicitly.
+- **Vimium runs earlier.** Disable it completely for the Studio origin using an
+  empty-key exclusion. Native `f` hints controls; `,f` hints graph nodes. The
+  isolated extension test verifies that rule without changing other sites.
 - **Labels and attribute nodes are independent.** Loading display attribute values
   for labels must not add graph nodes. Explicit Explorer attribute expansion may.
 - **SCSS host rules must stay isolated.** Several side-panel components share
@@ -560,7 +564,7 @@ fields remain readable; no snap-format change is needed.
 
 `CustomiseTabComponent` persists section collapse booleans through `StorageService`
 in `typeDBStudio.graphCustomiseSections`. Keep these separate from GraphStyleService:
-UI changes in an offline preview must not save its captured preset as global styles.
+UI section expansion must not apply a captured preset. Offline previews now use the current shared styles; explicit theme edits have the same effect as in a live view.
 Caret changes highlight/pin the matching Types row and scroll only `.panel-scroll`.
 The row survives the manual filter/100-row cap. Do not auto-expand Types; the user's
 collapsed state wins, and Reveal style is the explicit expansion action. Preferences
@@ -744,3 +748,116 @@ bridge correctly returned unknown outcome and did not retry. The test declares
 that family before opening browser readers, then exercises additive attribute
 schema changes with readers active. Do not infer that all missing updates are
 fixed by the UI changes, or reproduce this against the user's live database.
+
+
+## Graph workflow refinements (2026-09-21)
+
+Supersedes earlier selective Vimium and two-pane tab instructions above.
+
+- `graph-query-relations.mjs` names only top-level anonymous relation statements;
+  explicit select/reduce and nested scopes are left alone. Both browser graph
+  preparation and `viewer-run.mjs` use it. Successful plain inserts get a separate
+  read of their original patterns, even when the write already returned concept
+  rows. Original execution/result remain unchanged. Never rerun mutations or
+  request context after an unknown commit outcome. Server changes need a user
+  restart of the Neovim-owned bridge; tests use isolated servers.
+- Type arrows (`isa`, `isa!`) use `semantic-arrows.ts` and tested boundary geometry
+  in `graph-arrow.ts`. The extra canvas follows reduced colours/visibility and
+  participates in PNG export. Relation-role arrow settings remain deferred.
+- GraphSidePanel has one five-tab content pane; Ctrl-f/d cycle all five. Ctrl-w e
+  opens Explorer via the shared panel. Do not reintroduce the inner resizable
+  Explorer/styles split. Styling tabs remain open during caret motion.
+- `UIHints` supplies native f hints, including active dialog/menu controls. Hidden,
+  disabled, covered and clipped controls are omitted; tooltip overlays must not
+  restrict the hint scope. `,f` remains graph hints. Escape, scrolling, pointer
+  interaction and resize cancel hints. No global Vimium remappings are needed.
+- Space Enter uses BroadcastChannel, scoped to server addresses and database;
+  it marks exact-type matches in the opposite graph without fetching or selecting.
+  One primary caret plus transient dotted correspondence markers; no multi-caret
+  command semantics. The canvas closes the channel on destruction.
+- New D3 layouts start compact; dense/tight add stronger centering. Redraw
+  preserves density. Snap parsing accepts the new density values.
+- Snaps retain data/view/selection but use current appearance on every restore
+  path, including offline previews and standalone imports. Old appearance metadata
+  is still accepted. Restored node colours/shapes are recalculated explicitly.
+- Local Neovim files `plugin/ftype/vim_lua_md.vim` and `typedb.vim` now share
+  `MarkdownEmphasisMaps(v:true)` for ,b and ,,b. `typedb_syntax.vim` also accepts
+  double-asterisk bold while retaining its old single-asterisk convention. These
+  local configuration files are outside this repo.
+
+Validation includes `node scripts/viewer-workflow.browser.mjs` for theme-neutral
+restoration, arrows/PNG, five-tab cycling, density and two-window correspondence.
+
+
+If the shared tab row clips labels after a font/dock change, run this in the
+browser console (or use the `Panel tab fit` log from the workflow browser test):
+
+```js
+const row = document.querySelector('[aria-label="Graph panels"]');
+console.table([...row.querySelectorAll('[role="tab"]')].map(tab => ({
+  tab: tab.textContent.trim(), width: tab.getBoundingClientRect().width,
+  left: tab.getBoundingClientRect().left, right: tab.getBoundingClientRect().right,
+  rowLeft: row.getBoundingClientRect().left, rowRight: row.getBoundingClientRect().right
+})));
+```
+
+## Local TypeDB startup recovery (2026-09-21)
+
+Studio's helper can be healthy while the database server is stopped. In the
+local `~/.config/nvim/plugin/ftype/typedb.vim`, `StartTypeDBServer()` now checks
+`jobwait(..., 0)` instead of treating the existence of `g:TypeDBTermID` as proof
+that the server is running. An exit callback clears the matching job ID. Startup
+uses `exepath('typedb')`, falling back to `~/.typedb/typedb` for GUI Neovim
+sessions whose PATH omits that directory, and passes an argument list to
+`termopen`. The server stays owned by the existing Neovim session.
+
+Verified against the running local TypeDB CE 3.12.3: HTTP port 8000 responds,
+sign-in and database listing succeed, and repeating the start command detects
+the existing job. No Hammerspoon or Neovim restart was needed.
+
+
+## Rendering, paired themes and provenance (2026-09-22)
+
+- `semantic-arrows.ts` initialises CSS dimensions alongside device-pixel backing
+  dimensions on every draw. Sigma's initial resize precedes installing that layer;
+  waiting for another resize caused Retina displacement and wild layout motion.
+  Role arrows are explicit per-role `none/relation/player`; GraphBuilder always
+  stores links relation → player, even for relation-valued players.
+- `PaneFocusService.origin()` falls back to the visible graph on first entry.
+  Deferred tab focus is revision-guarded so it cannot steal a later pane motion.
+  Ctrl-n/p adapts native/Material dropdown keys and navigates Explorer controls;
+  zc/zo operate the focused Explorer section. Ctrl-o remains graph caret history.
+  Canvas Ctrl-, docks below if necessary and transfers 10% height toward focus,
+  clamped to 15–85%. Empty connected Query pages mount their graph immediately.
+- `graph-theme-pair.ts` supplies the Paper8/Ink9-derived pair and shared-structure
+  merge. `GraphStyleService` persists both palettes, follows effective UI theme,
+  and observes cross-window pair changes. Shared structural edits preserve the
+  opposite palette's colours. Initial migration archives the old current style;
+  saved preset archives remain accessible. Per-type initial dash overrides were
+  removed to let solid instances/dotted type-kind defaults show consistently.
+- `graph-source.ts` defines provenance. Neovim captures it before starting jobs;
+  server run/query events retain it; Query runs and Schema context carry it to
+  the canvas and snaps, including remounts. Source is a sixth shared panel tab.
+  `/api/viewer/source` uses argv and a quoted JSON argument to an existing Neovim
+  socket. Exact header matching precedes line fallback; it never executes query
+  text or forces modified buffers closed. Stale sockets report a useful error.
+  The server process needs restarting to expose this endpoint; do not restart
+  the user's Neovim/Hammerspoon sessions to adopt it.
+- Local `NewBuf-LinkPaths.vim` handles TypeQL `# ─ ` headers before its older
+  three-space heading parser. The same generator serves relative/absolute links.
+- Explorer relation presence now consults the actual graph, not just expansion
+  bookkeeping. Mark retains primary inspection and selection; Inspect uses the
+  normal caret/history path. Hidden relations can be explicitly revealed.
+- `prepareGraphQuery()` chooses expansion seeds from the original projected
+  query, before naming anonymous relations. Generated names must not become
+  automatic seeds: a new terminal neighbour stage could narrow the displayed
+  structure to that synthetic relation and hide the original context.
+
+Validation: `pnpm test:viewer`, `pnpm build:viewer`,
+`node scripts/viewer-workflow.browser.mjs` (Retina sizing, six tabs, first motion,
+Ctrl-, dropdown keys, source tab, palette pairing, role arrows including relation
+players, correspondence and theme-neutral snaps). With `TYPEDB_TEST_CONNECTION`
+set to the existing pts-tour3 connection it also verifies empty Query startup and
+Explorer loaded relations, primary/secondary caret behavior and folds using a
+read-only query. Source tests use an isolated Neovim socket and moved headers;
+no user's session or data is changed for validation.

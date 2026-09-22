@@ -57,6 +57,11 @@ when convenient:
 ```
 
 Set `g:typedb_structured_results = 0` to use the legacy console evaluation path.
+If an older helper reports **TypeDB request rejected before execution** with a
+request ID containing `e+` (for example `1.0102836952708e+14-53874`), reload it with
+`:luafile ~/.config/nvim/plugin/ftype/typedb_graph.lua`, then run the command again.
+This was a clock-formatting bug after longer uptime; the rejected request did not
+execute. The fix requires no Studio, bridge, or Neovim restart.
 See [the result-rendering design](nvim-result-rendering-plan.md) for the HTTP
 contract, supported context patterns, implementation and isolated tests. The
 mirror-only behavior described later applies to `/api/viewer/query`; completed
@@ -309,7 +314,7 @@ different project. Schema and newly opened views use the last project remembered
 for their database. The bridge can also recover the destination from a recent
 Neovim request when the browser has not remembered it yet.
 
-Open the **Snaps** tab beside **Explorer** in the upper side panel. Expand
+Open **Snaps** in the shared side-panel tab row. Expand
 **Project folder…** to select another project: paste an absolute path or `~/…`
 pointing to the project root, its `temp` folder, or a file directly inside
 `temp` (such as `schema_pts-tour3.tql`), then click **Use folder** or press Enter.
@@ -363,10 +368,10 @@ A snap contains:
   path, for reference. Expansions made before this update still survive as graph
   data even when their query text was not recorded.
 
-The upper side panel has **Explorer** and **Snaps** tabs, separate from the
-lower Elements / Themes / Customise tabs. With no node selected, Snaps is active.
-Selecting a graph node activates Explorer; clearing that selection returns to
-Snaps. You can also choose Snaps while a node is selected.
+The side panel has one row: **Explorer / Snaps / Elements / Themes / Customise / Source**.
+It starts on Snaps. While browsing Explorer or Snaps, inspecting a node opens
+Explorer and clearing inspection returns to Snaps. Styling tabs stay open while
+you move the caret. You can choose Snaps while a node is inspected.
 
 The **query route shows snaps matching the current graph**: data snaps for data
 results, schema snaps for schema-context results. The **schema route shows schema
@@ -388,7 +393,8 @@ When connected to the snap's database, opening a chip restores an **editable gra
 run**. Query puts the saved query into the current query tab and replaces its
 unpinned result; a pinned result is retained, and a pinned query tab causes a new
 query tab to be created. The source query is not executed during restoration.
-Saved positions, camera, labels, highlights, and styling provide the starting view.
+Saved positions, camera, labels and highlights provide the starting view, styled
+with the current theme. The captured preset is not applied.
 There is no separate previous-live-view overlay to return to in this mode.
 
 Click a node to use the normal Explorer: **here**, **every '<type>'**, display
@@ -529,7 +535,7 @@ but clicks no longer create or toggle neighborhood groups.
 Mouse and Explorer selection edits only change highlighting. **Enter**, **Focus**, and the lower-right
 target button frame the same effective selection without changing node positions.
 
-**Elements → Isolate & layout** makes the highlighted nodes the actual working
+**R**, or **Elements → Isolate & layout**, makes the highlighted nodes the actual working
 graph. Only edges whose two endpoints remain selected participate in its new force
 layout. Excluded nodes do not repel, attract, or anchor anything. This works in
 Query, Schema, and saved views; the displayed query remains provenance, not a
@@ -715,7 +721,7 @@ two letters for up to 49 nodes, then longer labels for denser views. Hold Shift 
 Option on the **final letter** to add or remove that node. **Backspace** corrects
 a partial label; **Escape** cancels hints without changing highlights. Invalid
 labels, pointer interaction, resizing, camera changes or a new source cancel the
-picker. Without Vimium, bare **f** is also an alias.
+picker. Bare **f** hints UI controls.
 
 Camera following minimally pans the caret into a padded viewport and zooms out
 only if its body will not fit. **zz** centres the caret exactly, preserving zoom
@@ -897,51 +903,23 @@ Chrome remembers each `--app` window's position per URL and prefers that over
 `--window-position` / `--window-size`, so those flags act as first-run defaults.
 Place the two windows once and later launches reuse the placement.
 
-### Keeping Vimium UI hints
+### Native hints and Vimium exclusion
 
-In Vimium's options, add a rule for `http://localhost:1430/*` (use the actual host
-and port) with this **Excluded keys** value:
+Disable Vimium entirely for **`http://localhost:1430/*`** by adding an exclusion
+rule with an **empty Excluded keys field**. Use the actual host/port when running
+elsewhere. This supersedes the selective character exclusions and global
+`map , passNextKey` / `unmap` workaround previously documented here.
 
-```text
-abcdghjklnoprstyzASDGHJKLNOY.;/?>+-=
-```
+Studio now supplies **f** hints for visible, enabled buttons, links, and inputs,
+including controls in open menus and dialogs. Type the displayed label to click
+or focus the control. **Backspace** corrects a label; **Escape / Ctrl-[** cancels.
+Scroll the panel first to reach controls below the fold; scrolling, resizing, or
+pointer interaction cancels stale hints. Editable text fields keep their normal
+keys. **,f** remains the separate graph-node picker.
 
-Then add this **Custom key mapping**:
+The browser regression suite can load Vimium in an isolated profile and verifies
+that its full-site exclusion leaves Studio's shortcuts and native hints working.
 
-```text
-map , passNextKey
-unmap <c-e>
-unmap <c-y>
-unmap <c-d>
-unmap <c-f>
-```
-
-Keep **comma and f out of the exclusion list**. Bare **f** then remains Vimium's
-UI hints, useful for Explorer chips and buttons. Comma tells Vimium to pass the
-next key to Studio, so **,f** opens graph hints. Exclusions alone cannot express
-this sequence: passing comma does not stop Vimium from consuming the following f.
-These custom mappings apply across Vimium-enabled sites.
-
-The exclusion list covers graph commands (including **z** for **zz**), lowercase
-hint letters and Shift motions/labels. It includes **n/o/y/.** and **N/O/Y/>**
-for diagonal navigation and nudging, **b/t** for **zb/zt**, **g/;** for caret history,
-and **p** for **Ctrl-w p**. Without **p** in the list Vimium's own
-`openCopiedUrlInCurrentTab` swallows it and the previous-pane motion silently does
-nothing; if you would rather keep Vimium's **p**, use **Ctrl-w Ctrl-p** instead,
-which Vimium does not bind. Note also that **x** is *not* in the list, so it still
-reaches Vimium's close-tab: do not use it as a throwaway key while testing chords. Ctrl-n/p work in the focused picker input
-without additional Vimium mappings. Vimium maps Ctrl-e/y to page scrolling by
-default; the unmap lines release scrolling and tab navigation to Studio.
-Space, Enter, Escape, Backspace, Ctrl-h/l/y/e/o/[ and Ctrl-Shift directions and
-Option motions pass through in the tested default configuration. If your own
-mappings bind these, unmap those conflicting bindings as well.
-Vimium's exclusion field is a list of characters, not `<c-e>`-style key mappings;
-putting chord notation there will exclude its individual characters instead.
-Browser-reserved shortcuts can still vary by platform.
-
-Validation uses the installed Vimium 2.4.2 in an isolated Chromium profile; no real
-Chrome settings are changed. See [Vimium exclusions](https://github.com/philc/vimium/wiki/Disabling-Vimium)
-and [custom mappings](https://github.com/philc/vimium/wiki/Key-Mappings).
 
 ## Query lifecycle
 
@@ -1139,11 +1117,17 @@ Repeated answer rows for the same relation/player/role are deduplicated. Differe
 relation instances remain separate relation nodes; they are not collapsed into
 parallel person-to-person links.
 
-Arrowheads are deferred. A useful future role setting would choose **toward
-relation / toward player / none**: `motivation:driver` toward the relation,
-`motivation:target` toward the player, and symmetric `tension:pole` without an
-arrow. This needs deliberate per-role semantics and correct placement against
-Studio's custom node shapes.
+**`isa` and `isa!` point from instance to type**, on straight or curved edges.
+Their arrow tips follow the actual node outline and are included in PNG exports,
+including when labels are hidden. There is no arrow preference for these
+unambiguous type assertions.
+
+In **Customise → Graph → Edges → Role types**, each role now has **None /
+Toward relation / Toward player**. None is the default. A useful starting point
+is `motivation:driver` toward the relation and `motivation:target` toward the
+player; symmetric `tension:pole` can remain arrowless. Direction is explicit,
+not inferred from a role's name. Settings are shared by the light/dark palettes,
+export with presets, and render in PNGs. Relation-valued players work too.
 
 
 ## Panel navigation and startup
@@ -1157,18 +1141,66 @@ top and **G** to the bottom. Explorer uses its actual instance/type detail
 scroller, including after a graph caret move replaces the inspected content.
 Graph caret motion remains available from panels.
 
-**Ctrl-f** selects the next tab and **Ctrl-d** the previous tab, wrapping at the
-ends. The focused pane determines the tab group: Explorer/Snaps;
-Elements/Themes/Customise; Log/Table/Graph/Raw; or the query tabs above the result.
-These tab commands also work while editing a query. Dialogs and menus keep their
-keys. A panel with no tab group has nothing to cycle.
+**Explorer / Snaps / Elements / Themes / Customise / Source** share one tab row and one
+content pane in either dock orientation. **Ctrl-f** selects the next tab and
+**Ctrl-d** the previous tab, wrapping through all six. **Ctrl-w e** opens Explorer
+and focuses the shared panel; **Ctrl-w b** focuses its current tab. Caret motion
+keeps Themes/Customise/Elements open so styling a node doesn't hide the controls.
+Node/edge clicks also keep those tabs open; **Ctrl-w e** opens Explorer when needed.
 
-Vimium 2.4's site exclusion field accepts characters, so adding **G** to the
-localhost rule enables the bottom command. Modified chords require the custom
-`unmap` lines above, which apply globally in Vimium. To keep those modified
-Vimium shortcuts everywhere else, an alternative is to disable Vimium entirely
-for `http://localhost:1430/*`, at the cost of its UI hints on Studio. Studio cannot
-intercept a key that the extension consumes before page listeners. Apply your preferred option in Vimium's settings.
+Outside the side panel, the focused pane determines the tab group: Log/Table/Graph/Raw
+or the query tabs. Tab commands also work while editing a query. Dialogs and menus
+keep their keys.
+
+### Correspondence between Schema and Query
+
+**Space Enter** sends the caret's exact type to the other loaded view on the same
+server/database. Query → Schema places the caret on that type. Schema → Query
+marks all visible loaded instances of that exact type, preserving the existing
+primary caret if it is a match, otherwise choosing one. The primary caret has
+solid corners; additional matches have dotted corners. Explicit selection is
+unchanged. No query is executed and no hidden nodes are revealed. **Escape**
+clears the correspondence markers with the ordinary graph reset.
+
+This works across browser tabs/windows at the same Studio origin. It does not
+switch OS focus. Status reports no matching loaded nodes or no answering view.
+Supertype-to-subtype expansion and multiple command-bearing carets remain future
+ideas; the current command target is always the one solid caret.
+
+### Layout spacing
+
+New graphs start **Compact**. The density menu also offers **Dense** and **Tight**,
+plus the former spacing levels **Balanced** and **Spacious**. These presets vary
+centering force while retaining collision avoidance. Redraw keeps the chosen
+spacing; a snap retains its saved density and node positions. Very dense layouts
+can still have crowded labels, so use the menu to suit the graph.
+
+### Snap appearance
+
+Opening a snap restores its data, layout, camera, and selection using the
+**current theme**. A dark capture opened after switching to a light theme stays
+light, including its nodes and edges. Saved appearance metadata remains in the
+file for compatibility, but opening the snap does not apply that preset.
+
+### Anonymous relations in the initial graph
+
+Graph context names top-level anonymous relations in a separate read, so patterns
+such as `composition (...)` and `occurrence-of (...)` return relation nodes along
+with their players. Fetch results remain unchanged in Neovim; the graph read
+removes fetch and returns the source concepts. A successful plain match/insert
+gets a separate read of its original patterns with named relations. The write is
+never replayed. Negative/nested scopes and explicit select/reduce are not widened.
+The graph note distinguishes this current-data context from the executed answer.
+
+### Markdown emphasis in TypeQL comments
+
+The local Neovim configuration shares the existing Markdown emphasis maps with
+`.tql` / `.tqls` buffers: **,b** toggles bold on a word or visual selection,
+and **,,b** removes a surrounding bold span. Comment syntax supports the resulting
+`**bold**` markup while preserving the old single-asterisk convention.
+Use them in comments; formatting an executable identifier changes the query text.
+The maps reuse `utils.markdown_emphasis` without replacing TypeQL navigation maps.
+
 
 ## Caret illustrations and the two graph profiles
 
@@ -1178,10 +1210,86 @@ role. Attribute variables resolve by their type and value. Variables without an
 explicit `isa` can resolve to schema types through the paragraph's role and
 ownership constraints, including inherited plays/owns.
 
-The Query graph starts with the shared answer or labelled read context. A
-subsequent `geo` can add a bounded illustration of a missing relation or player;
-it does not imply that the initial result was incomplete. Schema keeps the full
+The Query graph starts with the shared answer or labelled read context. Anonymous relations explicitly present in top-level source patterns are included
+in the initial graph context. A subsequent `geo` can add a bounded illustration
+of other missing relations or players. Schema keeps the full
 schema as a stable context and highlights a relevant subset. **Isolate & layout**
 uses that subset when a smaller working view is helpful. This remains a pragmatic
 context policy, not an attempt to reconstruct every possible relationship on
 every evaluation.
+
+
+## Paired appearance and instance/type outlines (2026-09-22)
+
+Themes now presents one **Munsell Paper · Light** and one **Ink · Dark** palette,
+based on the exported Munsell Paper 8 and Ink9. The UI's effective light/dark
+mode selects the graph palette automatically. Shapes, sizes, outline patterns,
+thickness, label options and role arrows are shared; node/edge/background colours
+remain separate. Customise saves automatically. Structural edits also reach the
+other open Studio window through storage events. Colour edits affect the active
+palette. Export light and dark saves both as portable presets.
+
+The initial pair uses a muted red entity family, green relation family, ochre
+attribute family and purple role family. Pale Paper and dim Ink type overrides
+were adjusted against their backgrounds for readable outlines. **Solid outlines
+mean instances; dotted outlines mean type nodes.** Shape/colour continue to
+express entity/relation/attribute categories. The per-type dash overrides in the
+original exports were removed from the initial pair because those apply to both
+an instance and its type node, overriding the kind-level distinction. Future
+explicit per-type edits still take precedence. Existing presets remain under
+Archived presets; the previous current style is backed up on first migration.
+
+## Pane refinements
+
+The initial Ctrl-w motion starts from the graph if no element has acquired focus.
+It no longer spends the first chord merely choosing a starting pane. A delayed
+focus after a tab switch cannot override a newer explicit pane motion.
+
+**Ctrl-, expands the focused area by ten percentage points**: graph focus pushes
+the panel down; lower-panel focus expands it upward. At least 15% remains for
+each area. From a right-docked layout this command docks the panel below first.
+**Ctrl-n/p** supplement arrow navigation in Material selects/menus and native
+selects. The Query route exposes its maximised graph and fullscreen toggle once
+connected with a database selected, even before the first run.
+
+In Explorer, relations already present in the graph show **In graph** or
+**Hidden**. **Mark in graph** adds a secondary dotted caret and frames the
+relation while keeping the current Explorer node. **Inspect** moves the primary
+caret and changes Explorer. Hidden entries offer Show & mark / Show & inspect.
+**Ctrl-o** follows the existing graph caret history: marks add no history entries.
+**Ctrl-n/p** move between visible Explorer controls; **zc/zo** close/open the
+section containing the focused control (or the first section when none is focused).
+These actions change the view, not database contents.
+
+## Source provenance
+
+Neovim submissions capture the originating file, line and header text alongside
+the executed query. A header beginning `# ─ ` supplies a small clickable graph
+title, and contiguous following comment lines supply its explanation. The sixth
+panel tab, **Source**, shows the title, expandable comment and submitted query;
+a different generated graph-context query is separately expandable.
+
+**Space s** opens Source; **Space o** asks the originating Neovim session to open
+the file. The jump matches the saved header text first (choosing the nearest
+match to the recorded line), then falls back to that line. It uses the existing
+session without forcing unsaved buffers closed. Window focus remains available
+through Ctrl-w. If that Neovim session has ended, send the snippet again to
+refresh its source link. Snaps retain provenance without executing any source.
+Old snaps can still derive a title/comment from their saved query, but cannot
+invent an absent file location. Fetching/re-running edited source is deferred.
+
+The local code-link generator also recognises `# ─ ` headers, retaining the
+existing `‖/` search suffix and `ˍ` space encoding. It no longer produces an empty
+`‖*` suffix for the tour headers. This fixes the shared generator used by the
+local relative/absolute link maps (currently Space cl/cL in the config).
+
+Frontend changes hot reload. The source endpoint needs the Neovim-owned helper
+restarted with `:TypeDBGraphStop` then `:TypeDBGraphStart`; reload the local Lua
+loader to attach provenance to new submissions:
+
+```vim
+:source ~/.config/nvim/plugin/ftype/typedb_graph.lua
+:source ~/.config/nvim/plugin/utils/NewBuf-LinkPaths.vim
+```
+
+No Hammerspoon change or restart is involved.

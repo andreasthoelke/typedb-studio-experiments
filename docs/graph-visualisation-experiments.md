@@ -7,7 +7,7 @@ Reviewed against `specimens/mechanism/schema.tql` in the pts project, 2026-09-12
 ## What is running now
 
 The repo pins **Sigma 3.0.1**. Sigma draws the graph; the interactive layout is
-**D3 force**. Compact/default/spacious currently vary centering gravity. Switching
+**D3 force**. Compact (the startup default), dense, tight, balanced and spacious vary centering gravity. Switching
 renderer versions does not itself give the force simulation new semantic goals.
 See `src/framework/graph-visualiser/engine/layout.ts` and `package.json`.
 
@@ -137,3 +137,31 @@ Arrow tips also need to meet rectangles/diamonds/ellipses at their actual bounda
 not at Sigma's scalar circle radius. Curvature/arrow-head examples demonstrate
 renderer capability; they do not supply the schema's intended direction.
 [Official arrow-head example](https://github.com/jacomyal/sigma.js/blob/main/packages/storybook/stories/3-additional-packages/edge-curve/arrow-heads.ts).
+
+
+## Unambiguous type arrows and correspondence (2026-09-21)
+
+`isa` / `isa!` now point instance → type. They need no role-semantic preference;
+the role-arrow experiment above remains separate. Space Enter links loaded
+Schema/Query views by exact type, using a single command-bearing caret and dotted
+markers for other matches. Keep explicit selection independent. Multi-selection
+already has its own visual language; do not turn every selected node into a caret.
+
+## Role arrows and paired appearance shipped (2026-09-22)
+
+The per-role control above is now implemented as None / Toward relation / Toward
+player, defaulting to None. It shares the shape-boundary canvas used for type
+arrows, including curved paths and PNG export. Initial Retina CSS sizing is now
+explicit, so arrows no longer depend on a user resize to align.
+
+The initial Paper8/Ink9-derived pair reserves dotted node outlines for type nodes
+and solid outlines for instances. Category shape/colour remains independent of
+that distinction. Structural edits are shared between light and dark; colours
+remain palette-specific. This is a small semantic convention, not a commitment
+to every possible representation of schema/data layers. Named-type pattern
+overrides still deliberately override the category defaults.
+
+Explorer marking uses the existing secondary caret without changing primary
+inspection; Inspect uses the ordinary caret and its history. Source provenance
+is a panel tab and snap field. Refreshing a view from edited source is deferred
+until query execution/commit expectations can be made explicit.
