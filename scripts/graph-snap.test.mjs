@@ -62,3 +62,9 @@ test('invalid parked context is rejected before it can later enter the renderer'
  value.graph.attributes.workingContext.nodes[0].attributes.x=null;
  assert.throws(()=>parseGraphSnap(JSON.stringify(value)));
 });
+
+test('source provenance is retained in snaps and rejects invalid positions',()=>{
+ const value=snap();value.sourceLocation={path:'/tmp/tour.tql',line:10,anchor:'# ─ 6f',title:'6f',comment:'Keep identity',query:'original text'};
+ assert.deepEqual(parseGraphSnap(JSON.stringify(value)).sourceLocation,value.sourceLocation);
+ value.sourceLocation.line=-1;assert.throws(()=>parseGraphSnap(JSON.stringify(value)));
+});

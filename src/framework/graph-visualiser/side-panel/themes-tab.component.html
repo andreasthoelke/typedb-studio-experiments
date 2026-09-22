@@ -5,75 +5,17 @@
     <button class="action-button" (click)="exportPresets()" [disabled]="!customPresets.length">Export saved presets</button>
   </div>
   @if (importMessage) { <p [attr.role]="importError ? 'alert' : 'status'">{{ importMessage }}</p> }
+  <p>Shapes, sizes, dashes and thickness are shared. Colours belong to the active palette. Changes in Customise save automatically.</p>
   <div class="preset-cards">
-    <div class="preset-card" [class.active]="activePreset === 'default'">
-      <div class="preset-info">
-        <span class="preset-name">The Classic</span>
-        <span class="preset-description">A crafted balance of clear and chic</span>
+    @for (mode of ['light', 'dark']; track mode) {
+      <div class="preset-card" [class.active]="styleService.currentPalette === mode">
+        <span class="preset-name">{{ mode === 'light' ? 'Munsell Paper · Light' : 'Ink · Dark' }}</span>
+        <button class="preset-apply" (click)="styleService.choosePalette($any(mode))">{{ styleService.currentPalette === mode ? 'Active' : 'Use' }}</button>
       </div>
-      <div class="preset-actions">
-        <button class="preset-apply" (click)="applyPreset('default')">
-          @if (appliedPreset === 'default') { <i class="fa-light fa-check"></i> } @else { Apply }
-        </button>
-      </div>
-    </div>
-    <div class="preset-card" [class.active]="activePreset === 'cal'">
-      <div class="preset-info">
-        <span class="preset-name">Cal Aesthetics</span>
-        <span class="preset-description">Our CEO has unusual product design views, but it makes him happy</span>
-      </div>
-      <div class="preset-actions">
-        <button class="preset-apply" (click)="applyPreset('cal')">
-          @if (appliedPreset === 'cal') { <i class="fa-light fa-check"></i> } @else { Apply }
-        </button>
-      </div>
-    </div>
-    <div class="preset-card" [class.active]="activePreset === 'uniform'">
-      <div class="preset-info">
-        <span class="preset-name">Fair and Square</span>
-        <span class="preset-description">Rectangles everywhere, colors do the talking</span>
-      </div>
-      <div class="preset-actions">
-        <button class="preset-apply" (click)="applyPreset('uniform')">
-          @if (appliedPreset === 'uniform') { <i class="fa-light fa-check"></i> } @else { Apply }
-        </button>
-      </div>
-    </div>
-    <div class="preset-card" [class.active]="activePreset === 'classic'">
-      <div class="preset-info">
-        <span class="preset-name">To Boldly Go</span>
-        <span class="preset-description">Bold, solid colors all the way through</span>
-      </div>
-      <div class="preset-actions">
-        <button class="preset-apply" (click)="applyPreset('classic')">
-          @if (appliedPreset === 'classic') { <i class="fa-light fa-check"></i> } @else { Apply }
-        </button>
-      </div>
-    </div>
-    <div class="preset-card" [class.active]="activePreset === 'grayscale'">
-      <div class="preset-info">
-        <span class="preset-name">Fifty Shades of Data</span>
-        <span class="preset-description">Who needs color when you've got elegance?</span>
-      </div>
-      <div class="preset-actions">
-        <button class="preset-apply" (click)="applyPreset('grayscale')">
-          @if (appliedPreset === 'grayscale') { <i class="fa-light fa-check"></i> } @else { Apply }
-        </button>
-      </div>
-    </div>
-    <div class="preset-card" [class.active]="activePreset === 'structure'">
-      <div class="preset-info">
-        <span class="preset-name">Size over Substance</span>
-        <span class="preset-description">View the shape of your data, distraction-free</span>
-      </div>
-      <div class="preset-actions">
-        <button class="preset-apply" (click)="applyPreset('structure')">
-          @if (appliedPreset === 'structure') { <i class="fa-light fa-check"></i> } @else { Apply }
-        </button>
-      </div>
-    </div>
+    }
   </div>
-
+  <button class="action-button" (click)="exportPair()">Export light and dark</button>
+  <details><summary>Archived presets</summary>
   @if (customPresets.length > 0) {
     <div class="custom-presets-header">
       <span class="highlight-group-label">Saved presets</span>
@@ -123,6 +65,7 @@
     </div>
   }
 
+  </details>
   <div class="save-preset-area">
     @if (savingPreset) {
       <div class="save-preset-inputs">

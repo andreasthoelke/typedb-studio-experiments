@@ -1,3 +1,4 @@
+import type { GraphSource } from "../framework/util/graph-source";
 /*
  * This Source Code Form is subject to the terms of the Mozilla Public
  * License, v. 2.0. If a copy of the MPL was not distributed with this
@@ -47,6 +48,7 @@ export interface RunOutputState {
     id: string;
     label: string;
     query: string;
+    sourceLocation?: GraphSource;
     snapshotContext?: GraphSnapshotContext;
     restoredSnap?: GraphSnap;
     expansionQueries?: string[];
@@ -427,7 +429,7 @@ export class QueryPageState {
         this.runQuery(currentTab.query);
     }
 
-    runQuery(query: string, externalRead?: { limit: number; schemaMode?: boolean; projectTempDirectory?: string; response?: ApiResponse<QueryResponse> }): Observable<RunResult> {
+    runQuery(query: string, externalRead?: { sourceLocation?: GraphSource; limit: number; schemaMode?: boolean; projectTempDirectory?: string; response?: ApiResponse<QueryResponse> }): Observable<RunResult> {
         if (externalRead && splitTypeQLQueries(query).length > 1) {
             throw new Error("Editor graph requests must contain one query.");
         }
@@ -462,6 +464,7 @@ export class QueryPageState {
         newRun.graph.independentRead = !!externalRead;
         newRun.graph.schemaMode = externalRead?.schemaMode ?? (!!oldRun?.graph.schemaMode && oldRun.graph.query === query);
         newRun.graph.database = this.driver.requireDatabase().name;
+        newRun.sourceLocation = externalRead?.sourceLocation;
         newRun.snapshotContext = externalRead?.projectTempDirectory
             ? this.snapshots.remember(newRun.graph.database, externalRead.projectTempDirectory)
             : !externalRead && oldRun?.snapshotContext?.database === newRun.graph.database ? oldRun.snapshotContext
@@ -511,10 +514,10 @@ export class QueryPageState {
         if (replace >= 0) old!.graph.destroy();
         const run = createRunOutputState(`Snap ${++output.runCounter}`, snap.query, this.graphStyleService);
         run.restoredSnap = snap;
+        run.sourceLocation = snap.sourceLocation;
         run.expansionQueries = [...snap.expansionQueries];
         run.snapshotContext = snap.project ?? this.snapshots.forDatabase(snap.database);
         if (snap.project) this.snapshots.remember(snap.database, snap.project.projectTempDirectory);
-        this.graphStyleService.applyCapturedPreset(snap.style);
         run.graph.restoreSnapshot(snap);
         run.graph.onGraphUpdated = () => { void this.graphLabels.load(run.graph); };
         if (replace >= 0) output.runs.splice(replace, 1, run);

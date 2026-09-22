@@ -371,10 +371,11 @@ export class CustomiseTabComponent implements OnChanges, OnDestroy, DoCheck, Aft
     }
 
     hasEdgeLabelOverride(tag: string): boolean {
-        return !!this.styleService.edgeLabelColors[tag] || this.styleService.hasEdgeLineStyle(tag) || this.styleService.hasEdgeLineThickness(tag);
+        return this.styleService.getRoleArrow(tag) !== "none" || !!this.styleService.edgeLabelColors[tag] || this.styleService.hasEdgeLineStyle(tag) || this.styleService.hasEdgeLineThickness(tag);
     }
 
     clearEdgeLabelOverride(tag: string): void {
+        this.styleService.setRoleArrow(tag, "none");
         this.styleService.removeEdgeLabelColor(tag);
         this.styleService.setEdgeLineStyle(null, tag);
         this.styleService.setEdgeLineThickness(null, tag);

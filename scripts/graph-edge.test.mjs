@@ -84,3 +84,30 @@ test('named role lookup uses the returned declaring scope and preserves the quer
     assert.equal(graph.size, 1, 'canonical edge key already allocated by the builder');
     assert.deepEqual(unresolvedRolePairs(graph), []);
 });
+
+import { graphArrow, insideArrowNode } from '../src/framework/util/graph-arrow.ts';
+import { conceptType, correspondsToType } from '../src/framework/util/graph-correspondence.ts';
+test('type arrows follow straight and curved paths to each node shape, avoiding overlap', () => {
+    const source = { x: 0, y: 0, width: 20, height: 15, type: 'ellipse' };
+    for (const type of ['ellipse', 'rounded-rect', 'diamond', 'hexagon']) {
+        const target = { x: 200, y: 50, width: 40, height: 25, type };
+        for (const curve of [0, .25, -.5]) {
+            const arrow = graphArrow(source, target, curve);
+            assert.equal(arrow?.length, 3);
+            assert.ok(arrow.every(p => Number.isFinite(p.x) && Number.isFinite(p.y)));
+            assert.equal(insideArrowNode(arrow[0], target), false);
+            const base = {x:(arrow[1].x+arrow[2].x)/2,y:(arrow[1].y+arrow[2].y)/2};
+            assert.ok(Math.hypot(arrow[0].x-target.x,arrow[0].y-target.y) < Math.hypot(base.x-target.x,base.y-target.y));
+        }
+    }
+    assert.equal(graphArrow(source, source, 0), null);
+});
+test('correspondence uses exact concept types, never display labels or instance identity', () => {
+    const instance = { kind:'entity', type:{label:'goal'}, label:'The Goal' };
+    assert.equal(conceptType(instance), 'goal');
+    assert.equal(correspondsToType(instance, 'goal', false), true);
+    assert.equal(correspondsToType(instance, 'goal', true), false);
+    assert.equal(correspondsToType({kind:'entityType',label:'goal'}, 'goal', true), true);
+    assert.equal(correspondsToType(instance, 'mental-state', false), false);
+    assert.equal(conceptType({kind:'value'}), null);
+});

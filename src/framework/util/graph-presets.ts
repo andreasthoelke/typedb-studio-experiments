@@ -67,6 +67,7 @@ function preset(value: unknown): CustomPreset {
         colorEdgesByConstraint: boolean(p["colorEdgesByConstraint"]), labelsVisible: boolean(p["labelsVisible"]),
         showHoverLabel: boolean(p["showHoverLabel"]), degreeScaling: boolean(p["degreeScaling"]),
     };
+    if (p["roleArrows"] !== undefined) result.roleArrows = map(p["roleArrows"], value => choice(value, ["none", "relation", "player"] as const));
     if (p["edgeLineThicknesses"] !== undefined) result.edgeLineThicknesses = map(p["edgeLineThicknesses"], value => number(value, 0.25, 8));
     if (p["defaultEdgeLineThickness"] !== undefined) result.defaultEdgeLineThickness = number(p["defaultEdgeLineThickness"], 0.25, 8);
     if (p["edgeLineStyles"] !== undefined) result.edgeLineStyles = map(p["edgeLineStyles"], value => choice(value, lineStyles));

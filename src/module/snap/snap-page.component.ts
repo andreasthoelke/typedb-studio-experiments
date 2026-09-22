@@ -16,7 +16,6 @@ import { QueryTabsState } from "../../service/query-tabs-state.service";
 @Component({
     selector: "ts-snap-page",
     imports: [GraphCanvasComponent],
-    providers: [GraphStyleService],
     template: `
       <div class="snap-header">
         <span>{{ snap ? 'Saved view · ' + (snap.database || 'graph') + ' · ' + snap.createdAt : 'Open the Snaps tab to restore a saved graph view' }}</span>
@@ -65,7 +64,6 @@ export class SnapPageComponent implements AfterViewInit, OnDestroy {
     private restore(snap: GraphSnap, container = this.canvas.canvasElRef?.nativeElement): void {
         if (!container) return;
         this.visualiser?.destroy();
-        this.styles.applyCapturedPreset(snap.style);
         const graph = newGraph();
         graph.import(snap.graph);
         const sigma = createSigmaRenderer(container, defaultSigmaSettings as any, graph);

@@ -93,6 +93,7 @@
         <h6>Kinds</h6>
       </button>
       @if (!kindsCollapsed) {
+        <p class="highlight-overflow-hint">Kinds distinguish entity, relation and attribute instances from their type nodes. The paired themes use solid instances and dotted types.</p>
         @for (row of displayKinds; track row.kind) {
           <div class="style-row">
             <div class="type-label-row">
@@ -168,6 +169,7 @@
         <h6>Types</h6>
       </button>
       @if (!typesCollapsed) {
+        <p class="highlight-overflow-hint">A named type override applies to both its instances and its type node. Inherit the dash pattern to keep the instance/type distinction.</p>
         @if (discoveredTypes.length === 0) {
           <p class="empty-message">No types found. Run a query first to discover types.</p>
         }
@@ -347,6 +349,12 @@
             @if (roleFilter) { <button class="highlight-filter-clear" (click)="roleFilter = ''" aria-label="Clear role filter"><i class="fa-light fa-xmark"></i></button> }
           </div>
           @for (row of displayedRoleStyles; track row.tag) {
+            <label class="style-row">{{ row.displayLabel }} arrow
+              <select [attr.aria-label]="'Arrow for ' + row.tag" [value]="styleService.getRoleArrow(row.tag)"
+                      (change)="styleService.setRoleArrow(row.tag, $any($event.target).value)">
+                <option value="none">None</option><option value="relation">Toward relation</option><option value="player">Toward player</option>
+              </select>
+            </label>
             <ng-container *ngTemplateOutlet="edgeStyleRow; context: { $implicit: row }"></ng-container>
           }
           @if (roleOverflow > 0) { <p class="highlight-overflow-hint">+{{ roleOverflow }} more, refine the filter to narrow</p> }

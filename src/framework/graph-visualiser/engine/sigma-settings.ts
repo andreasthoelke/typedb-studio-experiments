@@ -1,3 +1,4 @@
+import { installSemanticArrows } from "./semantic-arrows";
 import { withEdgeDashes } from "./dashed-edge-program";
 import { createEdgeCurveProgram } from "@sigma/edge-curve";
 import Sigma from "sigma";
@@ -108,6 +109,7 @@ export const defaultSigmaSettings: Partial<SigmaSettings> = {
 
 export function createSigmaRenderer(containerEl: HTMLElement, sigmaSettings: SigmaSettings, graph: MultiGraph): Sigma {
     const renderer = new Sigma(graph, containerEl, sigmaSettings);
+    installSemanticArrows(renderer);
 
     // Defensive heal: sigma occasionally ends up with graphology nodes/edges
     // that have no entry in its internal data caches. When that happens the
@@ -230,14 +232,15 @@ export function createSigmaRenderer(containerEl: HTMLElement, sigmaSettings: Sig
             const size = (this as any).scaleSize(data.size);
             const nodeProgram = (this as any).nodePrograms[data.type];
             const drawHover = nodeProgram?.drawHover || (this as any).settings.defaultDrawNodeHover;
-            if (node === hoveredNode || !data.keyboardCaret) drawHover(context, { key: node, ...data, size, x, y }, (this as any).settings);
-            if (data.keyboardCaret) {
+            if (node === hoveredNode || (!data.keyboardCaret && !data.correspondenceMarker)) drawHover(context, { key: node, ...data, size, x, y }, (this as any).settings);
+            if (data.keyboardCaret || data.correspondenceMarker) {
                 // Four corners distinguish the caret from selected nodes, for
                 // all node shapes, at a constant screen-space stroke width.
                 const scale = size / Math.max(data.width ?? data.size, data.height ?? data.size, 1);
                 const rx = (data.width ?? data.size) * scale + 6, ry = (data.height ?? data.size) * scale + 6;
                 const arm = Math.min(10, rx, ry);
                 context.save(); context.strokeStyle = data.keyboardCaretColor; context.lineWidth = 2;
+                if (!data.keyboardCaret) { context.setLineDash([2, 3]); context.globalAlpha = 0.75; }
                 context.beginPath();
                 for (const sx of [-1, 1]) for (const sy of [-1, 1]) {
                     context.moveTo(x + sx * (rx - arm), y + sy * ry);

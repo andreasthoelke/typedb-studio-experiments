@@ -58,3 +58,23 @@ test('dash styles round-trip at kind, type, default-edge and per-edge scopes', (
   assert.throws(()=>parseGraphPresets(JSON.stringify(invalid)));
  }
 });
+
+// Structural edits cross palette boundaries; colours do not.
+const { shareThemeStructure, initialThemePair } = await import('../src/framework/util/graph-theme-pair.ts');
+test('paired themes share geometry, semantic outlines and role arrows while retaining colours', () => {
+    const light = structuredClone(initialThemePair.light), dark = structuredClone(initialThemePair.dark);
+    light.kindStyles.entity.width = 123;
+    light.typeStyles.goal.lineThickness = 2;
+    light.roleArrows = { 'motivation:driver': 'relation', 'motivation:target': 'player' };
+    const paired = shareThemeStructure(light, dark);
+    assert.equal(paired.kindStyles.entity.width, 123);
+    assert.equal(paired.kindStyles.entity.color, dark.kindStyles.entity.color);
+    assert.equal(paired.typeStyles.goal.lineThickness, 2);
+    assert.equal(paired.typeStyles.goal.color, dark.typeStyles.goal.color);
+    assert.deepEqual(paired.roleArrows, light.roleArrows);
+    assert.equal(paired.background.color1, dark.background.color1);
+    assert.equal(paired.kindStyles.entity.lineStyle, 'solid');
+    assert.equal(paired.kindStyles.entityType.lineStyle, 'dotted');
+    assert.equal(paired.typeStyles.goal.lineStyle, undefined);
+    assert.deepEqual(parseGraphPresets(exportGraphPresets([paired]))[0], paired);
+});

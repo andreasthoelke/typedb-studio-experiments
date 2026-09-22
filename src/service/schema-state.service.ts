@@ -470,7 +470,6 @@ export class VisualiserState {
         if (!container) throw new Error("Wait for the schema canvas to be ready.");
         this.destroy();
         this.dropSavedState();
-        this.styleService.applyCapturedPreset(snap.style);
         const graph = newGraph();
         graph.import(structuredClone(snap.graph));
         const sigma = createSigmaRenderer(container, defaultSigmaSettings as any, graph);

@@ -29,6 +29,12 @@ export class ThemesTabComponent {
         } finally { input.value = ""; }
     }
 
+    exportPair(): void {
+        const url = URL.createObjectURL(new Blob([this.styleService.exportThemePair()], { type: "application/json" }));
+        const a = document.createElement("a"); a.href = url; a.download = "studio-light-dark.json"; a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+
     exportPresets(name?: string): void {
         const url = URL.createObjectURL(new Blob([this.styleService.exportPresets(name)], { type: "application/json" }));
         const link = document.createElement("a");

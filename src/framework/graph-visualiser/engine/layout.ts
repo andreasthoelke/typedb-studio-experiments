@@ -117,7 +117,7 @@ export class Layouts {
 
 
 /** Node-spacing density presets for the force layout's centering gravity. */
-export type LayoutDensity = "spacious" | "default" | "compact";
+export type LayoutDensity = "spacious" | "default" | "compact" | "dense" | "tight";
 
 /** Persistent gravity multiplier per density mode. "default" is 1.5× the base
  *  gravity; "compact" is 4× the base and "spacious" is the default / 3. */
@@ -160,6 +160,8 @@ export const DENSITY_GRAVITY: Record<LayoutDensity, number> = {
     spacious: DEFAULT_GRAVITY_MULTIPLIER / 3,
     default: DEFAULT_GRAVITY_MULTIPLIER,
     compact: 4,
+    dense: 8,
+    tight: 16,
 };
 
 export interface LayoutStartOptions {
@@ -317,13 +319,11 @@ class D3ForceSupervisorWrapper implements LayoutWrapper {
     private dragActive = false;
     /**
      * Persistent gravity scaling for this simulation, set by the density
-     * presets (spacious / default / compact). Stays in effect for every
-     * subsequent run until `forgetSettled` resets it to the default (Redraw /
-     * Reset changes).
+     * presets. Stays in effect across subsequent runs, including Redraw.
      */
-    private gravityMultiplier = DEFAULT_GRAVITY_MULTIPLIER;
+    private gravityMultiplier = DENSITY_GRAVITY.compact;
     /** Current spacing preset; mirrors `gravityMultiplier` for the UI. */
-    density: LayoutDensity = "default";
+    density: LayoutDensity = "compact";
 
     constructor(graph: MultiGraph) {
         this.graph = graph;
@@ -363,9 +363,7 @@ class D3ForceSupervisorWrapper implements LayoutWrapper {
         // A fresh layout (Redraw / Reset changes) releases user pins too, so the
         // whole graph re-lays-out freely.
         this.pinned.clear();
-        // A fresh layout (Redraw / Reset changes) starts from default gravity.
-        this.gravityMultiplier = DEFAULT_GRAVITY_MULTIPLIER;
-        this.density = "default";
+        // Redraw releases pins, but preserves the chosen spacing.
     }
 
     private buildSimulation(opts?: LayoutStartOptions): ReturnType<typeof forceSimulation<D3Node>> {

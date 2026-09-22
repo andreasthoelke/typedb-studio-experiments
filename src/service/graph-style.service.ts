@@ -1,3 +1,4 @@
+import { initialThemePair, shareThemeStructure } from "../framework/util/graph-theme-pair";
 import { inheritedEdgeStyle } from "../framework/util/graph-edge";
 import type { LineStyle } from "../framework/util/line-style";
 import { Injectable, OnDestroy } from "@angular/core";
@@ -84,6 +85,7 @@ export interface CustomPreset {
     kindStyles: Record<string, PartialNodeStyle>;
     typeStyles: Record<string, PartialNodeStyle>;
     edgeLabelColors: Record<string, string>;
+    roleArrows?: Record<string, "none" | "relation" | "player">;
     edgeLineStyles?: Record<string, LineStyle>;
     defaultEdgeLineStyle?: LineStyle;
     edgeLineThicknesses?: Record<string, number>;
@@ -141,6 +143,12 @@ export class GraphStyleService implements OnDestroy {
     private _kindStyles: Record<string, PartialNodeStyle> = {};
     private _typeStyles: Record<string, PartialNodeStyle> = {};
     private _edgeLabelColors: Record<string, string> = {};
+    private _roleArrows: Record<string, "none" | "relation" | "player"> = {};
+    getRoleArrow(role: string): "none" | "relation" | "player" { return this._roleArrows[role] ?? "none"; }
+    setRoleArrow(role: string, direction: "none" | "relation" | "player"): void {
+        if (direction === "none") delete this._roleArrows[role]; else this._roleArrows[role] = direction;
+        this.save(); this.styles$.next();
+    }
     private _edgeLineStyles: Record<string, LineStyle> = {};
     private _defaultEdgeLineStyle: LineStyle = "solid";
     private _edgeLineThicknesses: Record<string, number> = {};
@@ -173,21 +181,54 @@ export class GraphStyleService implements OnDestroy {
 
     readonly styles$ = new BehaviorSubject<void>(undefined);
     private themeSubscription: Subscription;
+    private onPairStorage = (event: StorageEvent): void => {
+        if (event.key !== "typedb-studio-theme-pair-v1" || !event.newValue) return;
+        try {
+            const pair = JSON.parse(event.newValue);
+            this.themePair = { light: parseGraphPresets(JSON.stringify(pair.light))[0], dark: parseGraphPresets(JSON.stringify(pair.dark))[0] };
+            this.applyCapturedPreset(this.themePair[this.paletteMode]);
+        } catch { /* Ignore invalid external storage. */ }
+    };
+    private themePair!: Record<"light" | "dark", CustomPreset>;
+    private paletteMode: "light" | "dark" = "dark";
+    get currentPalette(): "light" | "dark" { return this.paletteMode; }
+    choosePalette(mode: "light" | "dark"): void { this.themeService.setPreference(mode); }
+    exportThemePair(): string { return exportGraphPresets([this.themePair.light, this.themePair.dark]); }
+    private saveThemePair(): void {
+        if (!this.themePair) return;
+        const other = this.paletteMode === "light" ? "dark" : "light";
+        this.themePair[this.paletteMode] = this.capturePreset(this.themePair[this.paletteMode].name);
+        this.themePair[other] = shareThemeStructure(this.themePair[this.paletteMode], this.themePair[other]);
+        localStorage.setItem("typedb-studio-theme-pair-v1", JSON.stringify(this.themePair));
+    }
 
     constructor(private themeService: ThemeService) {
         this.load();
         this.loadCustomPresets();
-        this.themeSubscription = this.themeService.effectiveTheme$.subscribe(() => {
-            // Re-emit so the JS-derived colours (node fills, label contrast) are
-            // recomputed for the new theme — needed for any theme-adaptive
-            // background, not just the plain "default" one.
-            if (this._background.type === "default" || this._background.themed) {
-                this.styles$.next();
+        this.paletteMode = this.themeService.effectiveTheme$.value;
+        try {
+            const saved = JSON.parse(localStorage.getItem("typedb-studio-theme-pair-v1") ?? "null");
+            if (saved) this.themePair = { light: parseGraphPresets(JSON.stringify(saved.light))[0], dark: parseGraphPresets(JSON.stringify(saved.dark))[0] };
+        } catch { /* Fall back to the supplied pair without deleting old presets. */ }
+        if (!this.themePair) {
+            if (localStorage.getItem(STORAGE_KEY)) this.saveCustomPreset("Before paired themes " + new Date().toISOString(), "Preserved before light/dark pairing");
+            this.themePair = structuredClone(initialThemePair);
+            this.themePair.dark = shareThemeStructure(this.themePair.light, this.themePair.dark);
+        }
+        this.applyCapturedPreset(this.themePair[this.paletteMode]);
+        this.saveThemePair();
+        window.addEventListener("storage", this.onPairStorage);
+        this.themeSubscription = this.themeService.effectiveTheme$.subscribe(mode => {
+            if (mode !== this.paletteMode) {
+                this.saveThemePair(); this.paletteMode = mode;
+                this.applyCapturedPreset(this.themePair[mode]);
             }
+            this.styles$.next();
         });
     }
 
     ngOnDestroy() {
+        window.removeEventListener("storage", this.onPairStorage);
         this.themeSubscription.unsubscribe();
     }
 
@@ -754,6 +795,7 @@ export class GraphStyleService implements OnDestroy {
     }
 
     resetToDefaults(): void {
+        this._roleArrows = {};
         this._kindStyles = {};
         this._typeStyles = {};
         this._edgeLabelColors = {};
@@ -805,6 +847,7 @@ export class GraphStyleService implements OnDestroy {
             kindStyles: structuredClone(this._kindStyles),
             typeStyles: structuredClone(this._typeStyles),
             edgeLabelColors: { ...this._edgeLabelColors },
+            roleArrows: { ...this._roleArrows },
             edgeLineStyles: { ...this._edgeLineStyles },
             defaultEdgeLineStyle: this._defaultEdgeLineStyle,
             edgeLineThicknesses: { ...this._edgeLineThicknesses },
@@ -843,6 +886,7 @@ export class GraphStyleService implements OnDestroy {
         this._kindStyles = structuredClone(preset.kindStyles);
         this._typeStyles = structuredClone(preset.typeStyles);
         this._edgeLabelColors = { ...preset.edgeLabelColors };
+        this._roleArrows = { ...preset.roleArrows };
         this._edgeLineStyles = { ...preset.edgeLineStyles };
         this._defaultEdgeLineStyle = preset.defaultEdgeLineStyle ?? "solid";
         this._edgeLineThicknesses = { ...preset.edgeLineThicknesses };
@@ -906,10 +950,12 @@ export class GraphStyleService implements OnDestroy {
 
     private save(): void {
         try {
+            this.saveThemePair();
             const data = {
                 kindStyles: this._kindStyles,
                 typeStyles: this._typeStyles,
                 edgeLabelColors: this._edgeLabelColors,
+                roleArrows: this._roleArrows,
                 edgeLineStyles: this._edgeLineStyles,
                 defaultEdgeLineStyle: this._defaultEdgeLineStyle,
                 edgeLineThicknesses: { ...this._edgeLineThicknesses },
@@ -941,6 +987,7 @@ export class GraphStyleService implements OnDestroy {
                 this._kindStyles = migrateStyles(data.kindStyles ?? {});
                 this._typeStyles = migrateStyles(data.typeStyles ?? {});
                 this._edgeLabelColors = data.edgeLabelColors ?? {};
+                this._roleArrows = data.roleArrows ?? {};
                 this._edgeLineStyles = data.edgeLineStyles ?? {};
                 this._defaultEdgeLineStyle = data.defaultEdgeLineStyle ?? "solid";
                 this._edgeLineThicknesses = data.edgeLineThicknesses ?? {};

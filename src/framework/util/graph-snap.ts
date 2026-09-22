@@ -1,3 +1,4 @@
+import type { GraphSource } from "./graph-source";
 import type { Graph } from "../graph-visualiser/engine/graph";
 import type { CustomPreset } from "../../service/graph-style.service";
 import type { GraphSnapshotContext } from "../../service/graph-snapshot.service";
@@ -8,6 +9,7 @@ export interface GraphSnap {
     version: 1;
     createdAt: string;
     query: string;
+    sourceLocation?: GraphSource;
     expansionQueries: string[];
     database?: string;
     project?: GraphSnapshotContext;
@@ -20,7 +22,7 @@ export interface GraphSnap {
         viewport: { width: number; height: number };
         finderText?: string;
         typeFilter?: string;
-        layoutDensity?: "spacious" | "default" | "compact";
+        layoutDensity?: "spacious" | "default" | "compact" | "dense" | "tight";
         searchTerm: string;
         finderMatches: string[] | null;
         selectedNode: string | null;
@@ -46,6 +48,11 @@ export function parseGraphSnap(text: string): GraphSnap {
         || typeof snap.createdAt !== "string" || typeof snap.schemaMode !== "boolean" || !strings(snap.expansionQueries)
         || !Array.isArray(snap.graph?.nodes) || !snap.graph.nodes.length || snap.graph.nodes.length > 100000
         || !Array.isArray(snap.graph.edges) || snap.graph.edges.length > 500000) fail();
+    if (snap.sourceLocation) {
+        const s = snap.sourceLocation;
+        if (![s.path, s.anchor, s.title, s.comment, s.query].every(v => typeof v === "string")
+            || !Number.isInteger(s.line) || s.line < 1 || (s.server !== undefined && typeof s.server !== "string")) fail();
+    }
     const color = (v: unknown) => typeof v === "string" && /^#[0-9a-f]{6}([0-9a-f]{2})?$/i.test(v);
     const keys = new Set<string>();
     for (const node of snap.graph.nodes) {
@@ -70,7 +77,7 @@ export function parseGraphSnap(text: string): GraphSnap {
         || (v.selectedNode !== null && !keys.has(v.selectedNode)) || !strings(v.selectedNeighbors)
         || !strings(v.highlightedEdges) || !strings(v.highlightedKinds) || !strings(v.highlightedTypes)) fail();
     if ((v.finderText !== undefined && typeof v.finderText !== "string") || (v.typeFilter !== undefined && typeof v.typeFilter !== "string")) fail();
-    if (v.layoutDensity !== undefined && !["spacious", "default", "compact"].includes(v.layoutDensity)) fail();
+    if (v.layoutDensity !== undefined && !["spacious", "default", "compact", "dense", "tight"].includes(v.layoutDensity)) fail();
     if (v.finderMatches?.some(k => !keys.has(k)) || v.selectedNeighbors.some(k => !keys.has(k))) fail();
     const selection = snap.graph.attributes?.elementSelection;
     if (selection && (typeof selection.active !== "boolean" || !strings(selection.nodes) || selection.nodes.some(k => !keys.has(k)))) fail();

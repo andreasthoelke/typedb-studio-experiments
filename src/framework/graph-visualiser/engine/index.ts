@@ -48,6 +48,7 @@ export class GraphVisualiser {
     state: StudioState;
     readonly elementSelection: GraphElementSelection;
     readonly navigation = new GraphNavigation();
+    correspondenceNodes = new Set<string>();
     finderMatches: Set<string> | null = null;
     searchTerm = "";
     searchMatches: Set<string> | null = null;
@@ -236,6 +237,8 @@ export class GraphVisualiser {
             // picking — keeping the dragged node the hovered one throughout.
             data = { ...data, lineThickness: this.styleService.getNodeLineThickness(data["metadata"].concept.kind, getTypeLabel(data["metadata"].concept as any)),
                 lineStyle: this.styleService.getNodeLineStyle(data["metadata"].concept.kind, getTypeLabel(data["metadata"].concept as any)) };
+            if (this.correspondenceNodes.has(node)) data = { ...data, highlighted: true, correspondenceMarker: true,
+                keyboardCaretColor: chroma(this.styleService.effectiveBackgroundHex).luminance() > 0.4 ? "#151515" : "#ffffff" };
             if (this.navigation.caret === node && this.navigation.mode !== "normal") {
                 data = { ...data, highlighted: true, keyboardCaret: true,
                     keyboardCaretColor: chroma(this.styleService.effectiveBackgroundHex).luminance() > 0.4 ? "#151515" : "#ffffff" };
@@ -283,7 +286,7 @@ export class GraphVisualiser {
 
         this.sigma.setSetting("edgeReducer", (edge, data) => {
             data = { ...data, label: edgeDisplayLabel(data), size: data["size"] * this.styleService.getEdgeLineThickness(edgeStyleKey(data)),
-                lineStyle: this.styleService.getEdgeLineStyle(edgeStyleKey(data)) };
+                roleArrow: this.styleService.getRoleArrow(edgeStyleKey(data)), lineStyle: this.styleService.getEdgeLineStyle(edgeStyleKey(data)) };
             if (this.interactionHandler.inspectedEdge === edge) data = { ...data, size: data["size"] + 1, forceLabel: true };
             const endpoints = this.graph.extremities(edge).map(node => this.graph.getNodeAttributes(node));
             if (endpoints.some(node => node["viewHidden"])) return { ...data, hidden: true, label: "" };
@@ -590,6 +593,7 @@ export class GraphVisualiser {
     }
 
     endNavigation(): void {
+        this.correspondenceNodes.clear();
         this.navigation.reset(); this.stopCameraAnimation(); this.sigma.refresh();
     }
 
@@ -1400,6 +1404,10 @@ export class GraphVisualiser {
         snap.view.highlightedEdges.forEach(tag => this.styleService.highlightedEdges.add(tag));
         snap.view.highlightedTypes.forEach(tag => this.styleService.highlightedTypes.add(tag));
         snap.view.highlightedKinds.forEach(tag => this.styleService.highlightedKinds.add(tag as any));
+        // Snapshots restore graph state; appearance belongs to the current theme.
+        this.applyStyleUpdate();
+        this.applyEdgeStyleUpdate();
+        this.applyEdgeCurvature();
         this.sigma.setCustomBBox(snap.view.bbox);
         this.sigma.refresh();
         this.sigma.getCamera().setState(snap.view.camera);

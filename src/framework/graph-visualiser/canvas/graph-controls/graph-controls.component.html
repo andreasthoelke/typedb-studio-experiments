@@ -40,10 +40,16 @@
         <i class="density-check fa-light fa-check" [class.hidden]="density !== 'spacious'"></i>Spacious
       </button>
       <button mat-menu-item [class.active]="density === 'default'" (click)="setDensity('default')">
-        <i class="density-check fa-light fa-check" [class.hidden]="density !== 'default'"></i>Default
+        <i class="density-check fa-light fa-check" [class.hidden]="density !== 'default'"></i>Balanced
       </button>
       <button mat-menu-item [class.active]="density === 'compact'" (click)="setDensity('compact')">
         <i class="density-check fa-light fa-check" [class.hidden]="density !== 'compact'"></i>Compact
+      </button>
+      <button mat-menu-item [class.active]="density === 'dense'" (click)="setDensity('dense')">
+        <i class="density-check fa-light fa-check" [class.hidden]="density !== 'dense'"></i>Dense
+      </button>
+      <button mat-menu-item [class.active]="density === 'tight'" (click)="setDensity('tight')">
+        <i class="density-check fa-light fa-check" [class.hidden]="density !== 'tight'"></i>Tight
       </button>
     </mat-menu>
   </div>
