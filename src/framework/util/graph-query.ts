@@ -1,3 +1,4 @@
+import { nameGraphRelations } from "./graph-query-relations.mjs";
 /** Query preparation shared by editor integrations. It does not execute queries. */
 export interface GraphQueryOptions {
     neighbours: boolean;
@@ -100,13 +101,16 @@ export function prepareGraphQuery(source: string, options: GraphQueryOptions,
     let note = fetch ? "Fetch removed; returning the pipeline's concept rows." : "Using the supplied concept-row query.";
     const projected = projectInspectorInstance(query);
     if (projected !== query) note += " The inspector's auxiliary type column is excluded from the graph.";
-    query = projected;
+    query = nameGraphRelations(projected);
+    if (query !== projected) note += " Anonymous relations are named in this graph read so their nodes are returned.";
     if (!options.neighbours) return { query, note };
     const base = tokens(query).filter(t => t.depth === 0);
     if (base.some(t => t.text === "reduce" && t.kind === "word")) {
         return { query, note: `${note} Aggregate results are not expanded automatically.` };
     }
-    const seed = findGraphContextSeed(query, options.seedVariable, typeByLabel);
+    // Generated names expose anonymous relations; they are not an expansion
+    // request and must not become a new automatic seed.
+    const seed = findGraphContextSeed(projected, options.seedVariable, typeByLabel);
     if (!seed) return { query, note: `${note} No eligible entity/relation seed found; choose a directly typed variable to expand.` };
     let relationLabels = options.relationTypes ?? [];
     for (const label of relationLabels) {

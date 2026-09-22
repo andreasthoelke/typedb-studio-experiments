@@ -100,3 +100,21 @@ test('bridge deduplicates concurrent runs, rejects ID reuse and replays complete
     assert.equal(calls,2);
     assert.equal((await (await fetch(origin+'/api/viewer/health')).json()).latestRequestId,input.runId,'Private evaluation must not replace the graph');
 });
+
+test('successful anonymous inserts get a bounded read of their original patterns, never a second write', async () => {
+    const query = 'match $d isa depiction, has depiction-id "conflict-stage"; $s isa slot-def, has slot-id "agent"; $r isa mental-state, has referent-id "craving"; insert $o isa occurrence, has occurrence-id "occ-craving"; occurrence-of (occurrence: $o, subject: $r); composition (host: $d, slot: $s, child: $o);';
+    const calls = [];
+    const run = createRunExecutor({fetchImpl: async (url, opts) => {
+        if (url.endsWith('signin')) return Response.json({token:'test'});
+        const body = JSON.parse(opts.body); calls.push(body); return Response.json(rows);
+    }});
+    const result = await run({...input,query});
+    assert.equal(calls.length, 2);
+    assert.equal(calls[0].query, query); assert.equal(calls[0].transactionType, 'write');
+    assert.equal(calls[1].transactionType, 'read'); assert.equal(calls[1].commit, false);
+    assert.doesNotMatch(calls[1].query, /\binsert\b/);
+    assert.match(calls[1].query, /\$graph_relation_1 isa occurrence-of/);
+    assert.match(calls[1].query, /\$graph_relation_2 isa composition \(host: \$d, slot: \$s, child: \$o\)/);
+    assert.equal(result.graph.source, 'context');
+    assert.match(contextQuery('match composition (host: $d); fetch { "host": $d };', 'read').query, /\$graph_relation_1 isa composition/);
+});

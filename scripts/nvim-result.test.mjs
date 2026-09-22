@@ -21,6 +21,8 @@ test('Neovim paragraph adapter displays a shared result and switches views', {ti
     const script = join(root,'test.lua');
     await writeFile(script, String.raw`
 vim.g.mapleader = ' '
+-- Reproduce long uptime and repeated clock readings independently of this host.
+vim.uv.hrtime = function() return 101028369527080 end
 vim.keymap.set('n', 'grr', function() error('Conflicting longer global mapping') end)
 vim.api.nvim_buf_set_name(0, vim.env.STUDIO_TEST_ROOT .. '/source.tql')
 _G.Tdb_graph = dofile(vim.env.STUDIO_TEST_REPO .. '/contrib/nvim/typedb_graph.lua')
@@ -88,6 +90,10 @@ assert(vim.fn.Tdb_runStructuredQueryShow({'database delete test;'}) == 1)
 assert(vim.g.tdb_last_graph_execution.status == 'error')
 assert(vim.fn.Tdb_runStructuredQueryShow({'match $x isa unavailable;'}) == 1)
 assert(vim.g.tdb_last_graph_execution.status == 'unknown')
+-- Very short uptimes must also meet the bridge's minimum ID length.
+vim.uv.hrtime = function() return 1 end
+assert(_G.Tdb_graph.run('match $x isa person;', 'test').execution.status == 'success')
+assert(_G.Tdb_graph.run('match $x isa person;', 'test').execution.status == 'success')
 vim.g.typedb_structured_results = false
 assert(vim.fn.Tdb_runStructuredQueryShow({'insert $p isa person;'}) == 0)
 vim.cmd('qa!')
@@ -97,6 +103,8 @@ vim.cmd('qa!')
     let output=''; child.stdout.on('data',d=>output+=d);child.stderr.on('data',d=>output+=d);
     t.after(()=>{if(child.exitCode===null)child.kill();});
     const [code] = await once(child,'exit'); assert.equal(code,0,output);
-    assert.equal(requests.length,2); assert.equal(requests[0].database,'test');
+    assert.equal(requests.length,4); assert.equal(requests[0].database,'test');
+    assert.equal(new Set(requests.map(request => request.runId)).size, requests.length);
+    for (const request of requests) assert.match(request.runId, /^[\w-]{16,100}$/);
     assert.equal(requests[0].query,'insert $p isa person, has name "Ann";');
 });

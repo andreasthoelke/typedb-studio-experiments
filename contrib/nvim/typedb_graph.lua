@@ -7,6 +7,7 @@ local config = {
 local starting = false
 local waiting = {}
 local sequence = 0
+local runSequence = 0
 local startGeneration = 0
 local projectTempDirectory
 local navigationQueue = {}
@@ -187,6 +188,37 @@ function M.buffer_maps(buffer)
   end
 end
 
+-- Capture before terminal jobs can change the current buffer. Match the sent
+-- text, preferring the occurrence nearest the caret when a snippet repeats.
+function M.source_location(query)
+  local path = vim.api.nvim_buf_get_name(0)
+  if path == '' or vim.bo.buftype ~= '' then return nil end
+  local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
+  local first = query:match('[^\n]+') or ''
+  local at, distance = nil, math.huge
+  for i, line in ipairs(lines) do
+    if vim.trim(line) == vim.trim(first) then
+      local d = math.abs(i - vim.api.nvim_win_get_cursor(0)[1])
+      if d < distance then at, distance = i, d end
+    end
+  end
+  if not at then return nil end
+  local header = at
+  while header > 1 and (lines[header - 1]:match('^%s*#') or lines[header - 1]:match('^%s*$')) do header = header - 1 end
+  while header < at and not lines[header]:match('^%s*# ─ ') do header = header + 1 end
+  local title = lines[header]:match('^%s*# ─ (.*)') or ''
+  local comments = {}
+  if title ~= '' then
+    for i = header + 1, #lines do
+      local comment = lines[i]:match('^%s*#%s?(.*)')
+      if not comment then break end
+      table.insert(comments, comment)
+    end
+  end
+  return { path = path, line = header, anchor = lines[header], title = title,
+    comment = table.concat(comments, '\n'), query = query, server = vim.v.servername }
+end
+
 function M.mirror(query, database, execution)
   if vim.g.typedb_graph_auto == false or vim.g.typedb_graph_auto == 0 then return end
   M.send(query, database, { quiet = true, execution = execution })
@@ -197,6 +229,7 @@ end
 function M.run(query, database)
   if vim.g.typedb_structured_results == false or vim.g.typedb_structured_results == 0 then return nil end
   local temp = projectTempDirectory()
+  local sourceLocation = M.source_location(query)
   local ready
   M.ensure_running(function(ok) ready = ok end)
   vim.wait(8000, function() return ready ~= nil end, 20)
@@ -207,8 +240,11 @@ function M.run(query, database)
     notifyError('Structured runner unavailable; using the console. Restart the bridge when convenient to enable tables.')
     return nil
   end
-  local runId = tostring(vim.uv.hrtime()) .. '-' .. tostring(vim.fn.getpid())
-  local body = { runId = runId, query = query, database = database, limit = config.limit, projectTempDirectory = temp,
+  -- LuaJIT tostring switches large clock values to scientific notation, which
+  -- is invalid in bridge IDs. Pad short uptimes and distinguish repeated ticks.
+  runSequence = runSequence + 1
+  local runId = string.format('nvim-%016.0f-%d-%d', vim.uv.hrtime(), vim.fn.getpid(), runSequence)
+  local body = { sourceLocation = sourceLocation, runId = runId, query = query, database = database, limit = config.limit, projectTempDirectory = temp,
     publish = vim.g.typedb_graph_auto ~= false and vim.g.typedb_graph_auto ~= 0 }
   local result = vim.system({ 'curl', '--silent', '--show-error', '--max-time', '75', '--write-out', '\n%{http_code}',
     '-H', 'Content-Type: application/json', '--data-binary', '@-', config.url .. '/api/viewer/run' },
@@ -331,7 +367,7 @@ function M.send(query, database, options)
   local filename = vim.fn.expand('%:t')
   local panelDatabase = filename:match('^schema_(.+)%.tql$') or filename:match('^data_(.+)%.tql$')
   database = database or vim.b.typedb_database or panelDatabase or vim.g.typedb_database or vim.g.typedb_active_schema
-  local body = { query = query, limit = config.limit, execution = options.execution, projectTempDirectory = projectTempDirectory() }
+  local body = { sourceLocation = M.source_location(query), query = query, limit = config.limit, execution = options.execution, projectTempDirectory = projectTempDirectory() }
   if database and database ~= '' then body.database = database end
   sequence = sequence + 1
   local requestSequence = sequence

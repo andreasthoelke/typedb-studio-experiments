@@ -9,6 +9,26 @@ import { createRunExecutor, prepareRun } from './viewer-run.mjs';
 import { maxPngBytes, saveGraphPng, saveGraphSnap, validExportName, validProjectTempDirectory, graphSnapshotDirectory,
     selectSnapshotProject, listGraphSnaps, readGraphSnap, deleteGraphSnap } from './viewer-export.mjs';
 
+function validSource(s) {
+    return s && typeof s.path === 'string' && s.path.startsWith('/') && !s.path.includes('\0')
+        && Number.isInteger(s.line) && s.line > 0 && s.line <= 10000000
+        && ['anchor', 'title', 'comment', 'query'].every(k => typeof s[k] === 'string' && s[k].length <= 1024 * 1024)
+        && (s.server === undefined || (typeof s.server === 'string' && s.server.length < 1000 && !s.server.includes('\0')));
+}
+function openSource(source) {
+    // argv + a quoted JSON value: paths/anchors are never Ex or Lua code.
+    const payload = JSON.stringify(source).replaceAll("'", "''");
+    const lua = `(function() local s=vim.fn.json_decode(_A); vim.cmd('edit '..vim.fn.fnameescape(s.path)); local lines=vim.api.nvim_buf_get_lines(0,0,-1,false); local best=nil; for i,line in ipairs(lines) do if line==s.anchor and (not best or math.abs(i-s.line)<math.abs(best-s.line)) then best=i end end; vim.api.nvim_win_set_cursor(0,{best or math.min(s.line,#lines),0}); vim.cmd('normal! zz'); return true end)()`;
+    const expression = `luaeval('${lua.replaceAll("'", "''")}', '${payload}')`;
+    return new Promise((resolve, reject) => {
+        const child = spawn(process.env.TYPEDB_NVIM_BINARY || (existsSync('/opt/homebrew/bin/nvim') ? '/opt/homebrew/bin/nvim' : 'nvim'), ['--server', source.server, '--remote-expr', expression], { stdio: ['ignore', 'ignore', 'pipe'] });
+        let error = ''; child.stderr.on('data', chunk => error += chunk);
+        const timer = setTimeout(() => { child.kill(); reject(new Error('Neovim did not answer.')); }, 5000);
+        child.on('error', error => { clearTimeout(timer); reject(error); });
+        child.on('close', code => { clearTimeout(timer); code === 0 ? resolve() : reject(new Error(error || 'Could not open source in Neovim.')); });
+    });
+}
+
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const maxBodyBytes = 1024 * 1024;
 const mime = {
@@ -166,7 +186,7 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                 response.on('close', () => { clients.delete(response); clearInterval(heartbeat); });
                 return;
             }
-            if (['/api/viewer/run', '/api/viewer/query', '/api/viewer/caret', '/api/viewer/control', '/api/viewer/focus'].includes(url.pathname) && request.method === 'POST') {
+            if (['/api/viewer/run', '/api/viewer/query', '/api/viewer/caret', '/api/viewer/control', '/api/viewer/focus', '/api/viewer/source'].includes(url.pathname) && request.method === 'POST') {
                 if (request.headers['content-type']?.split(';')[0].trim() !== 'application/json') {
                     return json(response, 415, { error: 'Send application/json.' });
                 }
@@ -183,6 +203,13 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                 let body;
                 try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); }
                 catch { return json(response, 400, { error: 'Invalid JSON.' }); }
+                if (url.pathname === '/api/viewer/source') {
+                    const s = body?.sourceLocation;
+                    if (!validSource(s) || !s.server || !s.server.startsWith('/') || !existsSync(s.server))
+                        return json(response, 400, { error: 'The source Neovim session is unavailable. Send the snippet again from Neovim.' });
+                    try { await openSource(s); return json(response, 200, { opened: true }); }
+                    catch (error) { return json(response, 400, { error: error.message }); }
+                }
                 if (url.pathname === '/api/viewer/focus') {
                     if (!body || !windowFocusDirections.includes(body.direction)) {
                         return json(response, 400, { error: `Expected direction one of ${windowFocusDirections.join(', ')}.` });
@@ -223,6 +250,7 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                     || (body.limit !== undefined && (!Number.isInteger(body.limit) || body.limit < 1 || body.limit > 100000))) {
                     return json(response, 400, { error: 'Expected query text, optional database, and optional integer limit (1–100000).' });
                 }
+                if (body.sourceLocation !== undefined && !validSource(body.sourceLocation)) return json(response, 400, { error: 'Invalid source location.' });
                 if (body.projectTempDirectory !== undefined && !validProjectTempDirectory(body.projectTempDirectory)) {
                     return json(response, 400, { error: 'Expected an absolute projectTempDirectory.' });
                 }
@@ -235,7 +263,7 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                     try { prepareRun(body.query, body.schemaMode); }
                     catch (error) { return json(response, 400, { error: error.message }); }
                     const input = { runId: body.runId, query: body.query, database: body.database, limit: body.limit ?? 1000,
-                        schemaMode: body.schemaMode, publish: body.publish !== false, projectTempDirectory: body.projectTempDirectory };
+                        sourceLocation: body.sourceLocation, schemaMode: body.schemaMode, publish: body.publish !== false, projectTempDirectory: body.projectTempDirectory };
                     const fingerprint = createHash('sha256').update(JSON.stringify(input)).digest('hex');
                     let entry = runs.get(body.runId);
                     if (entry && entry.fingerprint !== fingerprint) return json(response, 409, { error: 'runId already belongs to another request.' });
@@ -272,7 +300,7 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                     || (execution.error !== undefined && (typeof execution.error !== 'string' || execution.error.length > 8000)))) {
                     return json(response, 400, { error: 'Invalid execution outcome.' });
                 }
-                latest = { id: randomUUID(), query: body.query, database: body.database, limit: body.limit ?? 1000,
+                latest = { sourceLocation: body.sourceLocation, id: randomUUID(), query: body.query, database: body.database, limit: body.limit ?? 1000,
                     ...(body.projectTempDirectory ? { projectTempDirectory: body.projectTempDirectory } : {}),
                     ...(execution ? { execution: { kind: execution.kind, status: execution.status, error: execution.error } } : {}) };
                 if (body.database && body.projectTempDirectory) projects.set(body.database, body.projectTempDirectory);

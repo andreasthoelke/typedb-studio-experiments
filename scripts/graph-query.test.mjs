@@ -123,3 +123,28 @@ test('explicit type selections and other query shapes retain their intended colu
         'match $x isa person; # $x isa! $t;',
     ]) assert.equal(prepare(query).query, query);
 });
+
+test('anonymous relations are returned in graph reads, including before fetch', () => {
+    const source = 'match\n composition (host: $d, slot: $sl, child: $o);\n $sl has title $role;\n occurrence-of (occurrence: $o, subject: $r);\n $r has title $who;\nfetch { "slot": $role, "referent": $who };';
+    const graph = prepare(source).query;
+    assert.match(graph, /\$graph_relation_1 isa composition \(host: \$d, slot: \$sl, child: \$o\)/);
+    assert.match(graph, /\$graph_relation_2 isa occurrence-of/);
+    assert.doesNotMatch(graph, /fetch/);
+    const exact = prepare('match occurrence-of (occurrence: $o, subject: $s); composition (child: $o); $s isa! $t;').query;
+    assert.match(exact, /\$s isa! \$t;/);
+});
+
+test('relation naming respects nested scope, explicit projection, comments and collisions', () => {
+    for (const source of ['match $x isa person; not { friendship (friend: $x); };',
+        'match friendship (friend: $x); select $x;', 'match friendship (friend: $x); reduce $n = count;',
+        'match $r isa friendship (friend: $x);', 'match $r links (friend: $x);']) assert.equal(prepare(source).query, source);
+    assert.match(prepare('match $graph_relation_1 isa person; friendship (friend: $graph_relation_1);').query, /\$graph_relation_2 isa friendship/);
+    assert.match(prepare('match # friendship (friend: $x);\n friendship (friend: $x);').query, /# friendship \(friend: \$x\);\n \$graph_relation_1 isa friendship/);
+});
+
+test('naming anonymous relations never invents an automatic expansion seed', () => {
+    const source = 'match occurrence-of (occurrence: $o, subject: $s); composition (host: $d, slot: $sl, child: $o); $s isa! $t;';
+    const result = prepareGraphQuery(source, { neighbours: true }, () => ({ kind: 'relationType', relatedRoles: [{label:'occurrence-of:subject'}] }));
+    assert.match(result.query, /\$graph_relation_2 isa composition/);
+    assert.doesNotMatch(result.query, /Graph context: role players/);
+});

@@ -1,4 +1,5 @@
 import { tokens } from '../src/framework/util/typeql-tokens.mjs';
+import { nameGraphRelations, insertedGraphContext } from '../src/framework/util/graph-query-relations.mjs';
 import { formatRun } from './viewer-result.mjs';
 
 /** Paragraphs may omit define, as in the existing Neovim schema workflow. */
@@ -21,14 +22,17 @@ export function prepareRun(source, schemaMode = 'define') {
 
 /** Conservative context: known syntax only, always executed in a read transaction.
  * It is deliberately labelled as current data, never as proof that a write succeeded. */
-export function contextQuery(query, kind) {
+export function contextQuery(query, kind, successful = false) {
     const all = tokens(query, true, true);
     const top = all.filter(t => t.depth === 0);
     if (kind === 'read') {
         const fetch = top.find(t => t.kind === 'word' && t.text === 'fetch');
-        if (top[0]?.text !== 'match' || !fetch) return null;
-        return { query: query.slice(0, fetch.from).trimEnd(), schemaMode: false,
-            note: 'Graph context: separate read of the pipeline before fetch; this is not the fetched document result.' };
+        if (top[0]?.text !== 'match') return null;
+        const base = fetch ? query.slice(0, fetch.from).trimEnd() : query;
+        const graphQuery = nameGraphRelations(base);
+        if (!fetch && graphQuery === query) return null;
+        return { query: graphQuery, schemaMode: false,
+            note: 'Graph context: separate read of the source patterns, including named anonymous relations; the original result is unchanged.' };
     }
     if (kind === 'schema') {
         const labels = [...new Set(all.flatMap((t, i) => ['entity', 'relation', 'attribute'].includes(t.text)
@@ -37,6 +41,9 @@ export function contextQuery(query, kind) {
         return { query: `match\n${labels.map(label => `{ $type label ${label}; }`).join(' or\n')};\ntry { $type owns $attribute; };\ntry { $type relates $role; };\ntry { $type plays $played; };`,
             schemaMode: true, note: 'Current schema context: separate read of the declared types and their attributes/roles.' };
     }
+    const inserted = successful && insertedGraphContext(query);
+    if (inserted) return { query: inserted, schemaMode: false,
+        note: 'Current data context: separate read of the successful insert patterns, including their relation nodes; the write is never replayed.' };
     const branches = [];
     for (let i = 0; i < all.length; i++) {
         if (all[i].kind !== 'variable' || all[i + 1]?.text !== 'isa') continue;
@@ -97,7 +104,7 @@ export function createRunExecutor({ address = process.env.TYPEDB_ADDRESS || 'htt
         const start = Date.now();
         const { query, kind } = prepareRun(request.query, request.schemaMode);
         const result = { id: request.runId, query, database: request.database, limit: request.limit ?? 1000,
-            connectionOrigin: address, projectTempDirectory: request.projectTempDirectory,
+            sourceLocation: request.sourceLocation, connectionOrigin: address, projectTempDirectory: request.projectTempDirectory,
             execution: { kind, status: 'error' } };
         let dispatched = false;
         try {
@@ -120,8 +127,9 @@ export function createRunExecutor({ address = process.env.TYPEDB_ADDRESS || 'htt
         if (result.response.ok?.answerType === 'conceptRows' && result.response.ok.answers.length) {
             result.graph = { query, response: result.response, schemaMode: false, source: 'result',
                 note: 'Graph and Neovim table use the same executed answer. Apply graph context controls to request a separate read.' };
-        } else if (result.execution.status !== 'unknown' && dispatched) {
-            const context = contextQuery(query, kind);
+        }
+        if (result.execution.status !== 'unknown' && dispatched) {
+            const context = contextQuery(query, kind, result.execution.status === 'success');
             if (context) {
                 try {
                     const response = await execute(context.query, request.database, 'read', result.limit);
