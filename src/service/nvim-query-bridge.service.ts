@@ -260,17 +260,28 @@ export class NvimQueryBridge {
                 });
                 if (run?.graph.schemaMode) candidates = schemaNodes;
                 else {
-                    const query = editorIllustrationQuery(target, schema);
-                    if (!query) { report("No supported, typed pattern could be resolved here; the graph is unchanged.", true); return; }
+                    // Prefer the instances this paragraph matches; fall back to the
+                    // focused type read when the whole pattern finds nothing (for
+                    // example an insert paragraph that has not been committed).
+                    const queries = [...new Set([editorIllustrationQuery(target, schema, 20, true), editorIllustrationQuery(target, schema)]
+                        .filter((q): q is string => !!q))];
+                    if (!queries.length) { report("No supported, typed pattern could be resolved here; the graph is unchanged.", true); return; }
                     if (!run || run.graph.visualiser !== visualiser || run.graph.database !== database) {
                         report("Open an editable Query graph on this database to illustrate this pattern.", true); return;
                     }
                     this.caretBusy = true;
                     report(`Finding ${target.identifier}…`);
-                    const response = await firstValueFrom(this.driver.queryReadOnly(query, database, { answerCountLimit: 20, includeQueryStructure: true }));
-                    if (!stillCurrent() || this.caretRun?.() !== run || run.graph.destroyed) return;
-                    if (isApiErrorResponse(response)) throw new Error(response.err.message);
-                    if (response.ok.answerType !== "conceptRows") return;
+                    let query = queries[0];
+                    let response: ApiResponse<QueryResponse> | null = null;
+                    for (const [index, candidate] of queries.entries()) {
+                        query = candidate;
+                        response = await firstValueFrom(this.driver.queryReadOnly(candidate, database, { answerCountLimit: 20, includeQueryStructure: true }));
+                        if (!stillCurrent() || this.caretRun?.() !== run || run.graph.destroyed) return;
+                        const last = index === queries.length - 1;
+                        if (isApiErrorResponse(response)) { if (last) throw new Error(response.err.message); continue; }
+                        if (response.ok.answerType !== "conceptRows" || response.ok.answers.length || last) break;
+                    }
+                    if (!response || isApiErrorResponse(response) || response.ok.answerType !== "conceptRows") return;
                     const nodeKey = (concept: any) => concept && ["entity", "relation", "attribute"].includes(concept.kind)
                         ? visualiser.instanceNodeKey(concept.kind, concept.type.label, concept.kind === "attribute" ? String(concept.value) : concept.iid) : null;
                     // Respect deliberate hiding. Missing concepts may be added, but
@@ -296,8 +307,9 @@ export class NvimQueryBridge {
             const { width, height } = visualiser.sigma.getDimensions();
             const distance = (key: string) => { const p = visualiser.sigma.graphToViewport(visualiser.graph.getNodeAttributes(key)); return Math.hypot(p.x - width / 2, p.y - height / 2); };
             candidates.sort((a, b) => Number(b === currentCaret) - Number(a === currentCaret) || distance(a) - distance(b) || a.localeCompare(b));
-            visualiser.pointCaret(candidates[0], "none", true);
-            report(`Caret: ${target.identifier}${candidates.length > 1 ? ` (${candidates.length} matches; nearest/current node)` : ""}.`);
+            // Every match is marked; the nearest/current one takes the primary caret.
+            visualiser.pointCarets(candidates, candidates[0]);
+            report(`Caret: ${target.identifier}${candidates.length > 1 ? ` (${candidates.length} matches; secondary carets mark the others)` : ""}.`);
         } catch (error) {
             if (stillCurrent()) report(`Could not resolve ${target.identifier}: ${error instanceof Error ? error.message : String(error)}`, true);
         } finally {
@@ -407,7 +419,7 @@ export class NvimQueryBridge {
                 this.state.outputTypeControl.setValue("graph");
                 this.note = context.note;
                 this.message = `Running Neovim context in ${database}…`;
-                this.state.runQuery(context.query, { limit: request.limit, schemaMode: context.schemaMode, sourceLocation: request.sourceLocation, projectTempDirectory: request.projectTempDirectory,
+                this.state.runQuery(context.query, { limit: request.limit, schemaMode: context.schemaMode, sourceLocation: request.sourceLocation, editorQuery: request.query, projectTempDirectory: request.projectTempDirectory,
                     response: supplied ? request.graph!.response : undefined }).subscribe(result => {
                     if (this.lastRequest !== request) return;
                     const empty = ["noQueryAnswers", "noInstancesFound"].includes(this.state.graphOutput.status);

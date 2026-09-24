@@ -43,6 +43,44 @@ const MAX_EXPORT_DIMENSION = 8192;
  */
 const AUTO_FIT_MIN_RATIO_CHANGE = 0.04;
 
+/** The source title and comment, as shown over the live canvas: top left, on
+ * a translucent plate so the graph stays visible behind longer comments. */
+function drawExportCaption(ctx: CanvasRenderingContext2D, caption: { title: string; comment: string }, scale: number, width: number, background: string): void {
+    const family = getComputedStyle(document.body).fontFamily || "sans-serif";
+    const light = chroma(background).luminance() > 0.4;
+    const maxWidth = Math.min(560, width * 0.6), pad = 8, gap = 4;
+    ctx.save();
+    ctx.scale(scale, scale);
+    const wrap = (text: string, font: string): string[] => {
+        ctx.font = font;
+        return text.split("\n").flatMap(paragraph => {
+            const lines: string[] = [];
+            let line = "";
+            for (const word of paragraph.split(/\s+/).filter(Boolean)) {
+                const next = line ? `${line} ${word}` : word;
+                if (line && ctx.measureText(next).width > maxWidth) { lines.push(line); line = word; } else line = next;
+            }
+            return [...lines, line];
+        });
+    };
+    const titleFont = `600 13px ${family}`, commentFont = `12px ${family}`;
+    const title = caption.title ? wrap(caption.title, titleFont) : [];
+    const comment = caption.comment ? wrap(caption.comment, commentFont).slice(0, 12) : [];
+    const measure = (lines: string[], font: string) => { ctx.font = font; return Math.max(0, ...lines.map(l => ctx.measureText(l).width)); };
+    const boxWidth = Math.max(measure(title, titleFont), measure(comment, commentFont)) + 2 * pad;
+    const boxHeight = title.length * 17 + comment.length * 16 + (title.length && comment.length ? gap : 0) + 2 * pad;
+    ctx.fillStyle = chroma(background).alpha(0.78).css();
+    ctx.beginPath(); ctx.roundRect(12, 12, boxWidth, boxHeight, 6); ctx.fill();
+    ctx.textBaseline = "top";
+    let y = 12 + pad;
+    ctx.fillStyle = light ? "#151515" : "#f2f2f2"; ctx.font = titleFont;
+    for (const line of title) { ctx.fillText(line, 12 + pad, y); y += 17; }
+    if (title.length && comment.length) y += gap;
+    ctx.fillStyle = light ? "#3a3a3a" : "#c8c8c8"; ctx.font = commentFont;
+    for (const line of comment) { ctx.fillText(line, 12 + pad, y); y += 16; }
+    ctx.restore();
+}
+
 export class GraphVisualiser {
     interactionHandler: InteractionHandler;
     state: StudioState;
@@ -405,8 +443,10 @@ export class GraphVisualiser {
         this.sigma.refresh();
     }
 
+    /** The caret, its history and secondary markers survive a re-layout: only
+     * positions change, so the same node stays inspected. */
     reLayout(): void {
-        this.endNavigation();
+        this.stopCameraAnimation();
         const restartFromCurrent = this.layout.isRunning;
         this.layout.stop();
         this.autoZoomEnabled = true;
@@ -516,6 +556,16 @@ export class GraphVisualiser {
         const caret = (visible.length ? visible : points).sort((a, b) =>
             Math.hypot(a.x - width / 2, a.y - height / 2) - Math.hypot(b.x - width / 2, b.y - height / 2) || a.key.localeCompare(b.key))[0]?.key;
         return !!caret && this.pointCaret(caret, "none", true);
+    }
+
+    /** One primary caret plus dotted secondary carets on the other matches.
+     * Selection is unchanged; only the primary is panned into view. */
+    pointCarets(keys: string[], primary = keys[0]): boolean {
+        const visible = keys.filter(key => this.graph.hasNode(key) && !this.graph.getNodeAttribute(key, "viewHidden"));
+        this.correspondenceNodes = new Set(visible.length > 1 ? visible : []);
+        if (primary && visible.includes(primary) && this.pointCaret(primary, "none", true)) return true;
+        this.sigma.refresh();
+        return false;
     }
 
     /** Pointer and hint jumps inspect exactly one node without implicitly selecting it. */
@@ -670,7 +720,8 @@ export class GraphVisualiser {
         this.animateNavigationCamera({ ...this.sigma.getCamera().getState(), ...centre });
     }
 
-    /** Follow the caret at viewport edges; Enter explicitly fits the highlighted set. */
+    /** Follow the caret at viewport edges by panning only; Enter explicitly fits
+     * (and may zoom) the highlighted set. Nodes already in view do not move. */
     private followNavigation(keys: string[], fit = false): void {
         const { width, height } = this.sigma.getDimensions();
         if (!width || !height || !keys.length) return;
@@ -680,12 +731,11 @@ export class GraphVisualiser {
         let target = { ...initial };
         // Sigma scales node glyphs with the square root of zoom. Iterate the fit
         // against actual projected bodies instead of treating them as points.
-        for (let i = 0; i < 5; i++) {
+        if (fit) for (let i = 0; i < 5; i++) {
             const bounds = this.navigationBounds(keys, target);
             if (!bounds) return;
             const factor = Math.max((bounds.right - bounds.left) / areaW, (bounds.bottom - bounds.top) / areaH);
-            if (fit || factor > 1.005) target.ratio = camera.getBoundedRatio(Math.max(0.08, Math.min(20, target.ratio * factor)));
-            else break;
+            target.ratio = camera.getBoundedRatio(Math.max(0.08, Math.min(20, target.ratio * factor)));
         }
         const bounds = this.navigationBounds(keys, target);
         if (!bounds) return;
@@ -1127,46 +1177,17 @@ export class GraphVisualiser {
     }
 
     /**
-     * Pan + zoom the camera to enclose the given graph nodes, without changing
-     * the current selection — used by the Explorer's "Reveal in graph" buttons
-     * to show where an already-loaded relation / attribute sits. No-op if none
-     * of the nodes are in the graph (or have no position yet).
+     * Explorer "Reveal in graph": mark the given nodes with secondary carets and
+     * pan (never zoom) only as far as needed to bring them into view. The
+     * inspected node, primary caret and selection are unchanged.
      */
     revealNodes(nodeKeys: string[]): void {
-        const { width, height } = this.sigma.getDimensions();
-        if (width === 0 || height === 0) return;
-
-        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
-        for (const node of nodeKeys) {
-            if (!this.graph.hasNode(node)) continue;
-            try {
-                const attrs = this.graph.getNodeAttributes(node);
-                if (attrs.x == null || attrs.y == null) continue;
-                minX = Math.min(minX, attrs.x);
-                maxX = Math.max(maxX, attrs.x);
-                minY = Math.min(minY, attrs.y);
-                maxY = Math.max(maxY, attrs.y);
-            } catch { /* missing metadata mid-mutation */ }
-        }
-        if (!isFinite(minX)) return;
-
-        const graphWidth = maxX - minX || 1;
-        const graphHeight = maxY - minY || 1;
-        const padding = 1.6;
-        const rawRatio = Math.max(graphWidth / width, graphHeight / height) * padding;
-        const ratio = Math.max(Math.min(rawRatio, 20), 1);
-
-        const centerX = (minX + maxX) / 2;
-        const centerY = (minY + maxY) / 2;
-        const bbox = this.sigma.getCustomBBox() || this.sigma.getBBox();
-        const x = (centerX - bbox.x[0]) / (bbox.x[1] - bbox.x[0]) || 0.5;
-        const y = (centerY - bbox.y[0]) / (bbox.y[1] - bbox.y[0]) || 0.5;
-
-        this.autoZoomEnabled = false;
-        this.pinnedCameraWorld = null;
-        this.settingCameraProgrammatically = true;
-        this.sigma.getCamera().setState({ x, y, ratio, angle: 0 });
-        this.settingCameraProgrammatically = false;
+        const keys = nodeKeys.filter(key => this.graph.hasNode(key) && !this.graph.getNodeAttribute(key, "viewHidden"));
+        if (!keys.length) return;
+        this.layout.stop(); this.freezeViewport(); this.stopCameraAnimation();
+        this.correspondenceNodes = new Set(keys);
+        this.sigma.refresh();
+        this.followNavigation(keys);
     }
 
     /** Resolve the graph node key for an instance (entity/relation by IID,
@@ -1620,7 +1641,7 @@ export class GraphVisualiser {
      * Throws if the graph has no nodes. Dimensions are capped at MAX_EXPORT_DIMENSION per
      * side to stay within browser canvas limits.
      */
-    async exportPng(mode: GraphPngExportMode): Promise<Blob> {
+    async exportPng(mode: GraphPngExportMode, caption?: { title: string; comment: string }): Promise<Blob> {
         if (this.graph.order === 0) throw new Error("Graph is empty");
 
         let width: number;
@@ -1707,6 +1728,7 @@ export class GraphVisualiser {
                         ctx.fillStyle = bgHex;
                         ctx.fillRect(0, 0, physW, physH);
                         container.querySelectorAll("canvas").forEach(c => ctx.drawImage(c, 0, 0));
+                        if (caption?.title || caption?.comment) drawExportCaption(ctx, caption, physW / width, width, bgHex);
                         finalCanvas.toBlob(blob => {
                             if (blob) resolve(blob);
                             else reject(new Error("Canvas.toBlob returned null"));

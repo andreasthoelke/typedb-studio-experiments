@@ -62,7 +62,8 @@ try {
  assert.equal(await schema.evaluate(()=>{const v=window.ng.getComponent(document.querySelector('ts-schema-page')).state.visualiser.visualiser;return v.graph.nodes().every(key=>v.sigma.getSetting('nodeReducer')(key,v.graph.getNodeAttributes(key)).zIndex===0);}),true,'Remounted reducers must follow the new selection');
  const otherTabOptions=JSON.stringify({neighbours:false,seedVariable:'$other',relationTypes:'motivation'});
  await schema.evaluate(value=>localStorage.setItem('typedb-studio-nvim-options',value),otherTabOptions);
- await schema.getByRole('button',{name:'Refocus',exact:true}).click();
+ // Schema starts maximised, covering its toolbar; activate the controls directly.
+ await schema.getByRole('button',{name:'Refocus',exact:true}).dispatchEvent('click');
  assert.equal(await schema.evaluate(()=>localStorage.getItem('typedb-studio-nvim-options')),otherTabOptions,'Schema refocus must not overwrite data augmentation preferences');
  await schema.waitForFunction(()=>!window.ng.getComponent(document.querySelector('ts-schema-page')).bridge.pending);
  assert.deepEqual(await selection(),selected);
@@ -83,11 +84,11 @@ try {
   const current=restoredSchema.nodes.find(n=>n.key===node.key);
   assert.equal(current.attributes.x,node.attributes.x);assert.equal(current.attributes.y,node.attributes.y);
  }
- await schema.getByRole('button',{name:'Neovim · following',exact:true}).click();
+ await schema.getByRole('button',{name:'Neovim · following',exact:true}).dispatchEvent('click');
  await schema.waitForURL('**/schema?nvim=0');
  await send('match $item isa goal;');
  assert.deepEqual(await selection(),selected,'Paused schema must keep its view');
- await schema.getByRole('button',{name:'Follow Neovim',exact:true}).click();
+ await schema.getByRole('button',{name:'Follow Neovim',exact:true}).dispatchEvent('click');
  await schema.waitForFunction(()=>window.ng.getComponent(document.querySelector('ts-schema-page')).contextQuery==='match $item isa goal;');
  // Saving the focused schema includes the original source and project destination.
  const savedResponse=schema.waitForResponse(r=>r.url().includes('/api/viewer/snap?')&&r.request().method()==='POST');

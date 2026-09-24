@@ -1,5 +1,6 @@
 import { GraphSource, sourceHeading } from "../../util/graph-source";
-import { conceptType, correspondsToType } from "../../util/graph-correspondence";
+import { cleanSourceTitle, snapTitleBase } from "../../util/graph-title.mjs";
+import { conceptType, correspondsToType, isaRelatives } from "../../util/graph-correspondence";
 import { UIHints } from "../../util/ui-hints";
 import { toSignal } from "@angular/core/rxjs-interop";
 /*
@@ -159,13 +160,21 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         if (typeof msg.request !== "string" || typeof msg.label !== "string" || msg.schema !== this.schemaMode
             || !this.isKeyboardVisible() || this.queryRunning || !this.visualiser) return;
         const v = this.visualiser;
+        // isa closure: instances of a type include those of its subtypes (so an
+        // abstract type still finds its families); a type also stands for the
+        // supertypes its instances belong to. Exact matches keep the primary caret.
+        const labels = isaRelatives(msg.label, this.schemaState.value$.value, this.schemaMode ? "up" : "down");
+        const concept = (key: string) => v.graph.getNodeAttribute(key, "metadata").concept;
         const keys = v.graph.nodes().filter(key => !v.graph.getNodeAttribute(key, "viewHidden")
-            && correspondsToType(v.graph.getNodeAttribute(key, "metadata").concept, msg.label, this.schemaMode));
-        v.correspondenceNodes = new Set(keys);
-        const primary = keys.includes(v.navigation.caret ?? "") ? v.navigation.caret! : keys[0];
-        if (primary) v.pointCaret(primary, "none", true);
-        else v.sigma.refresh();
-        this.lastShortcut = keys.length ? `Related: ${msg.label} · ${keys.length} loaded node${keys.length === 1 ? "" : "s"}` : `No visible ${msg.label} nodes loaded`;
+            && labels.some(label => correspondsToType(concept(key), label, this.schemaMode)));
+        const exact = keys.filter(key => correspondsToType(concept(key), msg.label, this.schemaMode));
+        const pool = exact.length ? exact : keys;
+        const { width, height } = v.sigma.getDimensions();
+        const distance = (key: string) => { const p = v.sigma.graphToViewport(v.graph.getNodeAttributes(key)); return Math.hypot(p.x - width / 2, p.y - height / 2); };
+        const primary = pool.includes(v.navigation.caret ?? "") ? v.navigation.caret! : [...pool].sort((a, b) => distance(a) - distance(b))[0];
+        v.pointCarets(keys, primary);
+        const family = labels.length > 1 ? ` (+${labels.length - 1} ${this.schemaMode ? "supertype" : "subtype"}${labels.length === 2 ? "" : "s"})` : "";
+        this.lastShortcut = keys.length ? `Related: ${msg.label}${family} · ${keys.length} loaded node${keys.length === 1 ? "" : "s"}` : `No visible ${msg.label}${family} nodes loaded`;
         this.caretChannel?.postMessage({ sender: this.caretSender, to: msg.sender, reply: msg.request, scope: msg.scope, count: keys.length });
         this.cdr.markForCheck();
     };
@@ -183,16 +192,10 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         const owner = GraphCanvasComponent.keyboardOwner;
         if (owner && owner !== this && owner.isKeyboardVisible()) { this.cancelKeySequence(); return; }
         if (event.ctrlKey && !event.altKey && !event.metaKey && event.key === ","
-            && !document.querySelector(".cdk-overlay-pane [role='dialog'], .cdk-overlay-pane [role='listbox']")) {
-            const pane = this.paneFocus.focusedPane;
-            if (pane === "graph" || pane === "panel") {
-                event.preventDefault(); event.stopImmediatePropagation();
-                this.styleService.sidePanelDock = "bottom";
-                this.bottomPanePercent = Math.max(15, Math.min(85, this.bottomPanePercent + (pane === "graph" ? -10 : 10)));
-                this.graphPercent = 100 - this.bottomPanePercent;
-                this.cdr.markForCheck();
-                return;
-            }
+            && !document.querySelector(".cdk-overlay-pane [role='dialog'], .cdk-overlay-pane [role='listbox']")
+            && this.resizeFocusedPane(this.paneFocus.focusedPane, true)) {
+            event.preventDefault(); event.stopImmediatePropagation();
+            return;
         }
         const editing = event.composedPath().some(target => target instanceof HTMLElement &&
             (target.isContentEditable || target.closest("input, textarea, select, [role='textbox']")));
@@ -217,6 +220,12 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         // A modifier's own keydown is not the chord yet. In particular, let
         // Ctrl-[ cancel an armed deletion before considering a global clear.
         if (["Shift", "Alt", "Control", "Meta"].includes(event.key)) return;
+        // zc/zo fold the focused panel section; every other z placement still
+        // addresses the graph caret, wherever focus is.
+        if (this.leaderPending === "z" && !event.ctrlKey && !event.altKey && !event.metaKey && ["c", "o"].includes(event.key)
+            && this.paneFocus.foldSection(event.key === "o")) {
+            event.preventDefault(); event.stopImmediatePropagation(); this.cancelKeySequence(); return;
+        }
         const action = graphShortcut(event, this.navigationMode, this.leaderPending);
         if ((action === "panUp" || action === "panDown") && this.paneFocus.focusedPane
             && this.paneFocus.focusedPane !== "graph") { this.cancelKeySequence(); return; }
@@ -229,7 +238,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         GraphCanvasComponent.keyboardOwner = this;
         event.preventDefault();
         event.stopImmediatePropagation();
-        const prefix = this.leaderPending === "d" ? "d " : this.leaderPending && (action === "previous" || action === "next") ? "Space " : event.ctrlKey ? "Ctrl+" : "";
+        const prefix = this.leaderPending === "d" ? "d " : this.leaderPending === "g" ? "g" : this.leaderPending && (action === "previous" || action === "next") ? "Space " : event.ctrlKey ? "Ctrl+" : "";
         this.lastShortcut = `${prefix}${event.key === " " ? "Space" : event.key} → ${action}`;
         this.cancelKeySequence();
         if (action === "leader" || action === "hintLeader" || action === "centreLeader" || action === "deleteLeader" || action === "historyLeader") {
@@ -373,8 +382,8 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     @Input() contextQuery = "";
     @Input() contextSource?: GraphSource;
     get sourceLocation(): GraphSource | undefined { return this.loadedSnap?.sourceLocation ?? this.run?.sourceLocation ?? this.contextSource; }
-    get sourceQuery(): string { return this.sourceLocation?.query ?? this.loadedSnap?.query ?? this.run?.query ?? this.contextQuery; }
-    get sourceTitle(): string { return this.sourceLocation?.title || sourceHeading(this.sourceQuery).title; }
+    get sourceQuery(): string { return this.sourceLocation?.query ?? this.loadedSnap?.query ?? this.run?.editorQuery ?? this.run?.query ?? this.contextQuery; }
+    get sourceTitle(): string { return cleanSourceTitle(this.sourceLocation?.title || this.loadedSnap?.title || sourceHeading(this.sourceQuery).title); }
     get sourceComment(): string { return this.sourceLocation?.comment || sourceHeading(this.sourceQuery).comment; }
     showSource(): void { if (this.sidePanel) this.sidePanel.topTab = "source"; }
     async jumpToSource(): Promise<void> {
@@ -437,7 +446,40 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
             this.updateControlTheme();
             this.applyBackground();
         });
+        this.resizeSub = this.paneFocus.resize$.subscribe(({ pane, grow }) => {
+            const owner = GraphCanvasComponent.keyboardOwner;
+            if (this.isKeyboardVisible() && (!owner || owner === this || !owner.isKeyboardVisible())
+                && !this.resizeFocusedPane(pane, grow)) this.paneFocus.lastAction += " (focus the graph or its panel)";
+        });
         this.updateControlTheme();
+    }
+
+    private resizeSub: Subscription;
+
+    /** `<c-w> Space j/k` (and the older Ctrl-,): dock the panel below if needed
+     *  and give the focused graph/panel pane 10% more (j, Ctrl-,) or less (k)
+     *  height. Measures the rendered split, so a dragged handle is respected
+     *  rather than the last programmatic value. */
+    private resizeFocusedPane(pane: string | null, grow: boolean): boolean {
+        if (pane !== "graph" && pane !== "panel") return false;
+        const graph = this.host.nativeElement.querySelector<HTMLElement>(".graph-split-left");
+        const panel = this.host.nativeElement.querySelector<HTMLElement>("ts-graph-side-panel");
+        let current = this.graphPercent;
+        if (this.dock === "bottom" && graph && panel) {
+            const g = graph.getBoundingClientRect().height, p = panel.getBoundingClientRect().height;
+            if (g + p > 0) current = g / (g + p) * 100;
+        } else this.styleService.sidePanelDock = "bottom";
+        const graphGrows = (pane === "graph") === grow;
+        const graphPercent = Math.round(Math.max(15, Math.min(85, current + (graphGrows ? 10 : -10))));
+        this.graphPercent = graphPercent;
+        this.bottomPanePercent = 100 - graphPercent;
+        this.cdr.detectChanges();
+        // Re-assert the flex bases even when the bound numbers did not change.
+        const splitGraph = this.host.nativeElement.querySelector<HTMLElement>(".graph-split-left");
+        const splitPanel = this.host.nativeElement.querySelector<HTMLElement>("ts-graph-side-panel");
+        if (splitGraph && splitPanel) { splitGraph.style.flexBasis = `${graphPercent}%`; splitPanel.style.flexBasis = `${100 - graphPercent}%`; }
+        setTimeout(() => { this.visualiser?.sigma.resize(); this.visualiser?.sigma.refresh(); });
+        return true;
     }
 
     /** The canvas element currently hosting the sigma renderer. When the dock
@@ -670,6 +712,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         this.destroyed = true;
         ++this.libraryRequest;
         this.stylesSub.unsubscribe();
+        this.resizeSub.unsubscribe();
         this.closeInlineSnap();
     }
 
@@ -738,6 +781,13 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     private driver = inject(DriverState);
     private connectionStatus = toSignal(this.driver.status$);
     private snackbar = inject(SnackbarService);
+
+    /** Titled queries name their snaps/PNGs after the title (`<short-title>-0`);
+     *  otherwise the referenced types name them (`<types>-00`). */
+    private exportName(): { name: string; digits?: string } {
+        const titled = snapTitleBase(this.sourceTitle);
+        return titled ? { name: titled, digits: "1" } : { name: this.exportBaseName() };
+    }
 
     private exportBaseName(): string {
         const schema = this.schemaState.value$.value;
@@ -901,11 +951,12 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
             const snap = visualiser.captureSnap(this.loadedSnap?.query || this.run?.query || this.run?.graph.query || this.contextQuery, this.loadedSnap?.schemaMode ?? this.schemaMode,
                 this.inlineSnap?.expansionQueries ?? this.run?.expansionQueries ?? this.loadedSnap?.expansionQueries ?? []);
             snap.sourceLocation = this.sourceLocation;
+            if (this.sourceTitle) snap.title = this.sourceTitle;
             snap.view.finderText = this.finderText;
             snap.view.typeFilter = this.sidePanel?.elements?.typeFilter ?? "";
             snap.database = context.database;
             snap.project = context;
-            const result = await this.snapshots.request<{ path: string }>("snap", { name: this.exportBaseName(), ...context }, {
+            const result = await this.snapshots.request<{ path: string }>("snap", { ...this.exportName(), ...context }, {
                 method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(snap, null, 2),
             });
             this.snackbar.success(`Saved ${result.path}`);
@@ -926,15 +977,15 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
     async exportPng() {
         const visualiser = this.visualiser;
         if (!visualiser || this.exporting) return;
-        const baseName = this.exportBaseName();
+        const name = this.exportName();
         this.exporting = true;
         try {
             const context = await this.requireSnapshotContext();
             if (!context || this.visualiser !== visualiser) return;
             const health = await this.snapshots.request<{ imageFolders?: boolean }>("health", {});
             if (!health.imageFolders) throw new Error("Restart the local viewer server to save PNGs in temp/imgs.");
-            const blob = await visualiser.exportPng("currentView");
-            const saved = await this.snapshots.request<{ path: string }>("export", { name: baseName, ...context }, {
+            const blob = await visualiser.exportPng("currentView", { title: this.sourceTitle, comment: this.sourceComment });
+            const saved = await this.snapshots.request<{ path: string }>("export", { ...name, ...context }, {
                 method: "POST", headers: { "Content-Type": "image/png" }, body: blob,
             });
             this.snackbar.success(`Saved ${saved.path}`);

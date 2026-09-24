@@ -130,8 +130,8 @@ export class GraphInstanceExplorerComponent implements OnChanges {
         return this.graphViewState.isInstanceConnectionLoaded(this.run, this.instanceIID, attr.type);
     }
 
-    /** Frame this instance's attribute(s) of the given type in the graph
-     *  (without changing the panel selection). */
+    /** Mark this instance's attribute(s) of the given type with secondary
+     *  carets and pan them into view (no zoom, panel selection unchanged). */
     revealAttribute(attr: AttributeData) {
         if (!this.type || !this.instanceIID || this.type.kind === "attributeType") return;
         const ownerKind = this.type.kind === "relationType" ? "relation" : "entity";
@@ -260,15 +260,13 @@ export class GraphInstanceExplorerComponent implements OnChanges {
         return !!this.visualiser?.nodeKeyByIid(rel.relationIID);
     }
 
-    /** Frame the already-added relation node in the graph (without changing the
-     *  panel selection). */
+    /** Mark the already-added relation node with a secondary caret and pan it
+     *  into view, without changing the panel selection. */
     revealRelation(rel: RelationInstanceData) {
         const key = this.visualiser?.nodeKeyByIid(rel.relationIID);
         if (!key || !this.visualiser) return;
         this.visualiser.setNodeAppearance(key, "viewHidden", false);
-        this.visualiser.correspondenceNodes = new Set([key]);
         this.visualiser.revealNodes([key]);
-        this.visualiser.sigma.refresh();
     }
 
     inspectRelation(rel: RelationInstanceData) {
@@ -281,8 +279,8 @@ export class GraphInstanceExplorerComponent implements OnChanges {
         return !!key && !this.visualiser?.graph.getNodeAttribute(key, "viewHidden");
     }
 
-    /** Frame the inspected instance itself in the graph (it's always present).
-     *  No selection change — just pan/zoom to it. */
+    /** Put the caret on the inspected instance itself, panning it into view
+     *  only if needed (never zooming). No selection change. */
     revealSelf() {
         if (!this.type || !this.instanceIID) return;
         const kind = this.type.kind === "relationType" ? "relation"
@@ -290,7 +288,7 @@ export class GraphInstanceExplorerComponent implements OnChanges {
         const key = this.visualiser?.instanceNodeKey(kind, this.type.label, this.instanceIID);
         if (key) {
             this.visualiser?.setNodeAppearance(key, "viewHidden", false);
-            this.visualiser?.revealNodes([key]);
+            this.visualiser?.pointCaret(key, "none", true);
         }
     }
 
@@ -368,8 +366,8 @@ export class GraphInstanceExplorerComponent implements OnChanges {
         return !!v && !!relation && !!player && v.graph.edges(relation, player).length > 0;
     }
 
-    /** Frame the already-added role-player in the graph (without changing the
-     *  panel selection). */
+    /** Mark the already-added role-player with a secondary caret and pan it
+     *  into view, without changing the panel selection. */
     revealLink(link: LinkData) {
         const key = this.visualiser?.nodeKeyByIid(link.playerIID);
         if (key) this.visualiser?.revealNodes([key]);

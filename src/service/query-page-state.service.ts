@@ -49,6 +49,8 @@ export interface RunOutputState {
     label: string;
     query: string;
     sourceLocation?: GraphSource;
+    /** The editor text behind a derived context read, for its title/comment. */
+    editorQuery?: string;
     snapshotContext?: GraphSnapshotContext;
     restoredSnap?: GraphSnap;
     expansionQueries?: string[];
@@ -429,7 +431,7 @@ export class QueryPageState {
         this.runQuery(currentTab.query);
     }
 
-    runQuery(query: string, externalRead?: { sourceLocation?: GraphSource; limit: number; schemaMode?: boolean; projectTempDirectory?: string; response?: ApiResponse<QueryResponse> }): Observable<RunResult> {
+    runQuery(query: string, externalRead?: { sourceLocation?: GraphSource; editorQuery?: string; limit: number; schemaMode?: boolean; projectTempDirectory?: string; response?: ApiResponse<QueryResponse> }): Observable<RunResult> {
         if (externalRead && splitTypeQLQueries(query).length > 1) {
             throw new Error("Editor graph requests must contain one query.");
         }
@@ -465,6 +467,7 @@ export class QueryPageState {
         newRun.graph.schemaMode = externalRead?.schemaMode ?? (!!oldRun?.graph.schemaMode && oldRun.graph.query === query);
         newRun.graph.database = this.driver.requireDatabase().name;
         newRun.sourceLocation = externalRead?.sourceLocation;
+        newRun.editorQuery = externalRead?.editorQuery;
         newRun.snapshotContext = externalRead?.projectTempDirectory
             ? this.snapshots.remember(newRun.graph.database, externalRead.projectTempDirectory)
             : !externalRead && oldRun?.snapshotContext?.database === newRun.graph.database ? oldRun.snapshotContext

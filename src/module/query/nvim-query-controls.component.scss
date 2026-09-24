@@ -4,12 +4,19 @@
 :host {
     display: inline-block;
 
+    // Top right beside Snap, leaving the top left for the title and comment.
     &.floating {
         position: absolute;
-        left: 16px;
-        top: 96px;
+        right: 152px;
+        top: 16px;
         z-index: 10;
-        background: var(--theme-deep-purple);
+
+        button {
+            height: 32px;
+            padding: 0 10px;
+            font-size: 12px;
+            background: var(--theme-deep-purple);
+        }
     }
 }
 

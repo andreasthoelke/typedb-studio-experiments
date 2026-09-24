@@ -34,7 +34,7 @@ export function graphShortcut(event: GraphKeyEvent, mode: GraphNavigationMode = 
         action = leader === "space" ? (event.key === "h" ? "previous" : event.key === "l" ? "next" : event.key === "Enter" ? "syncCaret" : "cancelLeader")
             : leader === "comma" ? (event.key === "f" ? "hints" : "cancelLeader")
             : leader === "d" ? (event.key === "d" ? "removeCaret" : event.key === "Enter" ? "remove" : "cancelLeader")
-            : leader === "g" ? (event.key === ";" ? "back" : "cancelLeader")
+            : leader === "g" ? (event.key === ";" ? "back" : event.key === "o" ? "syncCaret" : "cancelLeader")
             : ({ z: "centreCaret", t: "caretTop", b: "caretBottom", h: "caretLeft", l: "caretRight" } as Record<string, GraphShortcut>)[event.key] ?? "cancelLeader";
         if (action === "cancelLeader" && event.key.length !== 1) return null;
     } else {

@@ -1,6 +1,6 @@
 # Local Studio fork: maintainer handoff
 
-Updated 2026-09-22. Read this first, then [the workflow guide](local-graph-viewer.md).
+Updated 2026-09-24. Read this first, then [the workflow guide](local-graph-viewer.md).
 This is a personal, evolving graph exploration tool integrated with Neovim.
 An upstream PR is not a goal. Keep working in this repository and reuse Studio's
 existing components where helpful; improve the design as actual use suggests.
@@ -231,9 +231,9 @@ intent or guarantee useful context after every failed write. Preserve the origin
 Neovim execution and make the separate graph query visible/editable. Explorer
 expansions often offer better choices than asking the user to type relation names.
 
-Current shortcuts: Ctrl-w h/j/k/l pane focus (w cycle, p previous across panes and windows, H/L outermost window, t/q/g/e/b direct, escalating past the last pane), c caret, hjkl spatial move, n/o/y/. diagonal move (↙/↗/↖/↘), Ctrl-o (also g;) caret history, Shift nudge, Ctrl-Shift add / Option remove destination, ,f node hints, Ctrl-y/e/h/l pan,
-Esc/Ctrl-[ clear (or cancel pending deletion), dd remove caret / d Enter remove selection from view, Space h/l browse, Backspace close preview,
-zz centre caret without zoom, zt/zb/zh/zl position it at a ⅛ viewport inset, Enter focus, +/- zoom, r re-layout, s save, / node picker, ? help.
+Current shortcuts: Ctrl-w h/j/k/l pane focus (w cycle, p previous across panes and windows, H/L outermost window, t/q/g/e/b direct, Space j/k resize, escalating past the last pane), c caret, hjkl spatial move, n/o/y/. diagonal move (↙/↗/↖/↘), Ctrl-o (also g;) caret history, Shift nudge, Ctrl-Shift add / Option remove destination, ,f node hints, Ctrl-y/e/h/l pan,
+Esc/Ctrl-[ clear (or cancel pending deletion), dd remove caret / d Enter remove selection from view, Space h/l browse, Space Enter / go other view, Backspace close preview,
+zz centre caret without zoom, zt/zb/zh/zl position it at a ⅛ viewport inset, Enter focus, +/- zoom, r re-layout (caret kept), s save, / node picker, ? help.
 In the picker, Ctrl-n/p or arrows browse; Enter sets the caret and Esc/Ctrl-[ cancels.
 See the workflow guide for selection semantics and Vimium instructions. No hover
 preview or tooltip is attached to snap chips; × deletes immediately, without a dialog.
@@ -514,8 +514,8 @@ retaining here/every preference and updating even another instance of the same
 type. Plain inspection cannot alter reducer highlighting or clear searches.
 Ctrl-Shift motion / Shift-click and Option edits use `toggleSingle` only when membership must actually change,
 so they remain idempotent and legacy snap exclusions keep working. External
-selection edits do not reset the caret. Re-layout, renderer remount and snap
-restoration start Normal. Removing the caret externally clears stale state.
+selection edits do not reset the caret. Re-layout keeps the caret, history and
+secondary carets (2026-09-24); renderer remount and snap restoration start Normal. Removing the caret externally clears stale state.
 
 The canvas handles one-second Space/comma/z/g/d prefixes, the Ctrl allowlist and graph
 hints. Hints use only on-screen non-hidden nodes (including dimmed ones), fixed
@@ -530,8 +530,9 @@ Sigma's hover canvas renders four constant-width caret corners from reducer-only
 attributes, including on dimmed nodes. No snapshot-format change or serialized
 caret, history or hint/prefix state. Node hints are temporary DOM overlays.
 
-Navigation stops layout and freezes normalization, minimally pans the caret into
-a padded viewport, and only auto-zooms out if its body is too large. Enter fits
+Navigation stops layout and freezes normalization and minimally pans the caret into
+a padded viewport; it never zooms (2026-09-24, previously it zoomed out for an
+oversized body). Enter fits
 the effective highlighted bodies using Sigma glyph scaling. Zoom uses the explicit
 selection's screen-space centre. New camera animations replace the old one; manual
 pan does not change selection. `centreCaret` (zz) pans to the node’s normalized
@@ -774,7 +775,7 @@ Supersedes earlier selective Vimium and two-pane tab instructions above.
 - Space Enter uses BroadcastChannel, scoped to server addresses and database;
   it marks exact-type matches in the opposite graph without fetching or selecting.
   One primary caret plus transient dotted correspondence markers; no multi-caret
-  command semantics. The canvas closes the channel on destruction.
+  command semantics. (Superseded 2026-09-24 by the isa-closure matching below.) The canvas closes the channel on destruction.
 - New D3 layouts start compact; dense/tight add stronger centering. Redraw
   preserves density. Snap parsing accepts the new density values.
 - Snaps retain data/view/selection but use current appearance on every restore
@@ -828,7 +829,8 @@ the existing job. No Hammerspoon or Neovim restart was needed.
   Ctrl-n/p adapts native/Material dropdown keys and navigates Explorer controls;
   zc/zo operate the focused Explorer section. Ctrl-o remains graph caret history.
   Canvas Ctrl-, docks below if necessary and transfers 10% height toward focus,
-  clamped to 15–85%. Empty connected Query pages mount their graph immediately.
+  clamped to 15–85%. (The user reported Ctrl-, not arriving; Ctrl-w Space j/k is
+  the primary chord since 2026-09-24.) Empty connected Query pages mount their graph immediately.
 - `graph-theme-pair.ts` supplies the Paper8/Ink9-derived pair and shared-structure
   merge. `GraphStyleService` persists both palettes, follows effective UI theme,
   and observes cross-window pair changes. Shared structural edits preserve the
@@ -861,3 +863,65 @@ set to the existing pts-tour3 connection it also verifies empty Query startup an
 Explorer loaded relations, primary/secondary caret behavior and folds using a
 read-only query. Source tests use an isolated Neovim socket and moved headers;
 no user's session or data is changed for validation.
+
+
+## Secondary carets, titles and panel keys (2026-09-24)
+
+- **Secondary carets are the shared "many matches" indicator.**
+  `GraphVisualiser.pointCarets(keys, primary)` sets `correspondenceNodes` (dotted
+  corners) and places the primary caret with the ordinary follow. Neovim geo,
+  Space Enter / `go`, and Explorer Reveal all use it. Commands still address only
+  the primary caret. `revealNodes` now marks and pans (never zooms); Explorer
+  Reveal on the inspected node itself uses `pointCaret`.
+- `followNavigation` zooms only for `fit` (Enter). Caret jumps pan only.
+- `reLayout` no longer calls `endNavigation`: caret, history and markers survive.
+- Cross-view Space Enter uses `isaRelatives` (`graph-correspondence.ts`): a data
+  receiver matches the type and its transitive subtypes (abstract `stage-intent`
+  finds `intent-*` instances); a schema receiver matches the type and its
+  supertypes. The primary is the current caret or nearest exact match. The
+  receiver uses its own SchemaState; the message format is unchanged.
+- Neovim geo (`drainCaret`) first reads `editorIllustrationQuery(target, schema, 20,
+  true)` — the paragraph's whole connected pattern — then the old focused read if
+  that errors or returns no rows. So `$intent isa stage-intent` and an anonymous
+  `occurrence-of (…)` line resolve to the paragraph's instances; every match is
+  marked. Reads stay bounded (20 rows, 32 variables) and additive as before.
+- Titles: `graph-title.mjs` (shared by browser and server) cleans `# ─` headers
+  (drops trailing `───`) and derives `snapTitleBase` (four-character words, ≤28
+  chars). Titled snaps/PNGs POST `digits=1` so the server's counter starts at
+  `-0`; untitled names keep `-00`. Snaps store an optional `title` (parser accepts
+  it); the listing's chip label is `titledSnapLabel(filename, title)` or the old
+  type abbreviation. An old bridge ignores `digits` and uses `-00`; restart it.
+- The canvas shows title + comment on one translucent plate (top-left) and passes
+  them to `exportPng(mode, caption)`, which draws the same plate. The floating
+  Neovim button moved top-right beside Snap.
+- Query runs keep `editorQuery` (the Neovim text behind a derived context read)
+  so the title survives when provenance is missing. The real cause for schema
+  paragraphs: the runner prepends `define`, and `M.source_location` matched that
+  line instead of the header. It now skips bare define/redefine/undefine lines.
+  Reload the Lua loader to adopt it; no bridge restart is needed for that part.
+- Failed plain inserts: `contextQueries()` in `viewer-run.mjs` returns the insert
+  patterns (labelled existing data, statement failed) before the type/literal
+  read; the executor falls through on error or empty rows. A second `gep` of a
+  committed insert therefore shows its relations, not every attribute. Needs a
+  bridge restart. The browser-side "Read graph context" path is unchanged.
+- Panel keys: PaneFocusService no longer consumes `z`; the canvas z prefix calls
+  `paneFocus.foldSection()` for zc/zo in the panel, and zz/zt/zb/zh/zl reach the
+  graph from the panel. Plain Space in the panel arms a one-second section
+  leader (and suppresses a focused button's Space activation, including keyup);
+  Space Ctrl-n/p focuses the next/previous top-level `.detail-section`,
+  `.panel-section` or `button.section-header`. `Ctrl-w Space j/k` emits
+  `paneFocus.resize$`; the visible canvas resizes from the measured split and
+  re-asserts both flex bases (a dragged handle no longer desynchronises it).
+
+Validation: `pnpm test:viewer` (119), `pnpm build:viewer`,
+`node scripts/viewer-shortcuts.browser.mjs`, `node scripts/viewer-workflow.browser.mjs`
+with `TYPEDB_TEST_CONNECTION` (resize chord, caret-preserving r, caption plate and
+PNG caption, zz and Space Ctrl-n/p from the panel), `viewer-live-snap`,
+`viewer-schema-focus`, `viewer-schema-expand`, `nvim-caret.test.mjs`, and the new
+live read-only `node scripts/viewer-multicaret.browser.mjs` (geo on `$intent`
+marks all 4 intents; geo on `occurrence-of` marks its 3 instances; Schema
+`stage-intent` + `go` marks its subtypes' 4 instances in Query).
+`viewer-schema-focus` had a pre-existing failure: Schema starts maximised, so its
+toolbar buttons were covered; the test now dispatches those clicks directly.
+Snap and PNG naming, the define-line fix and failed-insert contexts are covered
+by unit tests; no user database writes were made.

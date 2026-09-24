@@ -41,9 +41,22 @@ export function contextQuery(query, kind, successful = false) {
         return { query: `match\n${labels.map(label => `{ $type label ${label}; }`).join(' or\n')};\ntry { $type owns $attribute; };\ntry { $type relates $role; };\ntry { $type plays $played; };`,
             schemaMode: true, note: 'Current schema context: separate read of the declared types and their attributes/roles.' };
     }
-    const inserted = successful && insertedGraphContext(query);
-    if (inserted) return { query: inserted, schemaMode: false,
-        note: 'Current data context: separate read of the successful insert patterns, including their relation nodes; the write is never replayed.' };
+    return contextQueries(query, kind, successful)[0] ?? null;
+}
+
+/** Candidate context reads, most specific first. A failed plain insert (for
+ * example a duplicate key) first reads its own patterns as existing data, so a
+ * repeated run shows the same relations as the successful one. Only when that
+ * finds nothing does the looser type/literal read apply. */
+export function contextQueries(query, kind, successful = false) {
+    if (kind !== 'write') { const context = contextQuery(query, kind, successful); return context ? [context] : []; }
+    const candidates = [];
+    const all = tokens(query, true, true);
+    const inserted = insertedGraphContext(query);
+    if (inserted) candidates.push({ query: inserted, schemaMode: false, note: successful
+        ? 'Current data context: separate read of the successful insert patterns, including their relation nodes; the write is never replayed.'
+        : 'Existing data context: separate read of the insert patterns. The statement failed; this shows data that was already present.' });
+    if (successful && inserted) return candidates;
     const branches = [];
     for (let i = 0; i < all.length; i++) {
         if (all[i].kind !== 'variable' || all[i + 1]?.text !== 'isa') continue;
@@ -64,9 +77,9 @@ export function contextQuery(query, kind, successful = false) {
         const constraints = ids.length ? ids : filters;
         branches.push(`{ $item isa ${type.text}${constraints.length ? ', ' + constraints.join(', ') : ''}; }`);
     }
-    if (!branches.length) return null;
-    return { query: `match\n${[...new Set(branches)].join(' or\n')};\ntry { $item has $attribute; };`, schemaMode: false,
-        note: 'Current data context: separate read of referenced types/literal attributes; not proof that the intended write already exists.' };
+    if (branches.length) candidates.push({ query: `match\n${[...new Set(branches)].join(' or\n')};\ntry { $item has $attribute; };`, schemaMode: false,
+        note: 'Current data context: separate read of referenced types/literal attributes; not proof that the intended write already exists.' });
+    return candidates;
 }
 
 /** No query retry: after dispatch a transport failure has an unknown commit outcome. */
@@ -129,12 +142,17 @@ export function createRunExecutor({ address = process.env.TYPEDB_ADDRESS || 'htt
                 note: 'Graph and Neovim table use the same executed answer. Apply graph context controls to request a separate read.' };
         }
         if (result.execution.status !== 'unknown' && dispatched) {
-            const context = contextQuery(query, kind, result.execution.status === 'success');
-            if (context) {
+            const candidates = contextQueries(query, kind, result.execution.status === 'success');
+            for (const [index, context] of candidates.entries()) {
                 try {
                     const response = await execute(context.query, request.database, 'read', result.limit);
-                    if (response.err) result.contextError = response.err.message;
-                    else result.graph = { ...context, response, source: 'context' };
+                    if (response.err) { result.contextError = response.err.message; continue; }
+                    // An empty pattern read falls through to the looser context.
+                    const empty = response.ok.answerType === 'conceptRows' && !response.ok.answers.length;
+                    if (empty && index < candidates.length - 1) continue;
+                    result.graph = { ...context, response, source: 'context' };
+                    delete result.contextError;
+                    break;
                 } catch (error) { result.contextError = error.message; }
             }
         }

@@ -8,9 +8,20 @@ import { tmpdir } from 'node:os';
 import { once } from 'node:events';
 import { createViewerServer } from './viewer-server.mjs';
 import { sourceHeading } from '../src/framework/util/graph-source.ts';
+import { snapTitleBase, titledSnapLabel } from '../src/framework/util/graph-title.mjs';
 const exec = promisify(execFile);
 test('source heading extracts title and contiguous comments', () => {
     assert.deepEqual(sourceHeading('# ─ 6f · Fill the slots\n# Keep the identity\n# when moving.\nmatch'), {title:'6f · Fill the slots',comment:'Keep the identity\nwhen moving.'});
+    assert.equal(sourceHeading('define\n# ─ 9a ─ Override entity + attachment. ───────\nattribute pos-x value double;').title, '9a ─ Override entity + attachment.');
+});
+test('titled snaps use four-character words, a bounded length and a single-digit index', () => {
+    assert.equal(snapTitleBase('8d · Read the pattern bindings.'), '8d-read-the-patt-bind');
+    assert.equal(snapTitleBase('9a ─ Override entity + attachment. ─────'), '9a-over-enti-atta');
+    const long = snapTitleBase('Extraordinarily many considerable words describing the pattern roles and scenes');
+    assert.ok(long.length <= 28 && long.startsWith('extr-many-cons'), long);
+    assert.equal(snapTitleBase('── ──'), '');
+    assert.equal(titledSnapLabel('8d-read-the-patt-bind-0.snap.json', '8d · Read the pattern bindings.'), '8d read the patt bind 0');
+    assert.equal(titledSnapLabel('motivation-00.snap.json', '8d · Read the pattern bindings.'), null);
 });
 test('source jump locates a moved header safely in a real isolated Neovim', {timeout:15000}, async t => {
     const dir = await mkdtemp(join(tmpdir(),'studio-source-')), socket = join(dir,'nvim.sock'), file = join(dir,"tour's % file.tql");
@@ -30,4 +41,8 @@ test('source jump locates a moved header safely in a real isolated Neovim', {tim
     const captured=await exec('/opt/homebrew/bin/nvim',['--server',socket,'--remote-expr',`luaeval('${lua.replaceAll("'","''")}')`]);
     assert.equal(JSON.parse(captured.stdout).title,'6f · Fill the slots');
     assert.equal(JSON.parse(captured.stdout).line,3);
+    // The schema runner prepends a bare define line that is not in the buffer.
+    const defined=`(function() local m=dofile(${JSON.stringify(module)}); return vim.json.encode(m.source_location('define\\n${anchor}\\n# Keep the identity\\nmatch')) end)()`;
+    const withDefine=await exec('/opt/homebrew/bin/nvim',['--server',socket,'--remote-expr',`luaeval('${defined.replaceAll("'","''")}')`]);
+    assert.equal(JSON.parse(withDefine.stdout).title,'6f · Fill the slots');
 });

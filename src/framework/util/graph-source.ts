@@ -1,3 +1,5 @@
+import { cleanSourceTitle } from "./graph-title.mjs";
+
 /** Source is provenance only. Restoring it never executes a query. */
 export interface GraphSource {
     path: string;
@@ -13,5 +15,5 @@ export function sourceHeading(query: string): { title: string; comment: string }
     if (index < 0) return { title: '', comment: '' };
     const comments: string[] = [];
     for (let i = index + 1; i < lines.length && /^\s*#/.test(lines[i]); i++) comments.push(lines[i].replace(/^\s*#\s?/, ''));
-    return { title: lines[index].replace(/^\s*# ─ /, '').trim(), comment: comments.join('\n') };
+    return { title: cleanSourceTitle(lines[index].replace(/^\s*# ─ /, '')), comment: comments.join('\n') };
 }

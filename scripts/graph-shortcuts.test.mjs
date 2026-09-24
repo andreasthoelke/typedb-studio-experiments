@@ -43,6 +43,7 @@ test('Shift directions nudge; Ctrl-Shift adds; original Ctrl pan/history maps re
     assert.equal(graphShortcut(key('>',{shiftKey:true,ctrlKey:true}),'caret'),'downRight');
     assert.equal(graphShortcut(key('g'),'caret'),'historyLeader');
     assert.equal(graphShortcut(key(';'),'caret','g'),'back');
+    assert.equal(graphShortcut(key('o'),'normal','g'),'syncCaret','go aliases Space Enter');
 });
 
 test('modifier motions support Shift and the macOS Option character fallback', () => {

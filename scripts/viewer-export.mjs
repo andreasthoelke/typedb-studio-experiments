@@ -2,6 +2,7 @@ import { mkdir, open, unlink, stat, lstat, readdir } from 'node:fs/promises';
 import { constants } from 'node:fs';
 import { basename, dirname, isAbsolute, join, resolve } from 'node:path';
 import { homedir } from 'node:os';
+import { titledSnapLabel } from '../src/framework/util/graph-title.mjs';
 
 const pngSignature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
 export const maxPngBytes = 64 * 1024 * 1024;
@@ -74,8 +75,11 @@ export async function listGraphSnaps(directory) {
                         return concept?.type?.label ?? concept?.label;
                     }).filter(name => typeof name === 'string'))];
                     const words = names.flatMap(name => name.split(/[-_\s]+/)).filter(Boolean);
-                    const abbreviation = words.slice(0, 10).map(word => [...word].slice(0, 2).join('')).join(' ')
-                        + (words.length > 10 ? ' ..' : '');
+                    // Titled queries save under their shortened title; older and
+                    // untitled snaps keep the type abbreviation.
+                    const heading = /^\s*# ─ (.*)$/mu.exec(snap.query ?? '')?.[1];
+                    const abbreviation = titledSnapLabel(entry.name, snap.title || snap.sourceLocation?.title || heading)
+                        ?? words.slice(0, 10).map(word => [...word].slice(0, 2).join('')).join(' ') + (words.length > 10 ? ' ..' : '');
                     metadata = { kind: snap.schemaMode ? 'schema' : 'data', nodeCount: snap.graph.nodes.length, abbreviation };
                 }
             } catch { /* Keep unreadable files visible; opening reports the error. */ }
@@ -108,26 +112,28 @@ export async function deleteGraphSnap(directory, filename) {
 }
 
 /** Exclusive creation checks the real directory and handles simultaneous exports. */
-export async function saveGraphPng(directory, baseName, bytes) {
+export async function saveGraphPng(directory, baseName, bytes, digits = 2) {
     if (!validExportName(baseName) || bytes.length < 24 || bytes.length > maxPngBytes
         || !bytes.subarray(0, 8).equals(pngSignature) || bytes.toString('ascii', 12, 16) !== 'IHDR') {
         throw new Error('Invalid graph PNG or filename.');
     }
-    return saveNumberedFile(directory, baseName, bytes, '.png');
+    return saveNumberedFile(directory, baseName, bytes, '.png', digits);
 }
 
-export async function saveGraphSnap(directory, baseName, bytes) {
+export async function saveGraphSnap(directory, baseName, bytes, digits = 2) {
     if (!validExportName(baseName) || bytes.length > maxPngBytes) throw new Error('Invalid snap filename or size.');
     const snap = JSON.parse(bytes.toString('utf8'));
     if (snap?.format !== 'typedb-studio-graph-snap' || snap.version !== 1 || !Array.isArray(snap.graph?.nodes)
         || !Array.isArray(snap.graph?.edges) || !snap.view || typeof snap.query !== 'string') throw new Error('Invalid graph snap.');
-    return saveNumberedFile(directory, baseName, bytes, '.snap.json');
+    return saveNumberedFile(directory, baseName, bytes, '.snap.json', digits);
 }
 
-async function saveNumberedFile(directory, baseName, bytes, extension) {
+/** Titled names count from a single digit (`-0`); type-derived names keep `-00`. */
+async function saveNumberedFile(directory, baseName, bytes, extension, digits = 2) {
+    digits = digits === 1 ? 1 : 2;
     await mkdir(directory, { recursive: true });
     for (let index = 0; index < 1000000; index++) {
-        const filename = `${baseName}-${String(index).padStart(2, '0')}${extension}`;
+        const filename = `${baseName}-${String(index).padStart(digits, '0')}${extension}`;
         const path = join(directory, filename);
         let file;
         try { file = await open(path, 'wx'); }

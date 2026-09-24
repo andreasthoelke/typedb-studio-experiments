@@ -327,7 +327,13 @@ If no project is known, saving activates the Snaps tab with this setting open. M
 unwritable folders and other save errors are reported; files never silently
 fall back to Downloads.
 
-The filename uses distinct entity and relation type names from the query attached
+When the query has a `# ─ ` title, PNGs and snaps are named after it: each word
+is cut to four characters, words are joined with `-`, the name stays under about
+28 characters, and the counter is a single digit starting at 0 — `# ─ 8d · Read
+the pattern bindings.` saves `8d-read-the-patt-bind-0.png`, then `-1`, and so on.
+The PNG also carries the title and comment in its top-left corner, as on screen.
+
+Untitled queries use distinct entity and relation type names from the query attached
 to the displayed result, in query order: for example,
 `scene-scene-take-take-00.png`. Editing the query without running it does not
 change the export name. Attribute-only queries use their attribute names;
@@ -351,8 +357,10 @@ or restarting.
 ## Saving and reopening graph snaps
 
 **Snap**, beside the PNG download button, saves a `.snap.json` file in
-`<project>/temp/snaps/<database>/`. PNGs go separately into `temp/imgs/<database>/`. Names use the query's types and the
-first free counter, for example `motivation-00.snap.json`. PNGs and data snaps
+`<project>/temp/snaps/<database>/`. PNGs go separately into `temp/imgs/<database>/`. Titled queries use the
+shortened title and a single-digit counter (`8d-read-the-patt-bind-0.snap.json`,
+see PNG naming above); untitled ones use the query's types and a two-digit
+counter, for example `motivation-00.snap.json`. PNGs and data snaps
 have independent counters; these are separate saves, not automatically paired
 files. Restart the viewer server after updating to enable the snap endpoint.
 
@@ -379,7 +387,8 @@ snaps**, newest first. Clicking a chip restores the saved graph directly inside 
 current canvas. The URL stays on the same route, including in full-screen mode.
 Restored schema-context Query snaps support the same Explorer additions as a fresh run.
 
-Chips show two-letter abbreviations of the distinct node type names, splitting
+A titled snap's chip shows its shortened title and index (`8d read the patt bind 0`).
+Other chips show two-letter abbreviations of the distinct node type names, splitting
 hyphenated names into words: `mental-state`, `goal`, `source` become
 `me st go so`. Long lists end in `..`. There are no hover tooltips. Use `h` / `l`
 to browse snaps (see keyboard controls below). The loaded snap's chip is highlighted.
@@ -453,7 +462,10 @@ relations, links, or attributes. These actions change the graph result without
 rewriting the query. The Neovim menu controls the initial automatic expansion;
 Explorer is the more direct way to explore further.
 
-Beside **Reveal in graph**, **Hide / Show** hides the selected node and its incident
+**Reveal in graph** marks the node(s) with dotted secondary carets and pans only
+as far as needed to bring them into view — it never zooms, and the Explorer keeps
+its node. On the inspected node itself it places the primary caret the same way.
+Beside it, **Hide / Show** hides the selected node and its incident
 edges. **Add to selection / Remove from selection** changes the same selection
 as the Elements tags. Hidden nodes remain in the result, including
 its counts and layout; they are not deleted from TypeDB. **Restore hidden / dimmed
@@ -604,15 +616,19 @@ and saved snapshots. Existing node positions, highlights and original query text
 stay unchanged; new nodes are placed near existing neighbours. Repeating the same
 illustration does not duplicate nodes or edges. Deliberately hidden targets remain
 hidden. If the database has no matching data, the view stays unchanged and a notice
-explains the miss. When several visible nodes match, keep the current matching
-caret or choose the nearest to the camera centre. Unknown untyped bindings do not
+explains the miss. The read first uses the whole paragraph's connected pattern, so `$intent isa
+stage-intent;` in a scene/take paragraph resolves to that paragraph's intents
+rather than every stage-intent; when the whole pattern finds nothing (for
+example an uncommitted insert) the focused type read is used instead. Every
+matching node gets a dotted **secondary caret**; the primary caret stays on the
+current match or goes to the one nearest the camera centre. Unknown untyped bindings do not
 fall back to unrelated nodes. Blank lines delimit the source context; this is not
 a full evaluator for arbitrary functions, expressions, negations or query stages.
 
 Neovim jumps use the same padded follow as graph motions: a comfortably visible
 node leaves the camera unchanged; an off-screen node is brought just inside the
-padded viewport. Zoom changes only when its body is too large. Use **zz** to centre
-explicitly. Ctrl-n/p remain Schema-only navigation and do not add Query data.
+padded viewport. Caret jumps only pan; they never zoom. Use **zz** to centre
+explicitly and **Enter** to fit (and zoom to) the highlighted set. Ctrl-n/p remain Schema-only navigation and do not add Query data.
 
 Neovim can also control all following viewers without switching applications.
 The default buffer-local prefix is **`\`**. Remote commands intentionally reach both following Query and Schema views:
@@ -705,15 +721,16 @@ Repeated visits to the same current node do not add history. Backtracking preser
 highlights, including selection edits made while moving. New movement after going
 back starts a new branch; there is no automatic redo attached to direction keys.
 History holds the latest 256 visits and stops at its beginning without wrapping.
-Clearing/exiting navigation, re-layout, node deletion or replacing/remounting the
-graph starts fresh; caret history is not saved in snaps.
+Clearing/exiting navigation, node deletion or replacing/remounting the graph
+starts fresh; re-layout keeps the caret, its history and secondary carets. Caret
+history is not saved in snaps.
 
 Hold **Ctrl-Shift** during a motion to add its destination, or **Option/Alt** to remove
 it. This applies to all eight directions; **Ctrl-Shift-.** adds
 the down-right destination, and **Option-.** removes it. The starting node is
 untouched. There is no Visual mode. Caret navigation stops
-the force layout so targets stay stable; **r** exits Caret and re-layouts while
-retaining selection. Elements/Explorer selection edits keep the caret.
+the force layout so targets stay stable; **r** re-layouts while keeping the caret
+on its node and retaining selection. Elements/Explorer selection edits keep the caret.
 
 **Comma, then f** opens graph hints on nodes currently on screen, including dimmed
 nodes. Type a label to move the caret and inspect that node. Labels use `asdhjkl`:
@@ -772,8 +789,9 @@ camera without persisting the caret, motion history or partial key sequences.
 | `Enter` | Fit the highlighted node bodies; in the picker, accept its active suggestion |
 | `+` (also `=`) / `-` | Zoom in/out around explicit selection, or camera centre |
 | `Space h` / `Space l` | Previous/next snap in the route-specific list, wrapping at the ends |
+| `Space Enter` (also `go`) | Mark the caret's type in the other view (subtypes in Query, supertypes in Schema) |
 | `Backspace` | Close an offline preview and return to the preserved live view |
-| `r` | Re-layout; if running, stop and restart from current positions |
+| `r` | Re-layout, keeping the caret; if running, stop and restart from current positions |
 | `s` | Save a snap |
 | `/` | Open the node picker and select its previous query text |
 | `Ctrl-n` / `Ctrl-p` | In the picker, browse next/previous suggestion; Enter sets the caret |
@@ -784,7 +802,8 @@ key. Focus changes, clicks, leaving the window or hiding the page cancel a prefi
 Bare h/l do not browse snaps. Controls work across the visible graph view; snap
 chips need no keyboard focus. Motion, node nudging, pan and zoom repeat; deletion, saving,
 re-layout and snap browsing do not. Inputs, the query editor, dialogs, menus and
-composition keep their normal behavior. Enter/Space on buttons remain native.
+composition keep their normal behavior. Enter on buttons remains native; in the
+side panel Space is the leader (Space Ctrl-n/p), so it does not click a focused button.
 The Snaps **Keys** button shows the last shortcut Studio received.
 
 ### Moving focus between panes, windows and Neovim
@@ -800,6 +819,7 @@ query editor, the graph, the Explorer and the tabbed panel.
 | `Ctrl-w w` | Cycle through the panes in reading order |
 | `Ctrl-w p` | Go back to wherever focus was last, pane or window |
 | `Ctrl-w t/q/g/e/b` | Jump to the tool window, query editor, graph, Explorer or tabbed panel |
+| `Ctrl-w Space j/k` | Give the focused graph or panel 10% more/less height (docks the panel below) |
 
 `Ctrl-w H/L` are window level, not pane level. They do not stop at the edge of
 the page first, because `h`/`l` already walk the panes and "rightmost pane" is
@@ -1154,18 +1174,20 @@ keep their keys.
 
 ### Correspondence between Schema and Query
 
-**Space Enter** sends the caret's exact type to the other loaded view on the same
-server/database. Query → Schema places the caret on that type. Schema → Query
-marks all visible loaded instances of that exact type, preserving the existing
-primary caret if it is a match, otherwise choosing one. The primary caret has
-solid corners; additional matches have dotted corners. Explicit selection is
-unchanged. No query is executed and no hidden nodes are revealed. **Escape**
-clears the correspondence markers with the ordinary graph reset.
+**Space Enter** (or **go**, mirroring Neovim's `geo`) sends the caret's type to
+the other loaded view on the same server/database and follows the isa closure.
+Schema → Query marks every visible loaded instance of the type **and of all its
+subtypes** (`sub`/`sub!` descendants), so an abstract type such as `stage-intent`
+finds its families' instances. Query → Schema places the caret on the instance's
+exact type and marks its supertypes. The primary caret (solid corners) prefers
+the current caret, then the nearest exact match; the others get dotted secondary
+carets. Explicit selection is unchanged. No query is executed and no hidden
+nodes are revealed. **Escape** clears the markers with the ordinary graph reset.
 
 This works across browser tabs/windows at the same Studio origin. It does not
-switch OS focus. Status reports no matching loaded nodes or no answering view.
-Supertype-to-subtype expansion and multiple command-bearing carets remain future
-ideas; the current command target is always the one solid caret.
+switch OS focus. Status names the type, how many sub/supertypes were included and
+how many nodes were marked, or reports no answering view. Secondary carets are
+markers: commands (zz, motions, dd, …) still act on the one solid caret.
 
 ### Layout spacing
 
@@ -1191,6 +1213,11 @@ removes fetch and returns the source concepts. A successful plain match/insert
 gets a separate read of its original patterns with named relations. The write is
 never replayed. Negative/nested scopes and explicit select/reduce are not widened.
 The graph note distinguishes this current-data context from the executed answer.
+A **failed** plain insert (for example a duplicate key on a second `gep`) reads the
+same insert patterns first, labelled as existing data, so a repeat shows the same
+relations as the successful run rather than every attribute of the referenced
+items. Only when those patterns find nothing does the looser referenced-type read
+(with attributes) apply.
 
 ### Markdown emphasis in TypeQL comments
 
@@ -1245,9 +1272,12 @@ The initial Ctrl-w motion starts from the graph if no element has acquired focus
 It no longer spends the first chord merely choosing a starting pane. A delayed
 focus after a tab switch cannot override a newer explicit pane motion.
 
-**Ctrl-, expands the focused area by ten percentage points**: graph focus pushes
-the panel down; lower-panel focus expands it upward. At least 15% remains for
-each area. From a right-docked layout this command docks the panel below first.
+**Ctrl-w Space j / k give the focused area ten percentage points more / less
+height**: with the graph focused, j pushes the panel down; with the lower panel
+focused, j expands it upward. At least 15% remains for each area. From a
+right-docked layout the command docks the panel below first. It measures the
+rendered split, so a dragged handle is respected. The older **Ctrl-,** still
+expands the focused area where the browser/OS delivers it.
 **Ctrl-n/p** supplement arrow navigation in Material selects/menus and native
 selects. The Query route exposes its maximised graph and fullscreen toggle once
 connected with a database selected, even before the first run.
@@ -1257,15 +1287,25 @@ In Explorer, relations already present in the graph show **In graph** or
 relation while keeping the current Explorer node. **Inspect** moves the primary
 caret and changes Explorer. Hidden entries offer Show & mark / Show & inspect.
 **Ctrl-o** follows the existing graph caret history: marks add no history entries.
-**Ctrl-n/p** move between visible Explorer controls; **zc/zo** close/open the
-section containing the focused control (or the first section when none is focused).
+**Ctrl-n/p** move between visible Explorer controls; **Space Ctrl-n/p** jump
+between the panel's main sections (Explorer's Links / Attributes / Relations,
+Customise's groups, …). Space on a focused header does not click it; use Enter.
+**zc/zo** close/open the section containing the focused control (or the first
+section when none is focused). Every other z command — **zz/zt/zb/zh/zl** —
+still places the graph caret while the panel has focus, just like hjkl. Only
+Ctrl-e/y and gg/G scroll the focused panel: they act on the view you are
+reading, whereas z commands are about the caret.
 These actions change the view, not database contents.
 
 ## Source provenance
 
 Neovim submissions capture the originating file, line and header text alongside
-the executed query. A header beginning `# ─ ` supplies a small clickable graph
-title, and contiguous following comment lines supply its explanation. The sixth
+the executed query. A header beginning `# ─ ` supplies the graph title (trailing
+`───` decoration is dropped), and contiguous following comment lines supply its
+explanation. Both appear top-left on one translucent plate over the canvas
+(click it to open Source), and in exported PNGs. The Neovim button sits top-right
+beside Snap. Schema paragraphs keep their title in Query too: the helper ignores
+the `define` line the runner prepends when matching the header. The sixth
 panel tab, **Source**, shows the title, expandable comment and submitted query;
 a different generated graph-context query is separately expandable.
 

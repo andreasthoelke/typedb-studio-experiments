@@ -85,6 +85,18 @@ test('illustrations are bounded reads constrained by all role players, never sou
  const bad={...target(6),context:undefined,instance:{typeLabel:'occurrence',attributes:[{label:'occurrence-id',literal:'"ok"; delete $focus;'}]}};
  assert.equal(editorIllustrationQuery(bad,schema),null);
 });
+test('paragraph illustrations resolve relations and typed variables to this pattern\'s instances',()=>{
+ schema.relations['role-binding']={kind:'relationType',label:'role-binding',relatedRoles:['instance','bound'].map(r=>({label:'role-binding:'+r}))};
+ const text='match\n  role-binding (instance: $pi, bound: $o), has role-name $rn;\n  occurrence-of (occurrence: $o, subject: $r);\n  $r has title $who;\nfetch { "who": $who };';
+ const t=target(2,0,text);
+ const focused=editorIllustrationQuery(t,schema), paragraph=editorIllustrationQuery(t,schema,20,true);
+ assert.doesNotMatch(focused,/role-binding/);
+ assert.match(paragraph,/isa role-binding;/);assert.match(paragraph,/has role-name \$v\d+;/);
+ assert.match(paragraph,/^match \$focus isa occurrence-of;/);assert.ok(!paragraph.includes('fetch'));
+ const scene='match\n  $scene isa scene;\n  scene-take (scene: $scene, take: $take);\n  $intent isa take;';
+ assert.equal(editorIllustrationQuery(target(3,0,scene),schema),'match $focus isa take; select $focus; limit 20;');
+ assert.equal(editorIllustrationQuery(target(3,0,scene),schema,20,true),editorIllustrationQuery(target(3,0,scene),schema),'An unconnected typed variable keeps its focused read');
+});
 test('relation siblings are distinguished by each slot and source variables remain independent',()=>{
  schema.relations['depiction-slot']={kind:'relationType',label:'depiction-slot',relatedRoles:['host','slot'].map(r=>({label:'depiction-slot:'+r}))};
  const text='insert\n$d isa depiction, has depiction-id "conflict-stage";\n$sa isa slot-def, has slot-id "conflict-stage/agent";\n$sg isa slot-def, has slot-id "conflict-stage/goal";\n$sb isa slot-def, has slot-id "conflict-stage/barrier";\ndepiction-slot (host: $d, slot: $sa);\ndepiction-slot (host: $d, slot: $sg);\ndepiction-slot (host: $d, slot: $sb);';

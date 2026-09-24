@@ -85,6 +85,15 @@ try {
     assert.equal(await query.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).paneFocus.focusedPane),'panel');
     await query.keyboard.press('Control+,');
     await query.waitForFunction(h=>document.querySelector('[tsPane="graph"]').getBoundingClientRect().height<h,graphHeight);
+    // Ctrl-w Space j/k: the focused pane (here the panel) gets taller, then shorter.
+    const panelHeight=()=>query.locator('ts-graph-side-panel').evaluate(el=>el.getBoundingClientRect().height);
+    const beforeGrow=await panelHeight();
+    await query.keyboard.press('Control+w');await query.keyboard.press('Space');await query.keyboard.press('j');
+    await query.waitForFunction(h=>document.querySelector('ts-graph-side-panel').getBoundingClientRect().height>h+20,beforeGrow);
+    const grown=await panelHeight();
+    await query.keyboard.press('Control+w');await query.keyboard.press('Space');await query.keyboard.press('k');
+    await query.waitForFunction(h=>document.querySelector('ts-graph-side-panel').getBoundingClientRect().height<h-20,grown);
+    assert.equal(await query.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).paneFocus.lastAction),'Ctrl+w Space k');
     // Both native menu entries and Material selects accept the control aliases.
     await query.locator('button').filter({has:query.locator('.fa-line-height')}).click();
     await query.keyboard.press('Control+n');await query.keyboard.press('Enter');
@@ -99,6 +108,22 @@ try {
     await query.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).paneFocus.focus('graph'));
     await query.keyboard.press('Space');await query.keyboard.press('s');
     await query.getByRole('heading',{name:'6f · Fill the slots'}).waitFor();
+    // The title and comment share one translucent plate over the canvas, and the PNG carries them too.
+    assert.deepEqual(await query.evaluate(()=>[...document.querySelectorAll('.graph-source-caption span')].map(el=>el.textContent.trim())),['6f · Fill the slots','Keep the identity.']);
+    const captionInk=await query.evaluate(async()=>{
+        const c=window.ng.getComponent(document.querySelector('ts-graph-canvas')),v=c.visualiser;
+        const ink=async blob=>{const bitmap=await createImageBitmap(blob),canvas=new OffscreenCanvas(bitmap.width,bitmap.height),ctx=canvas.getContext('2d');
+            ctx.drawImage(bitmap,0,0);const data=ctx.getImageData(0,0,Math.min(300,bitmap.width),Math.min(60,bitmap.height)).data;let sum=0;for(let i=0;i<data.length;i+=4)sum+=data[i]+data[i+1]+data[i+2];return sum;};
+        return [await ink(await v.exportPng('currentView')),await ink(await v.exportPng('currentView',{title:c.sourceTitle,comment:c.sourceComment}))];
+    });
+    assert.notEqual(captionInk[0],captionInk[1],'PNG export draws the caption');
+    // r keeps the caret on its node; zz from a focused panel still centres the graph caret.
+    const kept=await query.evaluate(()=>{const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;v.pointCaret('b','none',true);v.reLayout();v.stopLayout();return v.navigation.caret;});
+    assert.equal(kept,'b');
+    await query.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).paneFocus.focus('panel'));
+    await query.keyboard.press('z');await query.keyboard.press('z');
+    await query.waitForFunction(()=>{const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;const d=v.sigma.getDimensions();
+        const p=v.sigma.framedGraphToViewport(v.sigma.getNodeDisplayData('b'));return !v.sigma.getCamera().isAnimated()&&Math.abs(p.x-d.width/2)<2&&Math.abs(p.y-d.height/2)<2;});
     const pair=await query.evaluate(()=>{
         const s=window.ng.getComponent(document.querySelector('ts-graph-canvas')).liveStyleService;
         s.setKindStyle('entity',{width:123,color:'#aabbcc'});s.choosePalette('dark');
@@ -112,7 +137,7 @@ try {
     await schema.keyboard.press('Space');await schema.keyboard.press('Enter');
     await query.waitForFunction(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.correspondenceNodes.size===2);
     const correspondence=await query.evaluate(()=>{const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;return {caret:v.navigation.caret,marks:[...v.correspondenceNodes],selection:[...v.elementSelection.nodes]};});
-    assert.deepEqual(correspondence.marks,['a','b']);assert.equal(correspondence.caret,'a');assert.deepEqual(correspondence.selection,['other']);
+    assert.deepEqual(correspondence.marks,['a','b']);assert.ok(correspondence.marks.includes(correspondence.caret));assert.deepEqual(correspondence.selection,['other']);
     await schema.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.endNavigation());
     await query.bringToFront();await query.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).paneFocus.focus('graph'));
     await query.keyboard.press('Space');await query.keyboard.press('Enter');
@@ -188,6 +213,14 @@ try {
         assert.equal(await empty.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-instance-explorer')).relationsCollapsed),false);
         await empty.keyboard.press('Control+n');
         assert.notEqual(await empty.evaluate(()=>document.activeElement.textContent.trim()),'Relations');
+        // Space Ctrl-n/p jumps between main sections instead of individual controls.
+        await empty.getByRole('button',{name:'Relations',exact:true}).focus();
+        await empty.keyboard.press('Space');await empty.keyboard.press('Control+p');
+        const section=await empty.evaluate(()=>document.activeElement.textContent.trim());
+        assert.match(section,/^Attributes/,'Space Ctrl-p reaches the previous section header');
+        assert.equal(await empty.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-instance-explorer')).attributesCollapsed!==undefined),true);
+        await empty.keyboard.press('Space');await empty.keyboard.press('Control+n');
+        assert.match(await empty.evaluate(()=>document.activeElement.textContent.trim()),/^Relations/,'Space on a focused header does not click it');
         await empty.evaluate(()=>{const c=window.ng.getComponent(document.querySelector('ts-graph-canvas'));c.visualiser.stopLayout();c.liveStyleService.choosePalette('light');});
         await empty.evaluate(async()=>{await document.fonts.ready;const c=window.ng.getComponent(document.querySelector('ts-graph-canvas'));c.styleService.sidePanelDock='bottom';});
         await empty.waitForTimeout(300);

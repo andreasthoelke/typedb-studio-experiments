@@ -127,7 +127,7 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
         try {
             const url = new URL(request.url, 'http://127.0.0.1');
             if (url.pathname === '/api/viewer/health' && request.method === 'GET') {
-                return json(response, 200, { service: 'typedb-studio-bridge', structuredRuns: true, viewerControls: true, caretNavigation: true, pngExport: true, projectSnapshots: true, graphSnaps: true, snapLibrary: true, imageFolders: true, windowFocus: true, viewers: clients.size, latestRequestId: latest?.id ?? null });
+                return json(response, 200, { service: 'typedb-studio-bridge', structuredRuns: true, viewerControls: true, caretNavigation: true, pngExport: true, projectSnapshots: true, graphSnaps: true, snapLibrary: true, imageFolders: true, titledSnaps: true, windowFocus: true, viewers: clients.size, latestRequestId: latest?.id ?? null });
             }
             const database = url.searchParams.get('database');
             const projectTempDirectory = url.searchParams.get('projectTempDirectory') ?? projects.get(database);
@@ -167,7 +167,8 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                 }
                 try {
                     const directory = graphSnapshotDirectory(projectTempDirectory, database, isSnap ? 'snaps' : 'imgs');
-                    const saved = await (isSnap ? saveGraphSnap : saveGraphPng)(directory, baseName, Buffer.concat(chunks));
+                    const saved = await (isSnap ? saveGraphSnap : saveGraphPng)(directory, baseName, Buffer.concat(chunks),
+                        url.searchParams.get('digits') === '1' ? 1 : 2);
                     return json(response, 201, saved);
                 } catch (error) {
                     return json(response, 400, { error: error.message });

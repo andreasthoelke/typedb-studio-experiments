@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import { createServer } from 'node:http';
 import { createViewerServer } from './viewer-server.mjs';
-import { createRunExecutor, prepareRun, contextQuery } from './viewer-run.mjs';
+import { createRunExecutor, prepareRun, contextQuery, contextQueries } from './viewer-run.mjs';
 import { formatAnswer } from './viewer-result.mjs';
 
 const concept = (value, valueType = 'string') => ({ kind: 'value', value, valueType });
@@ -36,9 +36,14 @@ test('tables preserve variable names, false/zero/null, escaping, missing columns
 });
 
 test('context reads never include the mutation and retain quoted values', () => {
-    const q = contextQuery('insert $p isa person, has person-id "p1", has name "new";', 'write');
-    assert.match(q.query, /person-id "p1"/); assert.doesNotMatch(q.query, /insert|new/);
-    assert.match(q.note, /not proof/);
+    // A failed plain insert first reads its own patterns as existing data, then the looser type/id read.
+    const [pattern, loose] = contextQueries('insert $p isa person, has person-id "p1", has name "new";', 'write');
+    assert.equal(pattern.query, 'match $p isa person, has person-id "p1", has name "new";');
+    assert.match(pattern.note, /statement failed/);
+    assert.match(loose.query, /person-id "p1"/); assert.doesNotMatch(loose.query, /insert|new/);
+    assert.match(loose.note, /not proof/);
+    assert.equal(contextQueries('insert $p isa person;', 'write', true).length, 1);
+    assert.equal(contextQuery('match $p isa person; delete $p;', 'write').query.includes('delete'), false);
     assert.equal(contextQuery('match $x isa person; select $x;', 'read'), null);
     assert.equal(contextQuery('match $x isa person; fetch { "name": "insert" };', 'read').query, 'match $x isa person;');
 });
@@ -58,8 +63,23 @@ test('one execution shares answers, and failed writes keep their error with a se
     assert.equal(failed.execution.status, 'error'); assert.equal(failed.response.err.code, 'CNT9');
     assert.equal(failed.graph.source, 'context'); assert.equal(calls.length, 4);
     assert.equal(calls[2].commit, true); assert.equal(calls[3].transactionType, 'read');
-    assert.match(failed.lines.join('\n'), /key conflict[\s\S]*Current data context[\s\S]*Ann/);
+    assert.match(failed.lines.join('\n'), /key conflict[\s\S]*Existing data context[\s\S]*Ann/);
+    assert.match(calls[3].query, /^match \$p isa person, has name "Ann";$/);
     assert.ok(!JSON.stringify(failed).includes('secret'));
+});
+
+test('an empty insert-pattern read falls back to the referenced-type read', async () => {
+    const reads = [];
+    const run = createRunExecutor({fetchImpl: async (url, options) => {
+        const body = JSON.parse(options.body);
+        if (url.endsWith('signin')) return Response.json({token:'secret'});
+        if (body.transactionType === 'write') return Response.json({code:'CNT9',message:'key conflict'}, {status:400});
+        reads.push(body.query);
+        return Response.json(reads.length === 1 ? {...rows, answers: []} : rows);
+    }});
+    const failed = await run({...input, query:'insert $p isa person, has person-id "p9";'});
+    assert.equal(reads.length, 2); assert.match(reads[1], /try \{ \$item has \$attribute; \}/);
+    assert.equal(failed.graph.source, 'context'); assert.match(failed.graph.note, /not proof/);
 });
 
 test('lost/malformed/5xx responses are unknown and never retry or run context', async () => {

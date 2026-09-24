@@ -5,6 +5,7 @@
  */
 
 import { Injectable, NgZone, inject } from "@angular/core";
+import { Subject } from "rxjs";
 import {
     nextPane, nextPaneInCycle, paneAction, paneEscalation, panePrefix,
     type PaneAction, type PaneDirection, type PaneEscalation, type PaneGeometry, type PaneId,
@@ -23,7 +24,9 @@ interface PaneRegistration { element: HTMLElement; focusTarget: () => HTMLElemen
  *  exist.
  *
  *  Pane focus routes Ctrl-e/y to that pane's scroller. Plain graph caret
- *  motions remain available from side panels, while inputs keep editing keys. */
+ *  motions and z placements remain available from side panels, while inputs
+ *  keep editing keys. `<c-w> Space j/k` asks the visible canvas to give the
+ *  focused graph/panel pane more or less height. */
 @Injectable({ providedIn: "root" })
 export class PaneFocusService {
     private readonly zone = inject(NgZone);
@@ -38,7 +41,12 @@ export class PaneFocusService {
     private focusRevision = 0;
     private previousPane: PaneId | null = null;
     private chordTimer?: ReturnType<typeof setTimeout>;
-    private foldPending = false;
+    /** `<c-w> Space` waits for j/k (taller/shorter focused pane). */
+    private resizePending = false;
+    /** Space in a side panel is a leader for Ctrl-n/p section jumps, as in the graph. */
+    private sectionLeaderAt = 0;
+    private swallowSpaceUp = false;
+    readonly resize$ = new Subject<{ pane: PaneId | null; grow: boolean }>();
     private topPending: PaneId | null = null;
     private topTimer?: ReturnType<typeof setTimeout>;
     private listening = false;
@@ -66,7 +74,10 @@ export class PaneFocusService {
         // Capture on window so the prefix is seen before CodeMirror, Material
         // overlays and the graph canvas. Outside Angular: a focus move that
         // changes no bound state should not cost a change-detection pass.
-        this.zone.runOutsideAngular(() => window.addEventListener("keydown", this.onKey, true));
+        this.zone.runOutsideAngular(() => {
+            window.addEventListener("keydown", this.onKey, true);
+            window.addEventListener("keyup", this.onKeyUp, true);
+        });
         window.addEventListener("focus", this.onWindowFocus);
         window.addEventListener("blur", this.cancelChord);
         document.addEventListener("visibilitychange", this.cancelChord);
@@ -76,6 +87,7 @@ export class PaneFocusService {
 
     private cancelChord = (): void => {
         this.chordPending = false;
+        this.resizePending = false;
         if (this.chordTimer) clearTimeout(this.chordTimer);
         this.chordTimer = undefined;
     };
@@ -115,38 +127,93 @@ export class PaneFocusService {
 
     get focusedPane(): PaneId | null { return this.origin(this.geometry()); }
 
+    private get sectionLeader(): boolean { return performance.now() - this.sectionLeaderAt < 1000; }
+
     /** Guard in the canvas too: capture-listener registration order can vary. */
     handlesPanelKey(event: KeyboardEvent): boolean {
         if (event.altKey || event.metaKey || event.isComposing) return false;
         if (event.ctrlKey && !event.shiftKey && ["d", "f"].includes(event.key.toLowerCase())) return true;
-        if (this.focusedPane === "panel" && document.querySelector("ts-graph-side-panel .explorer-pane")
-            && ((event.ctrlKey && ["n", "p"].includes(event.key)) || (!event.ctrlKey && (event.key === "z" || this.foldPending)))) return true;
+        if (this.focusedPane === "panel" && event.ctrlKey && ["n", "p"].includes(event.key)
+            && (this.sectionLeader || document.querySelector("ts-graph-side-panel .explorer-pane"))) return true;
         return !!this.focusedPane && !["graph", "query"].includes(this.focusedPane)
             && ((!event.ctrlKey && ["g", "G"].includes(event.key)) || (event.ctrlKey && ["e", "y"].includes(event.key)));
     }
 
+    /** The main sections of the visible panel tab: Explorer's Links /
+     *  Attributes / Relations, Customise's groups, and so on. Nested sections
+     *  belong to their outer section. */
+    private panelSections(): HTMLElement[] {
+        const root = this.panes.get("panel")?.element;
+        if (!root) return [];
+        const all = [...root.querySelectorAll<HTMLElement>(".detail-section, .panel-section, button.section-header")]
+            .filter(el => this.visible(el));
+        return all.filter(el => !all.some(other => other !== el && other.contains(el) && !other.matches("button")))
+            .filter((el, index, list) => !(el.matches("button.section-header") && list.some(other => other !== el && other.contains(el))));
+    }
+
+    private sectionTarget(section: HTMLElement): HTMLElement {
+        if (section.matches("button")) return section;
+        const target = section.querySelector<HTMLElement>("button.section-header:not(:disabled)")
+            ?? [...section.querySelectorAll<HTMLElement>("button:not(:disabled), summary, a[href], [tabindex='0']")].find(el => this.visible(el));
+        if (target) return target;
+        if (!section.hasAttribute("tabindex")) section.setAttribute("tabindex", "-1");
+        return section;
+    }
+
     private explorerKey(event: KeyboardEvent): boolean {
         if (this.focusedPane !== "panel" || event.altKey || event.metaKey || event.isComposing) return false;
-        const root = this.panes.get("panel")?.element.querySelector<HTMLElement>(".explorer-pane");
-        if (!root || (event.target instanceof HTMLElement && event.target.closest("input, textarea, select, [contenteditable='true']"))) return false;
-        if (event.ctrlKey && ["n", "p"].includes(event.key)) {
+        if (event.target instanceof HTMLElement && event.target.closest("input, textarea, select, [contenteditable='true']")) return false;
+        if (!event.ctrlKey && !event.shiftKey && event.key === " ") {
+            // Arm the leader; the graph canvas still sees Space for its own leader.
+            // A focused button must not also activate on this Space.
+            this.sectionLeaderAt = performance.now();
+            if (event.target instanceof HTMLElement && event.target.closest("button, summary, [role='button']")) {
+                event.preventDefault(); this.swallowSpaceUp = true;
+            }
+            return false;
+        }
+        if (!event.ctrlKey || event.shiftKey || !["n", "p"].includes(event.key)) return false;
+        const direction = event.key === "n" ? 1 : -1;
+        const active = document.activeElement as HTMLElement | null;
+        if (this.sectionLeader) {
+            this.sectionLeaderAt = 0;
+            const sections = this.panelSections();
+            if (!sections.length) return false;
+            const index = sections.findIndex(section => section === active || section.contains(active));
+            const next = sections[index < 0 ? (direction > 0 ? 0 : sections.length - 1) : (index + direction + sections.length) % sections.length];
+            this.sectionTarget(next).focus();
+            next.scrollIntoView({ block: "nearest" });
+            this.lastAction = "Space Ctrl-" + event.key + " section";
+        } else {
+            const root = this.panes.get("panel")?.element.querySelector<HTMLElement>(".explorer-pane");
+            if (!root) return false;
             const items = [...root.querySelectorAll<HTMLElement>("button:not(:disabled), summary, [tabindex='0']")].filter(el => this.visible(el));
             if (!items.length) return false;
-            const index = items.indexOf(document.activeElement as HTMLElement), direction = event.key === "n" ? 1 : -1;
+            const index = items.indexOf(active as HTMLElement);
             items[index < 0 ? (direction > 0 ? 0 : items.length - 1) : (index + direction + items.length) % items.length].focus();
-        } else if (!event.ctrlKey && event.key === "z") {
-            this.foldPending = true;
-            setTimeout(() => this.foldPending = false, 1000);
-        } else if (this.foldPending && !event.ctrlKey && ["c", "o"].includes(event.key)) {
-            this.foldPending = false;
-            const active = document.activeElement as HTMLElement;
-            const section = active?.closest(".detail-section");
-            const header = section?.querySelector<HTMLElement>("button.section-header") ?? root.querySelector<HTMLElement>("button.section-header");
-            const expanded = !!header?.querySelector(".fa-chevron-down");
-            if (header && expanded !== (event.key === "o")) header.click();
-            header?.focus({ preventScroll: true });
-        } else { this.foldPending = false; return false; }
+        }
         event.preventDefault(); event.stopImmediatePropagation(); return true;
+    }
+
+    private onKeyUp = (event: KeyboardEvent): void => {
+        if (event.key !== " " || !this.swallowSpaceUp) return;
+        this.swallowSpaceUp = false;
+        event.preventDefault();
+    };
+
+    /** zc / zo on the focused panel section (the canvas owns the z prefix). */
+    foldSection(open: boolean): boolean {
+        if (this.focusedPane !== "panel") return false;
+        const root = this.panes.get("panel")?.element;
+        const active = document.activeElement as HTMLElement | null;
+        const section = active?.closest(".detail-section, .panel-section");
+        const header = (active?.matches("button.section-header") ? active : null)
+            ?? section?.querySelector<HTMLElement>("button.section-header") ?? root?.querySelector<HTMLElement>("button.section-header");
+        if (!header) return false;
+        const expanded = header.getAttribute("aria-expanded") === "true" || !!header.querySelector(".fa-chevron-down");
+        if (expanded !== open) header.click();
+        header.focus({ preventScroll: true });
+        return true;
     }
 
     private scrollPane(event: KeyboardEvent): boolean {
@@ -235,6 +302,25 @@ export class PaneFocusService {
             event.preventDefault();
             event.stopImmediatePropagation();
             this.chordPending = true;
+            this.chordTimer = setTimeout(this.cancelChord, 1500);
+            return;
+        }
+        if (["Shift", "Alt", "Control", "Meta"].includes(event.key)) return;
+        if (this.resizePending) {
+            this.cancelChord();
+            event.preventDefault(); event.stopImmediatePropagation();
+            const letter = event.key.toLowerCase();
+            if (!event.altKey && !event.metaKey && (letter === "j" || letter === "k")) {
+                const pane = this.focusedPane;
+                this.lastAction = `Ctrl+w Space ${letter}`;
+                this.zone.run(() => this.resize$.next({ pane, grow: letter === "j" }));
+            } else this.lastAction = "Ctrl+w Space cancelled";
+            return;
+        }
+        if (event.key === " " && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey) {
+            event.preventDefault(); event.stopImmediatePropagation();
+            this.resizePending = true;
+            clearTimeout(this.chordTimer);
             this.chordTimer = setTimeout(this.cancelChord, 1500);
             return;
         }

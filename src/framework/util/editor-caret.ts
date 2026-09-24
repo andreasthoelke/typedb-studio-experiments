@@ -163,8 +163,11 @@ function inferredPlayerTypes(variable: string, instance: EditorInstanceTarget,
 
 /** Build a bounded illustrative read from supported constraints, never from a
  * source statement. Relation targets include all bound players so siblings such
- * as depiction-slot(host, slot) resolve to the intended relation instance. */
-export function editorIllustrationQuery(target: EditorCaretTarget, schema: Schema, limit = 20): string | null {
+ * as depiction-slot(host, slot) resolve to the intended relation instance.
+ * `paragraph` also pulls in every connected binding, so a typed variable or
+ * relation resolves to the instances this paragraph actually matches rather
+ * than every instance of its type. */
+export function editorIllustrationQuery(target: EditorCaretTarget, schema: Schema, limit = 20, paragraph = false): string | null {
     const instance = target.instance;
     if (!instance) return null;
     const context = target.context ?? { focus: "@focus", bindings: { "@focus": instance } };
@@ -172,7 +175,7 @@ export function editorIllustrationQuery(target: EditorCaretTarget, schema: Schem
     const include = (key: string) => { if (context.bindings[key]) included.add(key); };
     // Relations need their players; untyped variables need their connected
     // relation patterns for inference. Typed player jumps remain focused reads.
-    const connected = (!instance.typeLabel && !instance.iid) || !!(instance.typeLabel && schema.attributes[instance.typeLabel]);
+    const connected = paragraph || (!instance.typeLabel && !instance.iid) || !!(instance.typeLabel && schema.attributes[instance.typeLabel]);
     for (let changed = true; changed;) {
         const before = included.size;
         if (connected) for (const [key, binding] of Object.entries(context.bindings)) {

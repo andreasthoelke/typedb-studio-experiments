@@ -333,6 +333,12 @@ test('snap chips describe node names, and deletion removes only the named snap w
     const first=await save('first');const second=await save('second');
     const list=await(await fetch(`${origin}/api/viewer/snaps?${context}`)).json();
     assert.equal(list.files[0].abbreviation,'me st go');
+    const titled=await (await fetch(`${origin}/api/viewer/snap?${context}&name=8d-read-the-patt-bind&digits=1`,{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({...value,title:'8d · Read the pattern bindings.'})})).json();
+    assert.equal(titled.filename,'8d-read-the-patt-bind-0.snap.json');
+    const titledList=await(await fetch(`${origin}/api/viewer/snaps?${context}`)).json();
+    assert.equal(titledList.files.find(file=>file.filename===titled.filename).abbreviation,'8d read the patt bind 0');
+    await fetch(`${origin}/api/viewer/snap?${context}&filename=${titled.filename}`,{method:'DELETE'});
     const remove=(filename,headers={})=>fetch(`${origin}/api/viewer/snap?${context}&filename=${encodeURIComponent(filename)}`,{method:'DELETE',headers});
     assert.equal((await remove(first.filename,{Origin:'https://example.com'})).status,403);
     assert.equal((await remove('../second-00.snap.json')).status,400);

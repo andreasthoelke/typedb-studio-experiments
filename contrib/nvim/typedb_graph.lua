@@ -194,7 +194,13 @@ function M.source_location(query)
   local path = vim.api.nvim_buf_get_name(0)
   if path == '' or vim.bo.buftype ~= '' then return nil end
   local lines = vim.api.nvim_buf_get_lines(0, 0, -1, false)
-  local first = query:match('[^\n]+') or ''
+  -- The schema runner prepends a bare define/redefine/undefine line that is
+  -- not in the buffer; match the first line the user actually wrote.
+  local first = ''
+  for line in query:gmatch('[^\n]+') do
+    local word = vim.trim(line)
+    if word ~= '' and word ~= 'define' and word ~= 'redefine' and word ~= 'undefine' then first = line; break end
+  end
   local at, distance = nil, math.huge
   for i, line in ipairs(lines) do
     if vim.trim(line) == vim.trim(first) then

@@ -10,6 +10,8 @@ export interface GraphSnap {
     createdAt: string;
     query: string;
     sourceLocation?: GraphSource;
+    /** Source title at save time, including editor text without provenance. */
+    title?: string;
     expansionQueries: string[];
     database?: string;
     project?: GraphSnapshotContext;
@@ -48,6 +50,7 @@ export function parseGraphSnap(text: string): GraphSnap {
         || typeof snap.createdAt !== "string" || typeof snap.schemaMode !== "boolean" || !strings(snap.expansionQueries)
         || !Array.isArray(snap.graph?.nodes) || !snap.graph.nodes.length || snap.graph.nodes.length > 100000
         || !Array.isArray(snap.graph.edges) || snap.graph.edges.length > 500000) fail();
+    if (snap.title !== undefined && typeof snap.title !== "string") fail();
     if (snap.sourceLocation) {
         const s = snap.sourceLocation;
         if (![s.path, s.anchor, s.title, s.comment, s.query].every(v => typeof v === "string")
