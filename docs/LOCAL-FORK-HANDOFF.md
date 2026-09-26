@@ -1,6 +1,6 @@
 # Local Studio fork: maintainer handoff
 
-Updated 2026-09-24. Read this first, then [the workflow guide](local-graph-viewer.md).
+Updated 2026-09-26. Read this first, then [the workflow guide](local-graph-viewer.md).
 This is a personal, evolving graph exploration tool integrated with Neovim.
 An upstream PR is not a goal. Keep working in this repository and reuse Studio's
 existing components where helpful; improve the design as actual use suggests.
@@ -232,7 +232,7 @@ Neovim execution and make the separate graph query visible/editable. Explorer
 expansions often offer better choices than asking the user to type relation names.
 
 Current shortcuts: Ctrl-w h/j/k/l pane focus (w cycle, p previous across panes and windows, H/L outermost window, t/q/g/e/b direct, Space j/k resize, escalating past the last pane), c caret, hjkl spatial move, n/o/y/. diagonal move (↙/↗/↖/↘), Ctrl-o (also g;) caret history, Shift nudge, Ctrl-Shift add / Option remove destination, ,f node hints, Ctrl-y/e/h/l pan,
-Esc/Ctrl-[ clear (or cancel pending deletion), dd remove caret / d Enter remove selection from view, Space h/l browse, Space Enter / go other view, Backspace close preview,
+Esc/Ctrl-[ clear (or cancel pending deletion), dd remove caret / d Enter remove selection from view, Space h/l browse, Space Enter / geo other view, Backspace close preview,
 zz centre caret without zoom, zt/zb/zh/zl position it at a ⅛ viewport inset, Enter focus, +/- zoom, r re-layout (caret kept), s save, / node picker, ? help.
 In the picker, Ctrl-n/p or arrows browse; Enter sets the caret and Esc/Ctrl-[ cancels.
 See the workflow guide for selection semantics and Vimium instructions. No hover
@@ -870,7 +870,7 @@ no user's session or data is changed for validation.
 - **Secondary carets are the shared "many matches" indicator.**
   `GraphVisualiser.pointCarets(keys, primary)` sets `correspondenceNodes` (dotted
   corners) and places the primary caret with the ordinary follow. Neovim geo,
-  Space Enter / `go`, and Explorer Reveal all use it. Commands still address only
+  Space Enter / `geo`, and Explorer Reveal all use it. Commands still address only
   the primary caret. `revealNodes` now marks and pans (never zooms); Explorer
   Reveal on the inspected node itself uses `pointCaret`.
 - `followNavigation` zooms only for `fit` (Enter). Caret jumps pan only.
@@ -925,3 +925,39 @@ marks all 4 intents; geo on `occurrence-of` marks its 3 instances; Schema
 toolbar buttons were covered; the test now dispatches those clicks directly.
 Snap and PNG naming, the define-line fix and failed-insert contexts are covered
 by unit tests; no user database writes were made.
+
+
+## geo, clause illustrations, zoom step and default arrows (2026-09-26)
+
+- **`go` → `geo`.** The browser alias for Space Enter is now `geo` (g, e, o;
+  `ge` is its own one-second leader), matching Neovim. `go` misfired whenever
+  the side panel had focus: `PaneFocusService` swallowed the first g for gg,
+  and the `o` then reached the canvas as the ↗ motion. `releasePanelG(event)`
+  now hands a non-gg continuation back to the canvas for that exact event,
+  whichever capture listener runs first, so `g;` works from the panel too.
+- Zoom step is `GraphVisualiser.ZOOM_STEP = 0.7 ** (1/3)` for toolbar, +/- and
+  Neovim controls: three presses equal the former step.
+- **Role arrows default toward the player.** `getRoleArrow` inherits role →
+  `links` → `"player"`; `setRoleArrow(role, null)` restores inheritance and
+  `"none"` is an explicit opt-out. The Arrow control moved into the shared edge
+  row (links row plus every role row, with Inherit). Presets without
+  `roleArrows.links` now show arrows; no format change.
+- **Schema clauses in `editorCaretTarget`.** In a variable-free declaration,
+  `declarationClause` resolves `relates r` → players of `R:r`, `plays R:r` in
+  `T` → T instances playing it, `owns a` in `T` → T owners (with `$value`).
+  The target carries `clause`; `drainCaret` skips the broad focused fallback for
+  it. Schema still carets `schemaLabels`. Declared names/`sub` parents unchanged.
+- Cross-view: a Schema **role type** caret sent with Space Enter/geo marks the
+  Query targets of edges whose `edgeRoleLabel` equals it ("Players of …").
+- TypeDB 3.12 accepts `relates subject @meta("graph-arrow", "none")` (and on
+  relation types); it appears in the schema dump and `match $rel label R; $rel
+  relates $r; let $a = get_meta("graph-arrow", $r);` reads it per role. Verified
+  on an isolated temporary server. Not yet consumed by Studio — see
+  [the explorer/actions proposal](graph-actions-proposal.md).
+
+Validation: `pnpm test:viewer` (120), `pnpm build:viewer`, `viewer-shortcuts`,
+`viewer-workflow` (arrow default/inheritance), and live read-only
+`viewer-multicaret` (relates-clause geo marks the 3 subject players; Schema role
+caret marks the same players in Query; geo typed with the panel focused keeps
+the Schema caret and reaches Query).
+

@@ -23,6 +23,8 @@ export interface EditorCaretTarget {
     identifier: string;
     instance?: EditorInstanceTarget;
     context?: { focus: string; bindings: Record<string, EditorInstanceTarget> };
+    /** A schema relates/plays/owns clause: its read is exact, with no broader fallback. */
+    clause?: "relates" | "plays" | "owns";
 }
 const labelOf = (t?: Token) => t?.kind === "word" ? t.text : t?.kind === "literal" && t.text.startsWith("`") ? t.text.slice(1, -1) : undefined;
 const quotedLabel = (label: string) => /^[\p{L}_][\p{L}\p{N}_-]*$/u.test(label) ? label : `\`${label.replaceAll("\\", "\\\\").replaceAll("`", "\\`")}\``;
@@ -122,6 +124,12 @@ export function editorCaretTarget(request: Pick<EditorCaretRequest, "source" | "
     const player = target && target.depth > 0 && roleName(target) && all[targetIndex + 1]?.text === ":"
         && all[targetIndex + 2]?.kind === "variable" ? all[targetIndex + 2].text : undefined;
     const variable = player ?? (target?.kind === "variable" ? target.text : owner);
+    // In a schema declaration, a relates/plays/owns clause is illustrated by
+    // the instances that actually use it: the players of that role, or the
+    // declared type's owners of that attribute. Schema still carets the label.
+    const clause = !variable && target && inStatement && schemaLabel ? declarationClause(inStatement, target, schemaLabel, known, schema) : null;
+    if (clause) return { schemaLabels: [schemaLabel!], identifier: target!.text, instance: clause.context.bindings[clause.context.focus],
+        context: clause.context, clause: clause.keyword };
     // A direct schema name also identifies visible instances of that type. A
     // scoped role identifies its relation; an unresolved variable stays unresolved.
     const instance = variable ? bindings.get(variable) : schemaLabel ? {
@@ -131,6 +139,42 @@ export function editorCaretTarget(request: Pick<EditorCaretRequest, "source" | "
         : instance && variable ? inferredPlayerTypes(variable, instance, bindings, schema) : [];
     return { schemaLabels, identifier: attribute ?? target!.text, instance,
         ...(variable && instance ? { context: { focus: variable, bindings: Object.fromEntries(bindings) } } : {}) };
+}
+
+/** `relation R, relates r` → players of R:r; `entity T, plays R:r` → the T
+ * instances playing it; `entity T, owns a` → T instances owning a. Only the
+ * clause keyword immediately governing the cursor counts, so the declared
+ * type name itself (and `sub` parents) keep their plain type illustration. */
+function declarationClause(statement: Token[], target: Token, schemaLabel: string,
+    known: (t?: Token) => string | undefined, schema: Schema): { keyword: "relates" | "plays" | "owns"; context: NonNullable<EditorCaretTarget["context"]> } | null {
+    const top = statement.filter(t => t.depth === 0);
+    if (top.some(t => t.kind === "variable")) return null;
+    let head = 0;
+    while (["define", "redefine", "undefine"].includes(top[head]?.text)) head++;
+    const declared = ["entity", "relation", "attribute"].includes(top[head]?.text) ? known(top[head + 1])
+        : top[head + 1]?.text === "sub" ? known(top[head]) : undefined;
+    const index = top.indexOf(target);
+    if (!declared || index < 0) return null;
+    let keyword: string | undefined;
+    for (let i = index - 1; i > head && top[i].text !== ","; i--) {
+        if (["relates", "plays", "owns", "sub"].includes(top[i].text)) { keyword = top[i].text; break; }
+    }
+    const role = schemaLabel.includes(":") ? schemaLabel.split(":") : null;
+    const focus = "$focus";
+    if ((keyword === "relates" || keyword === "plays") && role) {
+        const [relation, name] = role;
+        return { keyword, context: { focus, bindings: {
+            [focus]: { variable: focus, ...(keyword === "plays" ? { typeLabel: declared } : {}), attributes: [] },
+            "$relation": { variable: "$relation", typeLabel: relation, attributes: [], players: [{ role: name, variable: focus }] },
+        } } };
+    }
+    if (keyword === "owns" && Object.hasOwn(schema.attributes, schemaLabel) && !Object.hasOwn(schema.attributes, declared)) {
+        return { keyword, context: { focus, bindings: {
+            [focus]: { variable: focus, typeLabel: declared, attributes: [], attributeVariables: [{ label: schemaLabel, variable: "$value" }] },
+            "$value": { variable: "$value", typeLabel: schemaLabel, attributes: [] },
+        } } };
+    }
+    return null;
 }
 
 /** Infer a has-only player's possible types from its roles and ownership,

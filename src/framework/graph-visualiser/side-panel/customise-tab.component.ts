@@ -91,6 +91,13 @@ export class CustomiseTabComponent implements OnChanges, OnDestroy, DoCheck, Aft
     setEdgeLineStyle(style: LineStyle | "inherit", tag?: string): void {
         this.styleService.setEdgeLineStyle(style === "inherit" ? null : style, tag);
     }
+    setRoleArrow(tag: string, direction: "none" | "relation" | "player" | "inherit"): void {
+        this.styleService.setRoleArrow(tag, direction === "inherit" ? null : direction);
+        this.visualiser?.applyEdgeStyleUpdate();
+    }
+    arrowLabel(direction: "none" | "relation" | "player"): string {
+        return direction === "player" ? "toward player" : direction === "relation" ? "toward relation" : "none";
+    }
     activeTab: "graph" | "background" = "graph";
 
     private storage = inject(StorageService);
@@ -371,11 +378,11 @@ export class CustomiseTabComponent implements OnChanges, OnDestroy, DoCheck, Aft
     }
 
     hasEdgeLabelOverride(tag: string): boolean {
-        return this.styleService.getRoleArrow(tag) !== "none" || !!this.styleService.edgeLabelColors[tag] || this.styleService.hasEdgeLineStyle(tag) || this.styleService.hasEdgeLineThickness(tag);
+        return this.styleService.hasRoleArrow(tag) || !!this.styleService.edgeLabelColors[tag] || this.styleService.hasEdgeLineStyle(tag) || this.styleService.hasEdgeLineThickness(tag);
     }
 
     clearEdgeLabelOverride(tag: string): void {
-        this.styleService.setRoleArrow(tag, "none");
+        this.styleService.setRoleArrow(tag, null);
         this.styleService.removeEdgeLabelColor(tag);
         this.styleService.setEdgeLineStyle(null, tag);
         this.styleService.setEdgeLineThickness(null, tag);

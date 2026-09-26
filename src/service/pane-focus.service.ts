@@ -49,6 +49,18 @@ export class PaneFocusService {
     readonly resize$ = new Subject<{ pane: PaneId | null; grow: boolean }>();
     private topPending: PaneId | null = null;
     private topTimer?: ReturnType<typeof setTimeout>;
+    /** The key that followed a panel g which turned out not to be gg. */
+    private releasedG: KeyboardEvent | null = null;
+
+    /** The panel swallows a lone g while it waits for gg. If the next key is
+     *  something else, the g was the graph's (g;, geo): report it once, for
+     *  this exact event, whether or not this listener has already run. */
+    releasePanelG(event: KeyboardEvent): boolean {
+        if (this.releasedG === event) { this.releasedG = null; return true; }
+        if (!this.topPending || event.ctrlKey || ["g", "G", "Shift", "Alt", "Control", "Meta"].includes(event.key)) return false;
+        this.topPending = null; clearTimeout(this.topTimer);
+        return true;
+    }
     private listening = false;
     private bridgeAbsent = false;
     /** True while the most recent focus event was this window being entered
@@ -245,7 +257,10 @@ export class PaneFocusService {
         const line = event.ctrlKey && !event.shiftKey && ["e", "y"].includes(event.key.toLowerCase());
         const top = !event.ctrlKey && event.key === "g";
         const bottom = !event.ctrlKey && event.key === "G";
-        if (!line && !top && !bottom) { this.topPending = null; return false; }
+        if (!line && !top && !bottom) {
+            if (this.topPending && !["Shift", "Alt", "Control", "Meta"].includes(event.key)) this.releasedG = event;
+            this.topPending = null; return false;
+        }
         event.preventDefault(); event.stopImmediatePropagation();
         if (top && this.topPending !== id) {
             if (!event.repeat) {

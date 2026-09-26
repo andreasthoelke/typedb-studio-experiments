@@ -144,9 +144,14 @@ export class GraphStyleService implements OnDestroy {
     private _typeStyles: Record<string, PartialNodeStyle> = {};
     private _edgeLabelColors: Record<string, string> = {};
     private _roleArrows: Record<string, "none" | "relation" | "player"> = {};
-    getRoleArrow(role: string): "none" | "relation" | "player" { return this._roleArrows[role] ?? "none"; }
-    setRoleArrow(role: string, direction: "none" | "relation" | "player"): void {
-        if (direction === "none") delete this._roleArrows[role]; else this._roleArrows[role] = direction;
+    /** Role edges are stored relation → player and read "the relation's <role>
+     *  is → that player", so arrows point at the player unless a role (or the
+     *  links row, for all roles) says otherwise. Role → links → player. */
+    getRoleArrow(role: string): "none" | "relation" | "player" { return inheritedEdgeStyle(this._roleArrows, role, "player"); }
+    hasRoleArrow(role: string): boolean { return Object.hasOwn(this._roleArrows, role); }
+    /** Null returns the role to its inherited direction; "none" is an explicit opt-out. */
+    setRoleArrow(role: string, direction: "none" | "relation" | "player" | null): void {
+        if (direction === null) delete this._roleArrows[role]; else this._roleArrows[role] = direction;
         this.save(); this.styles$.next();
     }
     private _edgeLineStyles: Record<string, LineStyle> = {};

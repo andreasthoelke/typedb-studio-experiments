@@ -538,13 +538,17 @@ export class GraphVisualiser {
         this.settingCameraProgrammatically = false;
     }
 
-    /** Shared zoom step. A selection anchors zoom at its screen-space centre. */
+    /** Shared zoom step (toolbar, +/-, Neovim). Three steps ≈ the former 0.7,
+     * so repeated taps give finer control. A selection anchors zoom at its
+     * screen-space centre. */
+    static readonly ZOOM_STEP = 0.7 ** (1 / 3);
+
     zoom(direction: "in" | "out"): void {
         const camera = this.sigma.getCamera();
         const bounds = this.elementSelection.active ? this.navigationBounds([...this.elementSelection.nodes]) : null;
         const { width, height } = this.sigma.getDimensions();
         const anchor = bounds ? { x: (bounds.left + bounds.right) / 2, y: (bounds.top + bounds.bottom) / 2 } : { x: width / 2, y: height / 2 };
-        const ratio = camera.getBoundedRatio(camera.ratio * (direction === "in" ? 0.7 : 1 / 0.7));
+        const ratio = camera.getBoundedRatio(camera.ratio * (direction === "in" ? GraphVisualiser.ZOOM_STEP : 1 / GraphVisualiser.ZOOM_STEP));
         this.animateNavigationCamera(this.sigma.getViewportZoomedState(anchor, ratio));
     }
 

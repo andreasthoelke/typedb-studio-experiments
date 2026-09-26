@@ -122,7 +122,7 @@ export async function checkGraphNavigation(page, label) {
     });
     const ratio=(await state()).camera.ratio;
     await page.keyboard.press('+');await settle();
-    assert.ok(Math.abs((await state()).camera.ratio-ratio*.7)<1e-6);
+    assert.ok(Math.abs((await state()).camera.ratio-ratio*.7**(1/3))<1e-6);
     assert.ok(await page.evaluate(()=>{
         const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser,p=v.sigma.graphToViewport(window.zoomWorld);
         return Math.hypot(p.x-window.zoomAnchor.x,p.y-window.zoomAnchor.y)<.1;

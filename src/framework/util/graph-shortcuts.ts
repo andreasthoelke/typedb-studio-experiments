@@ -4,10 +4,10 @@ export type GraphViewCommand = "centreCaret" | "caretTop" | "caretBottom" | "car
     | "panLeft" | "panRight" | "panUp" | "panDown" | "zoomIn" | "zoomOut" | "focus" | "back" | "relayout" | "snap";
 
 export type GraphShortcut = "syncCaret" | "uiHints" | "isolate" | "previous" | "next" | "live" | "snap" | "find" | "help" | "focus" | "relayout" | "zoomIn" | "zoomOut"
-    | "caret" | "clear" | "remove" | "deleteLeader" | "removeCaret" | "leader" | "hintLeader" | "centreLeader" | "centreCaret" | "hints" | "cancelLeader"
+    | "caret" | "clear" | "remove" | "deleteLeader" | "removeCaret" | "leader" | "hintLeader" | "centreLeader" | "centreCaret" | "hints" | "cancelLeader" | "geLeader"
     | GraphDirection | `nudge:${GraphDirection}` | "historyLeader" | "back" | "panLeft" | "panRight" | "panUp" | "panDown" | "caretTop" | "caretBottom" | "caretLeft" | "caretRight";
 export type GraphKeyEvent = Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey" | "isComposing" | "defaultPrevented" | "repeat">;
-export type GraphKeyLeader = "space" | "comma" | "z" | "d" | "g";
+export type GraphKeyLeader = "space" | "comma" | "z" | "d" | "g" | "ge";
 const movement: Record<string, GraphDirection> = { h: "left", l: "right", k: "up", j: "down",
     n: "downLeft", o: "upRight", y: "upLeft", ".": "downRight" };
 
@@ -34,7 +34,9 @@ export function graphShortcut(event: GraphKeyEvent, mode: GraphNavigationMode = 
         action = leader === "space" ? (event.key === "h" ? "previous" : event.key === "l" ? "next" : event.key === "Enter" ? "syncCaret" : "cancelLeader")
             : leader === "comma" ? (event.key === "f" ? "hints" : "cancelLeader")
             : leader === "d" ? (event.key === "d" ? "removeCaret" : event.key === "Enter" ? "remove" : "cancelLeader")
-            : leader === "g" ? (event.key === ";" ? "back" : event.key === "o" ? "syncCaret" : "cancelLeader")
+            // geo mirrors Neovim's geo (Space Enter's alias): the caret in the other view.
+            : leader === "g" ? (event.key === ";" ? "back" : event.key === "e" ? "geLeader" : "cancelLeader")
+            : leader === "ge" ? (event.key === "o" ? "syncCaret" : "cancelLeader")
             : ({ z: "centreCaret", t: "caretTop", b: "caretBottom", h: "caretLeft", l: "caretRight" } as Record<string, GraphShortcut>)[event.key] ?? "cancelLeader";
         if (action === "cancelLeader" && event.key.length !== 1) return null;
     } else {

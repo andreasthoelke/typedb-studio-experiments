@@ -168,16 +168,23 @@ try {
         const ctx=v.sigma.getCanvases().semanticArrows.getContext('2d'), original=ctx.moveTo;
         let tip;ctx.moveTo=function(x,y){tip={x,y};return original.call(this,x,y);};
         const positions={};
+        // Other fixture links would otherwise draw their default player arrows.
+        v.styleService.setRoleArrow('links','none');
         for(const direction of ['relation','player','none']){
             tip=null;v.styleService.setRoleArrow('motivation:driver',direction);v.sigma.refresh();positions[direction]=tip;
         }
+        // A role without its own setting inherits links; links defaults to toward the player.
+        v.styleService.setRoleArrow('motivation:driver',null);v.styleService.setRoleArrow('links',null);
+        const defaults={role:v.styleService.getRoleArrow('motivation:driver'),links:v.styleService.getRoleArrow('links')};
+        v.styleService.setRoleArrow('links','relation');const inheritedRelation=v.styleService.getRoleArrow('motivation:driver');
+        v.styleService.setRoleArrow('links',null);
         ctx.moveTo=original;
         const a=v.sigma.framedGraphToViewport(v.sigma.getNodeDisplayData('a'));
         const b=v.sigma.framedGraphToViewport(v.sigma.getNodeDisplayData('goal'));
         const dist=(p,q)=>Math.hypot(p.x-q.x,p.y-q.y);
-        return {relation:dist(positions.relation,a)<dist(positions.relation,b),player:dist(positions.player,b)<dist(positions.player,a),none:positions.none};
+        return {relation:dist(positions.relation,a)<dist(positions.relation,b),player:dist(positions.player,b)<dist(positions.player,a),none:positions.none,defaults,inheritedRelation};
     });
-    assert.deepEqual(roleDirections,{relation:true,player:true,none:null});await rolePage.close();
+    assert.deepEqual(roleDirections,{relation:true,player:true,none:null,defaults:{role:'player',links:'player'},inheritedRelation:'relation'});await rolePage.close();
     if (process.env.TYPEDB_TEST_CONNECTION) {
         const fresh=await browser.newContext();
         await fresh.addInitScript(url=>localStorage.setItem('typeDBStudio.connections',JSON.stringify([{name:'Read-only startup test',url,preferences:{isStartupConnection:true}}])),process.env.TYPEDB_TEST_CONNECTION);

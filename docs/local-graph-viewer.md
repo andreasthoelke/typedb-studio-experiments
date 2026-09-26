@@ -787,9 +787,9 @@ camera without persisting the caret, motion history or partial key sequences.
 | `zt` / `zb` | Place the caret ⅛ of the viewport height from the top/bottom |
 | `zh` / `zl` | Place the caret ⅛ of the viewport width from the left/right |
 | `Enter` | Fit the highlighted node bodies; in the picker, accept its active suggestion |
-| `+` (also `=`) / `-` | Zoom in/out around explicit selection, or camera centre |
+| `+` (also `=`) / `-` | Zoom in/out around explicit selection, or camera centre (three presses ≈ the former single step) |
 | `Space h` / `Space l` | Previous/next snap in the route-specific list, wrapping at the ends |
-| `Space Enter` (also `go`) | Mark the caret's type in the other view (subtypes in Query, supertypes in Schema) |
+| `Space Enter` (also `geo`) | Mark the caret's type in the other view (subtypes in Query, supertypes in Schema; a role type marks its players) |
 | `Backspace` | Close an offline preview and return to the preserved live view |
 | `r` | Re-layout, keeping the caret; if running, stop and restart from current positions |
 | `s` | Save a snap |
@@ -798,7 +798,8 @@ camera without persisting the caret, motion history or partial key sequences.
 | `?` | Open/close shortcut help in Snaps |
 
 Space, comma, z, g and d are one-second prefixes: release the prefix, then type the next
-key. Focus changes, clicks, leaving the window or hiding the page cancel a prefix.
+key (`geo` chains two: g, then e). With the side panel focused, a lone `g` waits for `gg`
+(scroll to top); any other continuation (`g;`, `geo`) still reaches the graph. Focus changes, clicks, leaving the window or hiding the page cancel a prefix.
 Bare h/l do not browse snaps. Controls work across the visible graph view; snap
 chips need no keyboard focus. Motion, node nudging, pan and zoom repeat; deletion, saving,
 re-layout and snap browsing do not. Inputs, the query editor, dialogs, menus and
@@ -1142,11 +1143,13 @@ Their arrow tips follow the actual node outline and are included in PNG exports,
 including when labels are hidden. There is no arrow preference for these
 unambiguous type assertions.
 
-In **Customise → Graph → Edges → Role types**, each role now has **None /
-Toward relation / Toward player**. None is the default. A useful starting point
-is `motivation:driver` toward the relation and `motivation:target` toward the
-player; symmetric `tension:pole` can remain arrowless. Direction is explicit,
-not inferred from a role's name. Settings are shared by the light/dark palettes,
+**Role edges point at the player by default.** A role edge is labelled with the
+role and reads "the relation's *role* is → that player" (`in-script —scene→`
+the scene node), so one uniform direction needs no semantic inference. In
+**Customise → Graph → Edges**, the **links** row sets the direction for every
+role (**Toward player** / **Toward relation** / **None**); each row under
+**Role types** can **Inherit** it or override it, e.g. **None** for a symmetric
+`tension:pole`. Role → links → toward player; reset clears an override. Settings are shared by the light/dark palettes,
 export with presets, and render in PNGs. Relation-valued players work too.
 
 
@@ -1174,7 +1177,7 @@ keep their keys.
 
 ### Correspondence between Schema and Query
 
-**Space Enter** (or **go**, mirroring Neovim's `geo`) sends the caret's type to
+**Space Enter** (or **geo**, as in Neovim) sends the caret's type to
 the other loaded view on the same server/database and follows the isa closure.
 Schema → Query marks every visible loaded instance of the type **and of all its
 subtypes** (`sub`/`sub!` descendants), so an abstract type such as `stage-intent`
@@ -1183,6 +1186,9 @@ exact type and marks its supertypes. The primary caret (solid corners) prefers
 the current caret, then the nearest exact match; the others get dotted secondary
 carets. Explicit selection is unchanged. No query is executed and no hidden
 nodes are revealed. **Escape** clears the markers with the ordinary graph reset.
+A **role type** (for example `occurrence-of:subject` in Schema) has no instances
+of its own: Query marks the loaded players of that role instead — the targets
+of its role edges.
 
 This works across browser tabs/windows at the same Studio origin. It does not
 switch OS focus. Status names the type, how many sub/supertypes were included and
@@ -1233,7 +1239,13 @@ The maps reuse `utils.markdown_emphasis` without replacing TypeQL navigation map
 
 On a relation name, `geo` targets the relation. On a tuple role, or `links` just
 before that role, Query targets the role player while Schema targets the scoped
-role. Attribute variables resolve by their type and value. Variables without an
+role. In a **schema declaration**, a clause is illustrated by what uses it:
+`relates subject` in `relation occurrence-of` marks the instances playing
+`occurrence-of:subject`; `plays occurrence-of:subject` in `entity scene` marks
+the scenes that play it; `owns title` in `entity scene` marks scenes that own a
+title (their title values are added as neighbours). Schema still carets the role
+or attribute type. The declared name and `sub` parents keep the plain type
+illustration. Clause reads are exact — no broader fallback when nothing matches. Attribute variables resolve by their type and value. Variables without an
 explicit `isa` can resolve to schema types through the paragraph's role and
 ownership constraints, including inherited plays/owns.
 

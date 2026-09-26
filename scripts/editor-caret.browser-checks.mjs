@@ -95,7 +95,8 @@ insert
  await send(slots,6,slots.split('\n')[6].indexOf('$sg'));assert.equal((await state(query)).concept.type.label,'slot-def','An explicit variable still inspects its player');
  for(const [line,type] of [[5,'scene-take'],[6,'stages']]) {await send(scene,line);assert.equal((await state(query)).concept.type.label,type);assert.equal((await state(schema)).concept.label,type);}
  await send('entity take, plays scene-take:take;');assert.equal((await state(query)).concept.type.label,'take');assert.equal((await state(schema)).concept.label,'take');
- await send('entity take, plays scene-take:take;',0,13);assert.equal((await state(query)).concept.type.label,'scene-take');assert.equal((await state(schema)).concept.label,'scene-take:take');
+ // A plays clause illustrates the declared type's instances that play the role.
+ await send('entity take, plays scene-take:take;',0,13);assert.equal((await state(query)).concept.type.label,'take');assert.equal((await state(schema)).concept.label,'scene-take:take');
  for(const [line,type] of [[1,'role-binding'],[2,'occurrence-of']]) {await send(partial,line);assert.equal((await state(query)).concept.type.label,type);}
  await send(partial,3);assert.ok(['mental-state','goal'].includes((await state(query)).concept.type.label));
  assert.ok((await state(query)).positions.length>original[0].positions.length,'Enter adds missing illustrative data');

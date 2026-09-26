@@ -263,7 +263,8 @@ export class NvimQueryBridge {
                     // Prefer the instances this paragraph matches; fall back to the
                     // focused type read when the whole pattern finds nothing (for
                     // example an insert paragraph that has not been committed).
-                    const queries = [...new Set([editorIllustrationQuery(target, schema, 20, true), editorIllustrationQuery(target, schema)]
+                    // A schema clause (relates/plays/owns) is exact: no broader type fallback.
+                    const queries = [...new Set([editorIllustrationQuery(target, schema, 20, true), target.clause ? null : editorIllustrationQuery(target, schema)]
                         .filter((q): q is string => !!q))];
                     if (!queries.length) { report("No supported, typed pattern could be resolved here; the graph is unchanged.", true); return; }
                     if (!run || run.graph.visualiser !== visualiser || run.graph.database !== database) {

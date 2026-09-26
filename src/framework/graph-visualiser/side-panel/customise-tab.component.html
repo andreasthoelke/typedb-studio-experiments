@@ -309,6 +309,21 @@
                 </button>
               }
             </div>
+            @if (row.tag === 'links' || row.tag.includes(':')) {
+              <div class="style-controls">
+                <span class="dim-label">Arrow</span>
+                <mat-form-field class="footer-select-field" subscriptSizing="dynamic">
+                  <mat-select [value]="row.tag === 'links' || styleService.hasRoleArrow(row.tag) ? styleService.getRoleArrow(row.tag) : 'inherit'"
+                              (selectionChange)="setRoleArrow(row.tag, $event.value)"
+                              [aria-label]="'Arrow for ' + row.tag" panelClass="graph-style-select-panel">
+                    @if (row.tag !== 'links') { <mat-option value="inherit">Inherit ({{ arrowLabel(styleService.getRoleArrow('links')) }})</mat-option> }
+                    <mat-option value="player">Toward player</mat-option>
+                    <mat-option value="relation">Toward relation</mat-option>
+                    <mat-option value="none">None</mat-option>
+                  </mat-select>
+                </mat-form-field>
+              </div>
+            }
             <div class="style-controls">
               <span class="dim-label">Dashed</span>
               <mat-form-field class="footer-select-field" subscriptSizing="dynamic">
@@ -349,12 +364,6 @@
             @if (roleFilter) { <button class="highlight-filter-clear" (click)="roleFilter = ''" aria-label="Clear role filter"><i class="fa-light fa-xmark"></i></button> }
           </div>
           @for (row of displayedRoleStyles; track row.tag) {
-            <label class="style-row">{{ row.displayLabel }} arrow
-              <select [attr.aria-label]="'Arrow for ' + row.tag" [value]="styleService.getRoleArrow(row.tag)"
-                      (change)="styleService.setRoleArrow(row.tag, $any($event.target).value)">
-                <option value="none">None</option><option value="relation">Toward relation</option><option value="player">Toward player</option>
-              </select>
-            </label>
             <ng-container *ngTemplateOutlet="edgeStyleRow; context: { $implicit: row }"></ng-container>
           }
           @if (roleOverflow > 0) { <p class="highlight-overflow-hint">+{{ roleOverflow }} more, refine the filter to narrow</p> }

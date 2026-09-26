@@ -58,6 +58,17 @@ try {
     console.log('geo occurrence-of:', occ.marks.length, occ.types);
     assert.ok(occ.marks.length >= 2 && occ.types.every(t => t === 'occurrence-of'), 'All occurrence-of instances of the paragraph are marked');
 
+    // geo on a schema `relates` clause marks the instances playing that role.
+    const relates = 'relation occurrence-of,\n  relates occurrence @card(1..1),\n  relates subject @card(1..1);';
+    await post('/api/viewer/caret', { source: relates, line: 2, column: relates.split('\n')[2].indexOf('subject'), schemaOnly: false, database });
+    await query.waitForFunction(() => /^(Caret: subject|No visible)/.test(window.ng.getComponent(document.querySelector('ts-query-page')).bridge.caretMessage));
+    const players = () => query.evaluate(() => { const v = window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;
+        return [...new Set(v.graph.filterEdges((_k, a) => { const d = a.metadata?.dataEdge; return d?.tag === 'links' && d.role?.label === 'occurrence-of:subject'; }).map(e => v.graph.target(e)))].sort(); });
+    const clause = await canvas(query), subjects = await players();
+    console.log('geo relates subject:', clause.marks.length, 'marks,', subjects.length, 'loaded subject players', [...new Set(clause.types)]);
+    assert.ok(subjects.length >= 2 && clause.marks.length >= 2, 'Several subject players are loaded and marked');
+    assert.ok(clause.marks.every(k => subjects.includes(k)), 'Every mark plays occurrence-of:subject');
+
     // Schema → Query: abstract stage-intent marks its subtypes' instances.
     assert.equal((await post('/api/viewer/query', { query: stages, database })).status, 202);
     await ready();
@@ -66,11 +77,30 @@ try {
     await schema.waitForFunction(() => { const v = window.ng.getComponent(document.querySelector('ts-graph-canvas'))?.visualiser; return v && v.graph.hasNode && v.graph.nodes().some(k => v.graph.getNodeAttribute(k, 'metadata').concept.label === 'stage-intent'); }, null, { timeout: 60000 });
     await schema.evaluate(() => { const c = window.ng.getComponent(document.querySelector('ts-graph-canvas')), v = c.visualiser;
         v.pointCaret(v.graph.nodes().find(k => v.graph.getNodeAttribute(k, 'metadata').concept.label === 'stage-intent')); c.paneFocus.focus('graph'); });
-    await schema.keyboard.press('g'); await schema.keyboard.press('o');
+    // geo with the side panel focused: the panel's gg must hand the g back.
+    await schema.evaluate(() => window.ng.getComponent(document.querySelector('ts-graph-canvas')).paneFocus.focus('panel'));
+    assert.equal(await schema.evaluate(() => window.ng.getComponent(document.querySelector('ts-graph-canvas')).paneFocus.focusedPane), 'panel');
+    const schemaCaret = await canvas(schema);
+    await schema.keyboard.press('g'); await schema.keyboard.press('e'); await schema.keyboard.press('o');
+    assert.equal((await canvas(schema)).caret, schemaCaret.caret, 'geo from the panel does not move the Schema caret');
     await query.waitForFunction(() => window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.correspondenceNodes.size > 0, null, { timeout: 5000 }).catch(() => {});
     const related = await canvas(query);
     console.log('schema → query:', related.marks.length, [...new Set(related.types)], await query.evaluate(() => window.ng.getComponent(document.querySelector('ts-graph-canvas')).lastShortcut));
     assert.equal(related.marks.length, (await intents()).length, 'Schema stage-intent marks every instance of its subtypes');
+    // Schema role type → Query: the loaded players of that role.
+    assert.equal((await post('/api/viewer/query', { query: bindings, database })).status, 202);
+    await query.waitForFunction(() => window.ng.getComponent(document.querySelector('ts-query-page')).state.graphOutput.visualiser?.navigation.caret == null);
+    await ready();
+    const roleNode = await schema.evaluate(() => { const c = window.ng.getComponent(document.querySelector('ts-graph-canvas')), v = c.visualiser;
+        const key = v.graph.nodes().find(k => v.graph.getNodeAttribute(k, 'metadata').concept.label === 'occurrence-of:subject');
+        if (key) { v.pointCaret(key); c.paneFocus.focus('graph'); } return key; });
+    assert.ok(roleNode, 'The Schema graph shows the occurrence-of:subject role type');
+    await schema.keyboard.press('g'); await schema.keyboard.press('e'); await schema.keyboard.press('o');
+    await query.waitForFunction(() => /^Players of/.test(window.ng.getComponent(document.querySelector('ts-graph-canvas')).lastShortcut), null, { timeout: 5000 });
+    const rolePlayers = await canvas(query), loadedPlayers = await players();
+    console.log('schema role → query:', rolePlayers.marks.length, 'marks;', loadedPlayers.length, 'players');
+    assert.deepEqual([...rolePlayers.marks].sort(), loadedPlayers.length > 1 ? loadedPlayers : [], 'A role marks exactly its loaded players');
+    assert.ok(loadedPlayers.includes(rolePlayers.caret));
     assert.ok(errors.length === 0, errors.join('\n'));
-    console.log('PASS live secondary carets: geo typed variable and anonymous relation, schema → query isa closure via go');
+    console.log('PASS live secondary carets: geo typed variable, anonymous relation and relates clause; schema → query isa closure and role players via geo, including from the side panel');
 } finally { await browser.close(); server.closeAllConnections(); server.close(); }

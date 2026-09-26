@@ -1,6 +1,7 @@
 import { GraphSource, sourceHeading } from "../../util/graph-source";
 import { cleanSourceTitle, snapTitleBase } from "../../util/graph-title.mjs";
 import { conceptType, correspondsToType, isaRelatives } from "../../util/graph-correspondence";
+import { edgeRoleLabel } from "../../util/graph-edge";
 import { UIHints } from "../../util/ui-hints";
 import { toSignal } from "@angular/core/rxjs-interop";
 /*
@@ -165,16 +166,21 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         // supertypes its instances belong to. Exact matches keep the primary caret.
         const labels = isaRelatives(msg.label, this.schemaState.value$.value, this.schemaMode ? "up" : "down");
         const concept = (key: string) => v.graph.getNodeAttribute(key, "metadata").concept;
+        // A role type has no instances of its own: in Query it stands for the
+        // loaded players of that role (the targets of its role edges).
+        const rolePlayers = !this.schemaMode && msg.label.includes(":")
+            ? new Set(v.graph.filterEdges((_key, attrs) => edgeRoleLabel(attrs) === msg.label).map(edge => v.graph.target(edge))) : null;
         const keys = v.graph.nodes().filter(key => !v.graph.getNodeAttribute(key, "viewHidden")
-            && labels.some(label => correspondsToType(concept(key), label, this.schemaMode)));
-        const exact = keys.filter(key => correspondsToType(concept(key), msg.label, this.schemaMode));
+            && (rolePlayers ? rolePlayers.has(key) : labels.some(label => correspondsToType(concept(key), label, this.schemaMode))));
+        const exact = rolePlayers ? keys : keys.filter(key => correspondsToType(concept(key), msg.label, this.schemaMode));
         const pool = exact.length ? exact : keys;
         const { width, height } = v.sigma.getDimensions();
         const distance = (key: string) => { const p = v.sigma.graphToViewport(v.graph.getNodeAttributes(key)); return Math.hypot(p.x - width / 2, p.y - height / 2); };
         const primary = pool.includes(v.navigation.caret ?? "") ? v.navigation.caret! : [...pool].sort((a, b) => distance(a) - distance(b))[0];
         v.pointCarets(keys, primary);
         const family = labels.length > 1 ? ` (+${labels.length - 1} ${this.schemaMode ? "supertype" : "subtype"}${labels.length === 2 ? "" : "s"})` : "";
-        this.lastShortcut = keys.length ? `Related: ${msg.label}${family} · ${keys.length} loaded node${keys.length === 1 ? "" : "s"}` : `No visible ${msg.label}${family} nodes loaded`;
+        if (rolePlayers) this.lastShortcut = keys.length ? `Players of ${msg.label} · ${keys.length} loaded node${keys.length === 1 ? "" : "s"}` : `No loaded players of ${msg.label}`;
+        else this.lastShortcut = keys.length ? `Related: ${msg.label}${family} · ${keys.length} loaded node${keys.length === 1 ? "" : "s"}` : `No visible ${msg.label}${family} nodes loaded`;
         this.caretChannel?.postMessage({ sender: this.caretSender, to: msg.sender, reply: msg.request, scope: msg.scope, count: keys.length });
         this.cdr.markForCheck();
     };
@@ -226,6 +232,12 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
             && this.paneFocus.foldSection(event.key === "o")) {
             event.preventDefault(); event.stopImmediatePropagation(); this.cancelKeySequence(); return;
         }
+        // A focused panel claims a first g for its gg; any other continuation
+        // (g; or geo) still belongs to the graph, whichever listener ran first.
+        if (!this.leaderPending && this.paneFocus.releasePanelG(event)) {
+            this.leaderPending = "g"; this.leaderVisualiser = this.visualiser;
+            this.leaderCaret = this.visualiser?.navigation.caret ?? null;
+        }
         const action = graphShortcut(event, this.navigationMode, this.leaderPending);
         if ((action === "panUp" || action === "panDown") && this.paneFocus.focusedPane
             && this.paneFocus.focusedPane !== "graph") { this.cancelKeySequence(); return; }
@@ -238,12 +250,13 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         GraphCanvasComponent.keyboardOwner = this;
         event.preventDefault();
         event.stopImmediatePropagation();
-        const prefix = this.leaderPending === "d" ? "d " : this.leaderPending === "g" ? "g" : this.leaderPending && (action === "previous" || action === "next") ? "Space " : event.ctrlKey ? "Ctrl+" : "";
+        const prefix = this.leaderPending === "d" ? "d " : this.leaderPending === "g" || this.leaderPending === "ge" ? this.leaderPending : this.leaderPending && (action === "previous" || action === "next") ? "Space " : event.ctrlKey ? "Ctrl+" : "";
         this.lastShortcut = `${prefix}${event.key === " " ? "Space" : event.key} → ${action}`;
         this.cancelKeySequence();
-        if (action === "leader" || action === "hintLeader" || action === "centreLeader" || action === "deleteLeader" || action === "historyLeader") {
+        if (action === "leader" || action === "hintLeader" || action === "centreLeader" || action === "deleteLeader" || action === "historyLeader" || action === "geLeader") {
             if (action === "deleteLeader" && this.queryRunning) return;
-            this.leaderPending = action === "leader" ? "space" : action === "hintLeader" ? "comma" : action === "deleteLeader" ? "d" : action === "historyLeader" ? "g" : "z";
+            this.leaderPending = action === "leader" ? "space" : action === "hintLeader" ? "comma" : action === "deleteLeader" ? "d"
+                : action === "historyLeader" ? "g" : action === "geLeader" ? "ge" : "z";
             this.leaderVisualiser = this.visualiser;
             this.leaderCaret = this.visualiser?.navigation.caret ?? null;
             this.leaderTimer = setTimeout(this.cancelKeySequence, 1000);

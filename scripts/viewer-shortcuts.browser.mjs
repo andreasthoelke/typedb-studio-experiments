@@ -127,7 +127,7 @@ try {
     await page.evaluate(()=>{const camera=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.sigma.getCamera();camera.setState({ratio:Math.max(.2,camera.ratio)});});
     const originalRatio=await cameraRatio();
     await page.keyboard.press('+');await page.waitForTimeout(200);
-    assert.ok(Math.abs(await cameraRatio()-originalRatio*0.7)<1e-6,'+ zooms in by the toolbar factor');
+    assert.ok(Math.abs(await cameraRatio()-originalRatio*0.7**(1/3))<1e-6,'+ zooms in by the toolbar factor (a third of the former 0.7 step)');
     await page.keyboard.press('-');await page.waitForTimeout(200);
     assert.ok(Math.abs(await cameraRatio()-originalRatio)<1e-6,'- zooms back out');
     await page.keyboard.press('/');assert.equal(await page.locator('input[aria-label="Find node"]').evaluate(el=>document.activeElement===el),true);

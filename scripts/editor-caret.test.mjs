@@ -59,7 +59,9 @@ test('declaration names cannot inherit role identity from later plays clauses',(
  assert.equal(target(0,0,text).instance.typeLabel,'take');
  for(const column of [text.indexOf('plays'),text.indexOf('scene-take'),text.lastIndexOf('take')]) {
   const t=target(0,column,text);
-  assert.deepEqual(t.schemaLabels,['scene-take:take']);assert.equal(t.instance.typeLabel,'scene-take');
+  // Schema carets the role; Query illustrates the declared type's instances that play it.
+  assert.deepEqual(t.schemaLabels,['scene-take:take']);assert.equal(t.instance.typeLabel,'take');assert.equal(t.clause,'plays');
+  assert.deepEqual(t.context.bindings.$relation.players,[{role:'take',variable:'$focus'}]);
  }
  assert.deepEqual(target(0,0,'relation scene-take, relates take;').schemaLabels,['scene-take']);
  assert.deepEqual(target(0,20,'relation scene-take, relates take;').schemaLabels,['scene-take:take']);
@@ -133,4 +135,21 @@ test('links and tuple roles target the player, inferred schema type and attribut
  const intensity=target(1,text.split('\n')[1].indexOf('$intensity'),text);
  assert.equal(intensity.instance.typeLabel,'intensity');assert.deepEqual(intensity.schemaLabels,['intensity']);
  assert.match(editorIllustrationQuery(intensity,schema),/has intensity \$focus/);
+});
+test('schema clauses illustrate their use: role players, playing instances and owners',()=>{
+ const relates='relation occurrence-of,\n  relates occurrence @card(1..1),\n  relates subject @card(1..1);';
+ const subject=target(2,relates.split('\n')[2].indexOf('subject'),relates);
+ assert.deepEqual(subject.schemaLabels,['occurrence-of:subject']);assert.equal(subject.clause,'relates');
+ assert.equal(subject.instance.typeLabel,undefined,'Any player type');
+ assert.equal(editorIllustrationQuery(subject,schema,20,true),'match $v1 isa occurrence-of; $v1 links (subject: $focus); select $focus, $v1; limit 20;');
+ const plays=target(0,20,'entity café, plays occurrence-of:subject;');
+ assert.equal(editorIllustrationQuery(plays,schema,20,true),'match $focus isa café; $v1 isa occurrence-of; $v1 links (subject: $focus); select $focus, $v1; limit 20;');
+ const owns='entity depiction, owns depiction-id @key;';
+ const owner=target(0,owns.indexOf('depiction-id'),owns);
+ assert.deepEqual(owner.schemaLabels,['depiction-id']);assert.equal(owner.clause,'owns');
+ assert.equal(editorIllustrationQuery(owner,schema,20,true),'match $focus isa depiction; $focus has depiction-id $v1; $v1 isa depiction-id; select $focus, $v1; limit 20;');
+ // The declared name and a sub parent keep the plain type illustration.
+ assert.equal(target(0,7,owns).clause,undefined);assert.equal(target(0,7,owns).instance.typeLabel,'depiction');
+ assert.equal(target(0,'entity café sub depiction;'.indexOf('depiction'),'entity café sub depiction;').clause,undefined);
+ assert.equal(target(0,'define entity café, owns title;'.indexOf('title'),'define entity café, owns title;').clause,'owns');
 });
