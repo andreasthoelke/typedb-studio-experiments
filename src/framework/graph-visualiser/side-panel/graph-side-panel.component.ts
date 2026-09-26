@@ -110,8 +110,9 @@ export class GraphSidePanelComponent implements OnChanges, OnDestroy, DoCheck {
     /** The caret instance's type, when the Data view applies (live instance graphs only). */
     get dataFocusType(): string | null {
         if (this.schemaMode || this.snapshotMode) return null;
-        const kind = this.selectedType?.kind;
-        return kind === "entityType" || kind === "relationType" ? this.selectedType!.label : null;
+        // "every x" mode clears the instance selection; its type still applies.
+        const type = this.selectedType ?? this.selectedTypeForTypeMode;
+        return type?.kind === "entityType" || type?.kind === "relationType" ? type.label : null;
     }
 
     /** Explicitly selected nodes still in the graph: the Selection strip's target set. */

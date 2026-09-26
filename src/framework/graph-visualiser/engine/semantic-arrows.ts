@@ -28,7 +28,8 @@ export function installSemanticArrows(renderer: Sigma): void {
             const node = (data: NodeDisplayData & { width?: number; height?: number }): ArrowNode => ({ ...renderer.framedGraphToViewport(data),
                 width: renderer.scaleSize(data['width'] ?? data.size), height: renderer.scaleSize(data['height'] ?? data.size), type: data.type });
             const triangle = graphArrow(node(reverse ? to : from), node(reverse ? from : to), (reverse ? -1 : 1) * (edge.type === 'curved' ? (edge as typeof edge & { curvature?: number }).curvature ?? .25 : 0),
-                Math.max(6, Math.min(14, renderer.scaleSize(edge.size) * 4 + 5)));
+                // Half the original 6–14px heads (2026-09-26, user request).
+                Math.max(3, Math.min(7, renderer.scaleSize(edge.size) * 2 + 2.5)));
             if (!triangle) return;
             ctx.fillStyle = edge.color; ctx.beginPath(); ctx.moveTo(triangle[0].x, triangle[0].y);
             ctx.lineTo(triangle[1].x, triangle[1].y); ctx.lineTo(triangle[2].x, triangle[2].y); ctx.closePath(); ctx.fill();

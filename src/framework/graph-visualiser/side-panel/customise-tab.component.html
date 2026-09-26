@@ -1,7 +1,7 @@
 <!-- Sub-tab bar -->
-<div class="tab-bar sub-tab-bar">
-  <button class="tab" [class.active]="activeTab === 'graph'" (click)="activeTab = 'graph'">Graph</button>
-  <button class="tab" [class.active]="activeTab === 'background'" (click)="activeTab = 'background'">Background</button>
+<div class="tab-bar sub-tab-bar" data-subtabs>
+  <button class="tab" data-subtab [class.active]="activeTab === 'graph'" (click)="activeTab = 'graph'">Graph</button>
+  <button class="tab" data-subtab [class.active]="activeTab === 'background'" (click)="activeTab = 'background'">Background</button>
 </div>
 
 <div class="panel-body">
@@ -45,6 +45,14 @@
                 <input matInput type="number" min="0" max="400" step="4" aria-label="Label value length"
                        [value]="styleService.labelValueLength" (change)="styleService.labelValueLength = +$any($event.target).value">
               </mat-form-field>
+            </div>
+          </div>
+          <div class="style-row">
+            <span class="style-label" matTooltip="Values are drawn under the type name at this size" [matTooltipShowDelay]="500">Value size</span>
+            <div class="style-controls">
+              <input type="range" class="angle-slider" min="50" max="100" step="5" aria-label="Label value size" [value]="styleService.labelValueScale * 100"
+                     (input)="styleService.labelValueScale = +$any($event.target).value / 100">
+              <span class="angle-value">{{ (styleService.labelValueScale * 100).toFixed(0) }}%</span>
             </div>
           </div>
           <div class="style-row">

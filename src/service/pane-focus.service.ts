@@ -44,7 +44,9 @@ export class PaneFocusService {
     /** `<c-w> Space` waits for j/k (taller/shorter focused pane). */
     private resizePending = false;
     /** Space in a side panel is a leader for Ctrl-n/p section jumps, as in the graph. */
-    private sectionLeaderAt = 0;
+    /** When Space last armed the leader; -Infinity = not armed. (0 would count as
+     *  armed during a page's first second, when performance.now() < 1000.) */
+    private sectionLeaderAt = -Infinity;
     private swallowSpaceUp = false;
     readonly resize$ = new Subject<{ pane: PaneId | null; grow: boolean }>();
     private topPending: PaneId | null = null;
@@ -172,6 +174,36 @@ export class PaneFocusService {
         return section;
     }
 
+    /** Space arms a one-second leader in any pane; Space Ctrl-f/d then cycles a
+     *  sub-tab group ([data-subtabs]: Explorer here/every/data, Data rows from,
+     *  Snaps grouping, Customise graph/background) instead of the main tabs.
+     *  The group containing focus wins, else the first visible one in the panel. */
+    private subtabKey(event: KeyboardEvent): boolean {
+        if (event.altKey || event.metaKey || event.isComposing) return false;
+        const editable = event.target instanceof HTMLElement && event.target.closest("input, textarea, select, [contenteditable='true'], [role='textbox']");
+        if (!event.ctrlKey && !event.shiftKey && event.key === " " && !editable) {
+            this.sectionLeaderAt = performance.now();
+            return false;
+        }
+        if (!event.ctrlKey || event.shiftKey || !["f", "d"].includes(event.key.toLowerCase()) || !this.sectionLeader) return false;
+        const panel = this.panes.get("panel")?.element;
+        const groups = [...panel?.querySelectorAll<HTMLElement>("[data-subtabs]") ?? []].filter(group => this.visible(group));
+        const active = document.activeElement;
+        const group = groups.find(g => active instanceof Node && g.contains(active)) ?? groups[0];
+        this.sectionLeaderAt = -Infinity;
+        event.preventDefault(); event.stopImmediatePropagation();
+        if (!group) { this.lastAction = "Space Ctrl-" + event.key + ": no sub-tabs here"; return true; }
+        const tabs = [...group.querySelectorAll<HTMLButtonElement>("[data-subtab]")].filter(tab => !tab.disabled && this.visible(tab));
+        if (!tabs.length) return true;
+        const current = tabs.findIndex(tab => tab.classList.contains("active") || tab.getAttribute("aria-checked") === "true");
+        const next = tabs[(current + (event.key.toLowerCase() === "f" ? 1 : -1) + tabs.length) % tabs.length];
+        const hadFocus = active instanceof Node && group.contains(active);
+        next.click();
+        if (hadFocus) next.focus();
+        this.lastAction = "Space Ctrl-" + event.key + " sub-tab";
+        return true;
+    }
+
     private explorerKey(event: KeyboardEvent): boolean {
         if (this.focusedPane !== "panel" || event.altKey || event.metaKey || event.isComposing) return false;
         if (event.target instanceof HTMLElement && event.target.closest("input, textarea, select, [contenteditable='true']")) return false;
@@ -188,7 +220,7 @@ export class PaneFocusService {
         const direction = event.key === "n" ? 1 : -1;
         const active = document.activeElement as HTMLElement | null;
         if (this.sectionLeader) {
-            this.sectionLeaderAt = 0;
+            this.sectionLeaderAt = -Infinity;
             const sections = this.panelSections();
             if (!sections.length) return false;
             const index = sections.findIndex(section => section === active || section.contains(active));
@@ -311,6 +343,7 @@ export class PaneFocusService {
                     return;
                 }
             }
+            if (this.subtabKey(event)) return;
             if (this.explorerKey(event)) return;
             if (this.scrollPane(event)) return;
             if (!panePrefix(event)) return;

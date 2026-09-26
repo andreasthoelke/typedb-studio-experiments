@@ -37,19 +37,19 @@
       </div>
     }
     @if (!edgeInspection && !snapshotMode && showSelectionModeToggle && hasSelection) {
-      <div class="selection-mode-toggle">
-        <button class="mode-button"
+      <div class="selection-mode-toggle" data-subtabs aria-label="Explorer view (Space Ctrl-f/d)">
+        <button class="mode-button" data-subtab
                 [class.active]="!dataView && selectionMode === 'instances'"
                 (click)="dataView = false; selectionModeChange.emit('instances')">
           <span>here</span>
         </button>
-        <button class="mode-button"
+        <button class="mode-button" data-subtab
                 [class.active]="!dataView && selectionMode === 'types'"
                 (click)="dataView = false; selectionModeChange.emit('types')">
           <span>every '{{ currentTypeLabel }}'</span>
         </button>
         @if (dataFocusType) {
-          <button class="mode-button" [class.active]="dataView" (click)="dataView = true"
+          <button class="mode-button" data-subtab [class.active]="dataView" (click)="dataView = true"
                   matTooltip="Values of these instances side by side; edit cells in place" [matTooltipShowDelay]="500">
             <span>data</span>
           </button>

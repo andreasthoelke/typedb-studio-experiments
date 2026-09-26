@@ -166,6 +166,13 @@ export class GraphStyleService implements OnDestroy {
         this.labelRevision++;
         this.styles$.next();
     }
+    private _labelValueScale = 0.8;
+    /** Size of value lines relative to the type line in node labels. */
+    get labelValueScale(): number { return this._labelValueScale; }
+    set labelValueScale(value: number) {
+        this._labelValueScale = Math.max(0.5, Math.min(1, value || 0.8));
+        this.save(); this.styles$.next();
+    }
     private _labelValueLength = 40;
     /** Longest value fragment shown in a node label; 0 shows full values. */
     get labelValueLength(): number { return this._labelValueLength; }
@@ -1004,6 +1011,7 @@ export class GraphStyleService implements OnDestroy {
                 sidePanelDock: this._sidePanelDock,
                 background: this._background,
                 labelValueLength: this._labelValueLength,
+                labelValueScale: this._labelValueScale,
             };
             localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
         } catch (e) {
@@ -1037,6 +1045,7 @@ export class GraphStyleService implements OnDestroy {
                 this._sidePanelDock = data.sidePanelDock ?? "right";
                 if (data.background) this._background = { ...DEFAULT_BACKGROUND, ...data.background };
                 this._labelValueLength = typeof data.labelValueLength === "number" ? data.labelValueLength : 40;
+                this._labelValueScale = typeof data.labelValueScale === "number" ? data.labelValueScale : 0.8;
             }
         } catch (e) {
             console.warn("Failed to load graph styles from localStorage:", e);

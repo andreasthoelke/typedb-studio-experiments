@@ -23,7 +23,7 @@ import { AnalyzedPipelineBackCompat } from "./types";
 import { Graph, GraphBuilderStructureParams, defaultStructureParams } from "./graph";
 import { GraphBuilder, EDGE_CURVATURE } from "./graph-builder";
 import { GraphStyles, colorEdgesByConstraintIndex as _colorEdgesByConstraintIndex, colorQuery as _colorQuery } from "./styles";
-import { setUseBorderColorForLabels, setLabelsVisible, setShowHoverLabel } from "./sigma-label-utils";
+import { setUseBorderColorForLabels, setLabelsVisible, setShowHoverLabel, setLabelValueScale } from "./sigma-label-utils";
 import { InteractionHandler, StudioState } from "./interaction-handler";
 import { LayoutWrapper, LayoutDensity } from "./layout";
 import { createSigmaRenderer, defaultSigmaSettings } from "./sigma-settings";
@@ -208,6 +208,7 @@ export class GraphVisualiser {
         this.labelsAutoHidden = false;
         setLabelsVisible(this.styleService.labelsVisible);
         setShowHoverLabel(this.styleService.showHoverLabel);
+        setLabelValueScale(this.styleService.labelValueScale);
         // Edge labels are controlled independently of node labels — they are by
         // far the most expensive thing to render during a sim (one per visible
         // edge, every frame), so letting users turn them off without losing node

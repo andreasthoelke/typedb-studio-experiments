@@ -1032,3 +1032,26 @@ viewer-role-edges, viewer-dashes, viewer-run (its insert expectation was stale
 since the 2026-09-21 context-read change and is now updated), nvim-caret.
 No writes touched the user's databases; all write tests own a temporary server.
 
+
+## Sub-tab keys, two-tier labels, smaller arrowheads (2026-09-26, third round)
+
+- `PaneFocusService.subtabKey`: Space (not in an editable) arms `sectionLeaderAt`
+  from any pane; Space Ctrl-f/d clicks the next/previous `[data-subtab]` in the
+  focused `[data-subtabs]` group, else the first visible group in the panel.
+  Tagged: Explorer mode toggle, Data source toggle, Snaps grouping, Customise
+  sub-tab bar. Plain Ctrl-f/d still cycle main tabs.
+- Fixed a latent leader bug: `sectionLeaderAt` started at 0, so during a page's
+  first second (`performance.now() < 1000`) the leader counted as armed and
+  Ctrl-f/d/n/p took the leader path. "Not armed" is now `-Infinity`.
+- `dataFocusType` falls back to `selectedTypeForTypeMode`: "every x" clears the
+  instance selection, which hid the data button in that mode.
+- `sigma-label-utils`: labels matching `HEADED_LABEL` (`type: value`, head
+  shaped like a type label) render as a type line plus value lines at
+  `setLabelValueScale` (style service `labelValueScale`, default 0.8, persisted
+  in localStorage, not presets) with 0.85 alpha; other labels are unchanged.
+  PNG export shares the renderer.
+- `semantic-arrows.ts` head size: `max(3, min(7, scaleSize*2 + 2.5))`.
+
+Validation: `pnpm test:viewer` (127), build, viewer-actions (now also Space
+Ctrl-f/d), viewer-workflow live, viewer-live-snap, role-edges, dashes, shortcuts.
+

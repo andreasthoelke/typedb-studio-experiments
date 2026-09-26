@@ -89,3 +89,23 @@ test('labels combine several attributes, shorten long values and follow schema d
     refreshInstanceLabels(tagged, storeOf([['a1', { name: ['d', 'c', 'b', 'a'] }]]), new Map());
     assert.equal(tagged.nodes.get('a1').label, 'asset: a, b, c +1');
 });
+
+test('type: value labels draw the type line at full size and smaller value lines', () => {
+    const drawn = [];
+    const context = {
+        font: '', globalAlpha: 1, save() {}, restore() {}, fill() {}, clip() {},
+        measureText(text) { return { width: text.length * (parseFloat(/(\d+)px/.exec(this.font)?.[1] ?? 14) / 2) }; },
+        fillText(text, _x, y) { drawn.push({ text, font: this.font, alpha: this.globalAlpha, y }); },
+    };
+    drawClippedNodeLabel(context, { x: 100, y: 100, size: 60, color: '#eee', label: 'goal: The Goal' }, settings, () => {});
+    assert.deepEqual(drawn.map(d => d.text), ['goal', 'The Goal']);
+    assert.match(drawn[0].font, /14px/);
+    assert.match(drawn[1].font, /11px/, 'Value lines default to 80% of the type size');
+    assert.ok(drawn[1].alpha < 1 && drawn[0].y < drawn[1].y);
+    drawn.length = 0;
+    drawClippedNodeLabel(context, { x: 100, y: 100, size: 60, color: '#eee', label: 'Opening: a note, not a type' }, settings, () => {});
+    assert.equal(drawn.length, 2, 'A capitalised word before a colon still looks like a type label');
+    drawn.length = 0;
+    drawClippedNodeLabel(context, { x: 100, y: 100, size: 60, color: '#eee', label: 'plain text, no value' }, settings, () => {});
+    assert.deepEqual(drawn.map(d => d.text), ['plain text, no value']);
+});

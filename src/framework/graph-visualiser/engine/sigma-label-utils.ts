@@ -13,6 +13,12 @@ export const LABEL_OVERFLOW = 1.5;
 let _useBorderColorForLabels = true;
 let _labelsVisible = true;
 let _showHoverLabel = true;
+let _valueScale = 0.8;
+
+/** Relative size of the value lines under a node's type name (0.5–1). */
+export function setLabelValueScale(value: number): void {
+    _valueScale = Math.max(0.5, Math.min(1, value || 0.8));
+}
 
 export function setUseBorderColorForLabels(value: boolean): void {
     _useBorderColorForLabels = value;
@@ -39,13 +45,23 @@ export function getShowHoverLabel(): boolean {
  * Supports multi-line wrapping (up to 3 lines), explicit \n breaks,
  * and truncation with "…". Text color adapts to node background.
  */
-interface LabelLayout {
-    fontSize: number;
+interface LabelLine {
+    text: string;
     font: string;
+    fontSize: number;
+    alpha: number;
+}
+
+interface LabelLayout {
     color: string;
-    lines: string[];
+    lines: LabelLine[];
     truncated: boolean;
 }
+
+/** `type: value` labels (instance labels) split into a type line and value
+ *  lines. The head must look like a type label, so ordinary text with a colon
+ *  (and explicit line breaks) keeps the single-tier layout. */
+const HEADED_LABEL = /^([\p{L}_][\p{L}\p{N}_:-]*): (.+)$/su;
 
 /**
  * Resolve everything needed to paint a node's label — font, colour, and the
@@ -92,9 +108,27 @@ function computeLabelLayout<
     // Use the wider label area for every node, including schema types.
     // The silhouette controls the body, not where the text may wrap.
     const nodeWidth = screenHalfW * 2 - PADDING_X;
-    const { lines, truncated } = wrapTextCached(context, data.label, nodeWidth, font);
-
-    return { fontSize, font, color: labelColor, lines, truncated };
+    const headed = HEADED_LABEL.exec(data.label);
+    if (!headed) {
+        const { lines, truncated } = wrapTextCached(context, data.label, nodeWidth, font);
+        return { color: labelColor, truncated, lines: lines.map(text => ({ text, font, fontSize, alpha: 1 })) };
+    }
+    // Two tiers: the type name on one line at the label size, the value(s)
+    // below in a smaller, slightly softer font, with up to three lines.
+    const head = wrapTextCached(context, headed[1], nodeWidth, font);
+    const headLine = head.lines.length > 1 ? truncateLine(context, `${head.lines[0]}…`, nodeWidth * LABEL_OVERFLOW) : head.lines[0];
+    const lines: LabelLine[] = [{ text: headLine, font, fontSize, alpha: 1 }];
+    const valueSize = Math.round(fontSize * _valueScale);
+    let truncated = head.lines.length > 1 || head.truncated;
+    if (valueSize >= 3) {
+        const valueFont = `${weight} ${valueSize}px ${settings.labelFont}`;
+        context.font = valueFont;
+        const body = wrapTextCached(context, headed[2], nodeWidth, valueFont);
+        lines.push(...body.lines.map(text => ({ text, font: valueFont, fontSize: valueSize, alpha: 0.85 })));
+        truncated ||= body.truncated;
+        context.font = font;
+    }
+    return { color: labelColor, truncated, lines };
 }
 
 /** Paint pre-resolved label lines centered on the node. */
@@ -105,16 +139,18 @@ function paintLabelLines(
 ): void {
     context.textAlign = "center";
     context.textBaseline = "middle";
-    context.font = layout.font;
     context.fillStyle = layout.color;
 
-    const lineH = layout.fontSize * LINE_HEIGHT;
-    const totalH = layout.lines.length * lineH;
-    const startY = data.y - totalH / 2 + lineH / 2;
-
-    for (let i = 0; i < layout.lines.length; i++) {
-        context.fillText(layout.lines[i], data.x, startY + i * lineH);
-    }
+    const heights = layout.lines.map(line => line.fontSize * LINE_HEIGHT);
+    let y = data.y - heights.reduce((sum, h) => sum + h, 0) / 2;
+    const alpha = context.globalAlpha;
+    layout.lines.forEach((line, i) => {
+        context.font = line.font;
+        context.globalAlpha = alpha * line.alpha;
+        context.fillText(line.text, data.x, y + heights[i] / 2);
+        y += heights[i];
+    });
+    context.globalAlpha = alpha;
 }
 
 export function drawCenteredNodeLabel<

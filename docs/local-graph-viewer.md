@@ -549,7 +549,10 @@ type comes from, in order:
    `@key`/`@unique`, then identifier-like names; attributes whose loaded values
    average over 80 characters rank lower.
 
-The hint under the selector names the source. Several attributes are joined with
+The hint under the selector names the source. The type name is drawn on the
+first line at the label size; the values go on the lines below in a smaller,
+slightly softer font — **Customise → Graph → Value size** (50–100%, default 80%).
+There is no `type: value` colon in the drawing. Several attributes are joined with
 ` · `; several values of one attribute show the first three and `+n`. Values
 longer than **Customise → Graph → Label value length** (default 40, 0 = full)
 end in `…`; Explorer and Data show them in full. Label values load without
@@ -1213,6 +1216,8 @@ Repeated answer rows for the same relation/player/role are deduplicated. Differe
 relation instances remain separate relation nodes; they are not collapsed into
 parallel person-to-person links.
 
+Arrowheads are 3–7 px, scaled with edge thickness (halved on 2026-09-26).
+
 **`isa` and `isa!` point from instance to type**, on straight or curved edges.
 Their arrow tips follow the actual node outline and are included in PNG exports,
 including when labels are hidden. There is no arrow preference for these
@@ -1387,12 +1392,17 @@ connected with a database selected, even before the first run.
 
 In Explorer, relations already present in the graph show **In graph** or
 **Hidden**. **Mark in graph** adds a secondary dotted caret and frames the
-relation while keeping the current Explorer node. **Inspect** moves the primary
-caret and changes Explorer. Hidden entries offer Show & mark / Show & inspect.
+relation while keeping the current Explorer node. **Go to** moves the caret
+and changes Explorer (see the action strip above).
 **Ctrl-o** follows the existing graph caret history: marks add no history entries.
 **Ctrl-n/p** move between visible Explorer controls; **Space Ctrl-n/p** jump
 between the panel's main sections (Explorer's Links / Attributes / Relations,
 Customise's groups, …). Space on a focused header does not click it; use Enter.
+**Ctrl-f/d** cycle the panel's main tabs; **Space Ctrl-f/d** cycle a sub-tab
+group instead: Explorer **here · every · data**, the Data view's **graph ·
+selection · database**, Snaps **Group**, Customise **Graph · Background**. The
+group containing focus wins, otherwise the first one visible in the panel.
+Space arms this leader from any pane, including the graph.
 **zc/zo** close/open the section containing the focused control (or the first
 section when none is focused). Every other z command — **zz/zt/zb/zh/zl** —
 still places the graph caret while the panel has focus, just like hjkl. Only

@@ -121,6 +121,19 @@ try {
     await explorer.getByText(/Nothing changed/).waitFor();
     assert.deepEqual(await values('S1', 'n'), [7]);
 
+    // Space Ctrl-f/d cycles the Explorer's sub-tabs (here → every → data);
+    // plain Ctrl-f/d still cycles the panel's main tabs.
+    const subtab = () => page.evaluate(() => [...document.querySelectorAll('[data-subtabs] [data-subtab].active')].map(b => b.textContent.trim())[0]);
+    await canvas(() => window.ng.getComponent(document.querySelector('ts-graph-canvas')).paneFocus.focus('panel'));
+    assert.equal(await subtab(), 'here');
+    await page.keyboard.press(' '); await page.keyboard.press('Control+f');
+    await page.waitForFunction(() => document.querySelector('[data-subtabs] [data-subtab].active')?.textContent.trim().startsWith('every'));
+    await page.keyboard.press(' '); await page.keyboard.press('Control+f');
+    await page.locator('ts-graph-data-table').waitFor();
+    assert.equal(await subtab(), 'data');
+    await page.keyboard.press(' '); await page.keyboard.press('Control+d');
+    await page.waitForFunction(() => document.querySelector('[data-subtabs] [data-subtab].active')?.textContent.trim().startsWith('every'));
+    assert.equal(await page.locator('[data-panel-tab="explorer"]').getAttribute('aria-selected'), 'true', 'Sub-tab cycling keeps the main tab');
     // Data view: graph rows, a cell edit, and the database source.
     await page.getByRole('button', { name: 'data', exact: true }).click();
     const table = page.locator('ts-graph-data-table');
@@ -148,7 +161,7 @@ try {
     await s2row.getByRole('button', { name: 'Add to graph scene', exact: true }).click();
     await page.waitForFunction(() => { const v = window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser; return v.graph.nodes().some(k => v.graph.getNodeAttribute(k, 'label') === 'scene: S2 · Second'); }, null, { timeout: 15000 });
     assert.ok(errors.length === 0, errors.join('\n'));
-    console.log('PASS isolated: schema @meta arrows and labels, action strip (exact select, mark, hide, go to), Explorer edit/add/remove with confirmation, validation, stale-value refusal, Data view identifying columns, graph and database cell edits, adding a database row to the graph');
+    console.log('PASS isolated: schema @meta arrows and labels, Space Ctrl-f/d sub-tabs, action strip (exact select, mark, hide, go to), Explorer edit/add/remove with confirmation, validation, stale-value refusal, Data view identifying columns, graph and database cell edits, adding a database row to the graph');
 } finally {
     await browser?.close(); server?.closeAllConnections(); server?.close();
     typedb.kill(); await once(typedb, 'exit').catch(() => {}); await rm(root, { recursive: true, force: true });

@@ -200,10 +200,10 @@
     }
     @if (snapLibrary) {
       @if (snapFiles.length > 1) {
-        <div class="snap-grouping" role="radiogroup" aria-label="Group snaps by">
+        <div class="snap-grouping" role="radiogroup" aria-label="Group snaps by" data-subtabs>
           <span>Group</span>
           @for (option of [['date', 'newest'], ['title', 'title'], ['shape', 'content']]; track option[0]) {
-            <button class="snap-group-option" role="radio" [class.active]="snapGrouping === option[0]" [attr.aria-checked]="snapGrouping === option[0]"
+            <button class="snap-group-option" data-subtab role="radio" [class.active]="snapGrouping === option[0]" [attr.aria-checked]="snapGrouping === option[0]"
                     (click)="setSnapGrouping($any(option[0]))">{{ option[1] }}</button>
           }
         </div>

@@ -1,10 +1,10 @@
 <div class="data-toolbar">
-  <div class="source-toggle" role="radiogroup" aria-label="Rows from">
-    <button class="mode-button" role="radio" [class.active]="source === 'loaded'" [attr.aria-checked]="source === 'loaded'" (click)="setSource('loaded')"
+  <div class="source-toggle" role="radiogroup" aria-label="Rows from" data-subtabs>
+    <button class="mode-button" data-subtab role="radio" [class.active]="source === 'loaded'" [attr.aria-checked]="source === 'loaded'" (click)="setSource('loaded')"
             matTooltip="Instances loaded in this graph (no query)" [matTooltipShowDelay]="500">graph</button>
-    <button class="mode-button" role="radio" [class.active]="source === 'selection'" [attr.aria-checked]="source === 'selection'" (click)="setSource('selection')"
+    <button class="mode-button" data-subtab role="radio" [class.active]="source === 'selection'" [attr.aria-checked]="source === 'selection'" (click)="setSource('selection')"
             [disabled]="!selectedInstances.length" matTooltip="Explicitly selected instances" [matTooltipShowDelay]="500">selection</button>
-    <button class="mode-button" role="radio" [class.active]="source === 'database'" [attr.aria-checked]="source === 'database'" (click)="setSource('database')"
+    <button class="mode-button" data-subtab role="radio" [class.active]="source === 'database'" [attr.aria-checked]="source === 'database'" (click)="setSource('database')"
             matTooltip="Read up to 200 instances of these types from the database" [matTooltipShowDelay]="500">database</button>
     @if (source === 'database') {
       <button class="mode-button" (click)="loadDatabase()" [disabled]="loading" aria-label="Reload from database"><i class="fa-light fa-arrows-rotate"></i></button>
