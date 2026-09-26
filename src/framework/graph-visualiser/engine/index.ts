@@ -563,7 +563,7 @@ export class GraphVisualiser {
         return !!caret && this.pointCaret(caret, "none", true);
     }
 
-    /** One primary caret plus dotted secondary carets on the other matches.
+    /** One caret plus marks (dotted corners) on the other matches.
      * Selection is unchanged; only the primary is panned into view. */
     pointCarets(keys: string[], primary = keys[0]): boolean {
         const visible = keys.filter(key => this.graph.hasNode(key) && !this.graph.getNodeAttribute(key, "viewHidden"));
@@ -996,7 +996,11 @@ export class GraphVisualiser {
     /** Recompute every entity / relation label from the latest graph state +
      *  off-graph display-attribute store. Cheap; safe to call after any new
      *  data arrives. */
+    /** Bumped whenever labels (and so known attribute values) are re-derived. */
+    labelsVersion = 0;
+
     refreshLabels(): void {
+        this.labelsVersion++;
         const defaults = this.styleService.schemaDefaults;
         this.labelRevision = this.styleService.labelRevision;
         this.chosenLabelAttributes = refreshInstanceLabels(this.graph, this.displayAttributes, this.labelOverridesByType, {
@@ -1191,7 +1195,7 @@ export class GraphVisualiser {
     }
 
     /**
-     * Explorer "Reveal in graph": mark the given nodes with secondary carets and
+     * Mark the given nodes (dotted corners) and
      * pan (never zoom) only as far as needed to bring them into view. The
      * inspected node, primary caret and selection are unchanged.
      */
@@ -1448,6 +1452,44 @@ export class GraphVisualiser {
         this.sigma.getCamera().setState(snap.view.camera);
     }
 
+    /** Every known value per attribute type for an instance node: the label
+     *  store (all attributes of loaded owners) plus attribute nodes in the graph. */
+    nodeAttributeValues(key: string): Map<string, unknown[]> {
+        const values = new Map<string, unknown[]>();
+        if (!this.graph.hasNode(key)) return values;
+        const add = (label: string, value: unknown) => {
+            const list = values.get(label) ?? [];
+            if (!list.some(existing => String(existing) === String(value))) list.push(value);
+            values.set(label, list);
+        };
+        for (const [label, list] of this.savedNodeAttributes(key)) list.forEach(value => add(label, value));
+        this.graph.forEachOutNeighbor(key, neighbour => {
+            const concept = this.graph.getNodeAttribute(neighbour, "metadata")?.concept as any;
+            if (concept?.kind === "attribute") add(concept.type.label, concept.value);
+        });
+        return values;
+    }
+
+    /** Reflect a committed attribute edit without re-reading: update the value
+     *  store, detach a stale attribute node (dropping it when orphaned) and
+     *  re-derive labels. */
+    applyAttributeEdit(ownerIid: string, attribute: string, oldValue: unknown, newValue: unknown): void {
+        const perOwner = this.displayAttributes.get(ownerIid) ?? new Map<string, unknown[]>();
+        let list = [...(perOwner.get(attribute) ?? [])];
+        if (oldValue !== undefined) list = list.filter(value => String(value) !== String(oldValue));
+        if (newValue !== undefined && !list.some(value => String(value) === String(newValue))) list.push(newValue);
+        perOwner.set(attribute, list);
+        this.displayAttributes.set(ownerIid, perOwner);
+        const owner = this.nodeKeyByIid(ownerIid);
+        const stale = oldValue !== undefined ? this.findInstanceNode("attribute", attribute, String(oldValue)) : null;
+        if (owner && stale && this.graph.hasNode(stale)) {
+            for (const edge of this.graph.edges(owner, stale)) this.graph.dropEdge(edge);
+            if (this.graph.degree(stale) === 0) this.dropNodes([stale]);
+        }
+        this.refreshLabels();
+        this.sigma.refresh();
+    }
+
     savedNodeAttributes(key: string): [string, unknown[]][] {
         const concept = this.graph.getNodeAttribute(key, "metadata").concept;
         const id = "iid" in concept ? concept.iid : undefined;
@@ -1499,6 +1541,60 @@ export class GraphVisualiser {
         for (const key of keys) this.setNodeAppearance(key, "viewHidden", false);
         this.elementSelection.replace(keys);
         this.reLayout();
+    }
+
+    // Node-set actions shared by the Explorer/Data action strips. Marks are the
+    // dotted corners (informational, never command targets); selection is the
+    // explicit set; hidden nodes stay in the graph; removal is a view edit.
+
+    isMarked(key: string): boolean { return this.correspondenceNodes.has(key); }
+
+    setMarked(keys: string[], marked: boolean): void {
+        for (const key of keys) {
+            if (marked && this.graph.hasNode(key)) this.correspondenceNodes.add(key); else this.correspondenceNodes.delete(key);
+        }
+        this.sigma.refresh();
+    }
+
+    /** Explicit membership only; an inactive selection counts as empty here. */
+    isExplicitlySelected(key: string): boolean { return this.elementSelection.active && this.elementSelection.nodes.has(key); }
+
+    setNodesSelected(keys: string[], selected: boolean): void {
+        const present = keys.filter(key => this.graph.hasNode(key));
+        if (!present.length) return;
+        // The first edit keeps a narrowing highlight (search, style highlight);
+        // with nothing faded the effective set is every node, so start empty.
+        if (!this.elementSelection.active) {
+            const seed = this.highlightedNodeKeys();
+            const visible = this.graph.filterNodes((_key, attrs) => !attrs["viewHidden"]).length;
+            this.elementSelection.set(seed.length < visible ? seed : [], true);
+        }
+        this.elementSelection.set(present, selected);
+        this.sigma.refresh();
+    }
+
+    setNodesHidden(keys: string[], hidden: boolean): void {
+        for (const key of keys) if (this.graph.hasNode(key)) this.graph.setNodeAttribute(key, "viewHidden", hidden);
+        this.sigma.refresh();
+    }
+
+    /** Caret on the first node (panned into view); several nodes also mark the rest. */
+    goToNodes(keys: string[]): boolean {
+        const present = keys.filter(key => this.graph.hasNode(key));
+        if (!present.length) return false;
+        this.setNodesHidden(present, false);
+        return present.length > 1 ? this.pointCarets(present, present[0]) : this.pointCaret(present[0], "none", true);
+    }
+
+    removeNodesFromGraph(keys: string[]): number {
+        const present = keys.filter(key => this.graph.hasNode(key));
+        if (!present.length) return 0;
+        this.rememberContext();
+        this.freezeViewport();
+        this.dropNodes(present);
+        for (const key of present) this.correspondenceNodes.delete(key);
+        this.sigma.refresh();
+        return present.length;
     }
 
     /** Removing loaded data is a view edit, never a database deletion or an automatic layout. */

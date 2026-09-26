@@ -1,0 +1,70 @@
+<div class="data-toolbar">
+  <div class="source-toggle" role="radiogroup" aria-label="Rows from">
+    <button class="mode-button" role="radio" [class.active]="source === 'loaded'" [attr.aria-checked]="source === 'loaded'" (click)="setSource('loaded')"
+            matTooltip="Instances loaded in this graph (no query)" [matTooltipShowDelay]="500">graph</button>
+    <button class="mode-button" role="radio" [class.active]="source === 'selection'" [attr.aria-checked]="source === 'selection'" (click)="setSource('selection')"
+            [disabled]="!selectedInstances.length" matTooltip="Explicitly selected instances" [matTooltipShowDelay]="500">selection</button>
+    <button class="mode-button" role="radio" [class.active]="source === 'database'" [attr.aria-checked]="source === 'database'" (click)="setSource('database')"
+            matTooltip="Read up to 200 instances of these types from the database" [matTooltipShowDelay]="500">database</button>
+    @if (source === 'database') {
+      <button class="mode-button" (click)="loadDatabase()" [disabled]="loading" aria-label="Reload from database"><i class="fa-light fa-arrows-rotate"></i></button>
+    }
+  </div>
+  <div class="type-chips">
+    @for (type of types; track type) {
+      <button class="type-chip" [class.off]="excludedTypes.has(type)" (click)="toggleType(type)" [attr.aria-pressed]="!excludedTypes.has(type)">{{ type }}</button>
+    }
+  </div>
+  <input class="data-filter" type="text" placeholder="Filter rows" aria-label="Filter rows" [value]="filter" (input)="filter = $any($event.target).value">
+</div>
+@if (message) { <p class="data-message" role="status">{{ message }}</p> }
+@if (loading) { <p class="data-message" role="status">Reading…</p> }
+@if (!types.length) {
+  <p class="data-message">Put the caret on an instance, or select instances, to see their values side by side.</p>
+} @else {
+  <div class="data-scroll">
+    <table class="data-table" aria-label="Instance data">
+      <thead>
+        <tr>
+          <th class="actions-column"><span class="visually-hidden">Actions</span></th>
+          @if (types.length > 1 || source === 'database') {
+            <th><button class="sort-header" (click)="sortBy('@type')">type @if (sortColumn === '@type') { <i class="fa-light" [class.fa-arrow-down]="sortDescending" [class.fa-arrow-up]="!sortDescending"></i> }</button></th>
+          }
+          @for (column of columns; track column) {
+            <th><button class="sort-header" (click)="sortBy(column)">{{ column }} @if (sortColumn === column) { <i class="fa-light" [class.fa-arrow-down]="sortDescending" [class.fa-arrow-up]="!sortDescending"></i> }</button></th>
+          }
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows; track row.iid) {
+          <tr class="action-row" [class.caret-row]="rowKey(row) && rowKey(row) === visualiser?.navigation?.caret">
+            <td class="actions-column">
+              <ts-node-actions [visualiser]="visualiser" [keys]="[rowKey(row)]" [addable]="!rowKey(row)" (add)="addRow(row)" [subject]="row.type"></ts-node-actions>
+            </td>
+            @if (types.length > 1 || source === 'database') { <td class="type-cell" (click)="goTo(row)">{{ row.type }}</td> }
+            @for (column of columns; track column) {
+              <td class="value-cell" (click)="goTo(row)" (dblclick)="startEdit(row, column)">
+                @if (isEditing(row, column)) {
+                  <div class="cell-editor-row" (click)="$event.stopPropagation()">
+                    <input class="cell-editor" [value]="editText" (input)="editText = $any($event.target).value; editError = ''"
+                           (keydown.enter)="commitEdit(row)" (keydown.escape)="cancelEdit()" [disabled]="edits.busy"
+                           [attr.aria-label]="'New ' + column + ' value'" placeholder="empty removes">
+                  </div>
+                  @if (editError) { <span class="edit-error" role="alert">{{ editError }}</span> }
+                } @else {
+                  <span class="cell-text" [attr.title]="cellText(row, column)">{{ cellText(row, column) }}</span>
+                  @if (canEdit && row.iid.startsWith('0x')) {
+                    <button class="cell-edit" (click)="startEdit(row, column); $event.stopPropagation()" [attr.aria-label]="'Edit ' + column + ' of ' + row.type"><i class="fa-light fa-pen"></i></button>
+                  }
+                }
+              </td>
+            }
+          </tr>
+        } @empty {
+          <tr><td [attr.colspan]="columns.length + 2" class="data-message">No rows{{ filter ? ' match the filter' : source === 'database' ? ' (or no attributes)' : ' in this source' }}.</td></tr>
+        }
+      </tbody>
+    </table>
+  </div>
+  <p class="data-hint">Click a row to go to it; double-click a cell (or ✎) to edit. Edits write to the database; an empty value removes it.</p>
+}

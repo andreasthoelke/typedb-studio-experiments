@@ -248,3 +248,68 @@
         padding: 4px 6px;
     }
 }
+
+// The node-actions strip sits under the attribute type label, so the cell no
+// longer reserves the right-hand track the old absolute icon button needed.
+.attributes-table .attr-label {
+    padding-right: 10px;
+}
+.attr-actions {
+    display: flex;
+    margin-top: 2px;
+}
+
+// Inline attribute editing. The shared value-row buttons fade in on hover;
+// editor buttons, focused buttons and an armed removal stay visible.
+.attributes-table {
+    .copy-button:focus-visible { opacity: 1; }
+    .copy-button.confirm { opacity: 1; color: var(--theme-red); }
+}
+
+.value-editor-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+
+    .copy-button { opacity: 0.8; }
+}
+
+.value-editor {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 2px 6px;
+    font: inherit;
+    font-size: 13px;
+    color: var(--theme-white);
+    background: var(--theme-secondary-purple);
+    border: 1px solid var(--theme-secondary-deep-grey);
+    border-radius: 4px;
+
+    &:focus { outline: 1px solid var(--theme-green); }
+}
+
+.add-value-button {
+    margin-top: 4px;
+    padding: 1px 6px;
+    font-size: 11px;
+    color: var(--theme-secondary-light-grey);
+    background: none;
+    border: 1px dashed var(--theme-secondary-deep-grey);
+    border-radius: 4px;
+    cursor: pointer;
+    opacity: 0.6;
+
+    &:hover, &:focus-visible { opacity: 1; }
+
+    i { font-size: 10px; width: 10px; height: 10px; }
+}
+
+.edit-error, .edit-status {
+    margin: 4px 0;
+    font-size: 11px;
+}
+.edit-error { color: var(--theme-red); }
+.edit-status { color: var(--theme-secondary-light-grey); }
+
+// Owned attribute types without a value: shown only to offer "+ value".
+.attributes-table tr.empty-attribute .attr-label { opacity: 0.55; }

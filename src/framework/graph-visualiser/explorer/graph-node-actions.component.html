@@ -1,0 +1,29 @@
+@if (addable) {
+  <button class="node-action" (click)="add.emit()" [matTooltip]="label(addLabel)" [matTooltipShowDelay]="500" [attr.aria-label]="label(addLabel)">
+    <i class="fa-light fa-plus"></i>
+  </button>
+}
+@if (present.length) {
+  <button class="node-action" [class.on]="isCaret" (click)="goTo()" [matTooltip]="label(many ? 'Go to (marks the others)' : 'Go to')"
+          [matTooltipShowDelay]="500" [attr.aria-label]="label('Go to')" [attr.aria-current]="isCaret || null">
+    <i class="fa-light fa-location-crosshairs"></i>
+  </button>
+  <button class="node-action" [class.on]="hidden" (click)="toggleHidden()" [matTooltip]="label(hidden ? 'Show' : 'Hide')"
+          [matTooltipShowDelay]="500" [attr.aria-label]="label('Hidden')" [attr.aria-pressed]="hidden">
+    <i class="fa-light" [class.fa-eye]="!hidden" [class.fa-eye-slash]="hidden"></i>
+  </button>
+  <button class="node-action" [class.on]="selected" (click)="toggleSelected()" [matTooltip]="label(selected ? 'Remove from selection' : 'Add to selection')"
+          [matTooltipShowDelay]="500" [attr.aria-label]="label('Selected')" [attr.aria-pressed]="selected">
+    <i class="fa-light" [class.fa-square]="!selected" [class.fa-square-check]="selected"></i>
+  </button>
+  <button class="node-action" [class.on]="marked" (click)="toggleMarked()" [matTooltip]="label(marked ? 'Unmark' : 'Mark')"
+          [matTooltipShowDelay]="500" [attr.aria-label]="label('Marked')" [attr.aria-pressed]="marked">
+    <i class="fa-light fa-expand"></i>
+  </button>
+  @if (removable) {
+    <button class="node-action remove" (click)="remove()" [matTooltip]="label('Remove from graph (Restore context brings it back; the database is unchanged)')"
+            [matTooltipShowDelay]="500" [attr.aria-label]="label('Remove from graph')">
+      <i class="fa-light fa-xmark"></i>
+    </button>
+  }
+}

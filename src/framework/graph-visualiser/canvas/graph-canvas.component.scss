@@ -471,3 +471,40 @@
     pre { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
     p { overflow-wrap: anywhere; }
 }
+
+// Snap chips: a quiet content badge (e = entities, r = relations, a = attributes,
+// t = types) and optional grouping.
+.snap-badge {
+    margin-left: 6px;
+    font-size: 10px;
+    opacity: 0.55;
+    font-variant-numeric: tabular-nums;
+}
+
+.snap-grouping {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 4px 0;
+    font-size: 11px;
+    color: var(--theme-secondary-light-grey);
+
+    .snap-group-option {
+        padding: 1px 6px;
+        font-size: 11px;
+        color: inherit;
+        background: none;
+        border: 1px solid var(--theme-secondary-deep-grey);
+        border-radius: 4px;
+        cursor: pointer;
+
+        &.active { color: var(--theme-white); background: var(--theme-secondary-mid-deep-grey); }
+    }
+}
+
+.snap-group-label {
+    margin: 8px 0 2px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--theme-secondary-light-grey);
+}

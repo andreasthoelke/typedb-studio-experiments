@@ -1,0 +1,59 @@
+// Low-noise state strip: off states are faint, on states are solid, and the
+// destructive × only appears while the surrounding `.action-row` is hovered
+// or focused (hosts outside such a row keep × hidden until it is focused).
+:host {
+    display: inline-flex;
+    align-items: center;
+    gap: 1px;
+    flex: 0 0 auto;
+}
+
+.node-action {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 22px;
+    height: 22px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: 4px;
+    background: transparent;
+    color: var(--theme-grey);
+    opacity: 0.4;
+    cursor: pointer;
+    transition: opacity 0.12s ease, background-color 0.12s ease;
+
+    // All three properties together; see the AGENTS.md icon sizing pitfall.
+    i {
+        font-size: 12px;
+        width: 12px;
+        height: 12px;
+        line-height: 1;
+    }
+
+    &:hover, &:focus-visible {
+        opacity: 1;
+        background: var(--theme-secondary-mid-deep-grey);
+    }
+
+    &.on {
+        opacity: 1;
+        color: var(--theme-green);
+        border-color: var(--theme-secondary-deep-grey);
+    }
+
+    // Transparent rather than hidden: it stays keyboard-focusable and announced.
+    &.remove {
+        opacity: 0;
+    }
+}
+
+:host-context(.action-row:hover) .node-action, :host-context(.action-row:focus-within) .node-action {
+    opacity: 0.75;
+
+    &.on { opacity: 1; }
+}
+
+:host-context(.action-row:hover) .node-action.remove, :host-context(.action-row:focus-within) .node-action.remove, .node-action.remove:focus-visible {
+    opacity: 0.75;
+}

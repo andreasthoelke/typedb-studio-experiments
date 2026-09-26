@@ -24,18 +24,36 @@
   </div>
   @if (topTab === 'explorer') {
     <div class="explorer-pane panel-content">
+    @if (selectionKeys.length && !edgeInspection) {
+      <div class="selection-strip action-row" aria-label="Selection actions">
+        <span class="selection-count">Selection ({{ selectionKeys.length }})</span>
+        <ts-node-actions [visualiser]="visualiser" [keys]="selectionKeys" [subject]="selectionKeys.length + ' selected nodes'"
+                         [removable]="!snapshotMode"></ts-node-actions>
+        @if (!snapshotMode) {
+          <button class="highlight-action-button" (click)="visualiser?.isolateSelection()" matTooltip="Keep only the selection and lay it out (R). Restore context brings the rest back."
+                  [matTooltipShowDelay]="500">Isolate</button>
+        }
+        <button class="highlight-action-button" (click)="visualiser?.clearGraphSelection()" matTooltip="Clear selection and marks (Esc)" [matTooltipShowDelay]="500">Clear</button>
+      </div>
+    }
     @if (!edgeInspection && !snapshotMode && showSelectionModeToggle && hasSelection) {
       <div class="selection-mode-toggle">
         <button class="mode-button"
-                [class.active]="selectionMode === 'instances'"
-                (click)="selectionModeChange.emit('instances')">
+                [class.active]="!dataView && selectionMode === 'instances'"
+                (click)="dataView = false; selectionModeChange.emit('instances')">
           <span>here</span>
         </button>
         <button class="mode-button"
-                [class.active]="selectionMode === 'types'"
-                (click)="selectionModeChange.emit('types')">
+                [class.active]="!dataView && selectionMode === 'types'"
+                (click)="dataView = false; selectionModeChange.emit('types')">
           <span>every '{{ currentTypeLabel }}'</span>
         </button>
+        @if (dataFocusType) {
+          <button class="mode-button" [class.active]="dataView" (click)="dataView = true"
+                  matTooltip="Values of these instances side by side; edit cells in place" [matTooltipShowDelay]="500">
+            <span>data</span>
+          </button>
+        }
       </div>
     }
 
@@ -56,15 +74,16 @@
       <div class="panel-section snapshot-details">
         @if (snapshotNodeKey) {
           <p>{{ snapshotNodeLabel }}</p>
-          <div class="highlight-group-actions">
-            <button class="highlight-action-button" (click)="visualiser?.revealNodes([snapshotNodeKey!])">Reveal in graph</button>
-            <button class="highlight-action-button" (click)="toggleSnapshotSelection()">{{ snapshotSelected ? 'Remove from selection' : 'Add to selection' }}</button>
+          <div class="highlight-group-actions action-row">
+            <ts-node-actions [visualiser]="visualiser" [keys]="[snapshotNodeKey!]" subject="this node" [removable]="false"></ts-node-actions>
           </div>
           @for (attr of snapshotAttributes; track attr[0]) { <p>{{ attr[0] }}: {{ attr[1] }}</p> }
         } @else { <p>Select a node to inspect its saved values.</p> }
         <p>Saved graph preview. Connect to its database to explore current data.</p>
         @if (canExplorePreview) { <button class="highlight-action-button" (click)="explorePreview.emit()">Explore live</button> }
       </div>
+    } @else if (dataView && dataFocusType) {
+      <ts-graph-data-table [visualiser]="visualiser" [run]="run" [focusType]="dataFocusType"/>
     } @else if (selectionMode === 'types') {
       <ts-graph-type-explorer
                              [selectedType]="selectedTypeForTypeMode"

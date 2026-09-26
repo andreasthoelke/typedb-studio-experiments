@@ -14,6 +14,7 @@ import { GraphViewState } from "../../../service/graph-view-state.service";
 import { GraphLabelService } from "../../../service/graph-label.service";
 import { GraphStyleService } from "../../../service/graph-style.service";
 import { labelAttributes } from "../../util/schema-meta";
+import { GraphNodeActionsComponent } from "./graph-node-actions.component";
 import { AppData } from "../../../service/app-data.service";
 import { RunOutputState } from "../../../service/query-page-state.service";
 import { Schema, SchemaAttribute, SchemaConcept, SchemaRelation, SchemaRole, SchemaState } from "../../../service/schema-state.service";
@@ -63,7 +64,7 @@ interface RoleChipRow {
         "../../../module/data/instance-detail/instance-detail.component.scss",
         "./graph-type-explorer.component.scss",
     ],
-    imports: [CommonModule, MatFormFieldModule, MatSelectModule, MatTooltipModule],
+    imports: [CommonModule, MatFormFieldModule, MatSelectModule, MatTooltipModule, GraphNodeActionsComponent],
 })
 export class GraphTypeExplorerComponent implements DoCheck {
     @Input() selectedType: SchemaConcept | SchemaRole | null = null;
@@ -174,30 +175,13 @@ export class GraphTypeExplorerComponent implements DoCheck {
         return !!this.run && this.run.graph.visualiser === this.visualiser && this.graphViewState.canExpandSchema(this.run);
     }
 
-    get isInGraphSelection(): boolean {
-        const key = this.schemaNodeKey(this.selectedType);
-        return key != null && !!this.visualiser?.isNodeInSelection(key);
-    }
-
-    toggleGraphSelection(): void {
-        const key = this.schemaNodeKey(this.selectedType);
-        if (key != null) this.visualiser?.toggleNodeSelection(key);
-    }
-
-    removeFromGraph(): void {
-        const key = this.schemaNodeKey(this.selectedType);
-        if (key != null) this.visualiser?.removeFromGraph(key);
-    }
 
     schemaAppearance(flag: "viewHidden" | "viewDimmed", type = this.selectedType): boolean {
         const key = this.schemaNodeKey(type);
         return key != null && !!this.visualiser?.graph.getNodeAttribute(key, flag);
     }
 
-    toggleSchemaAppearance(flag: "viewHidden" | "viewDimmed"): void {
-        const key = this.schemaNodeKey(this.selectedType);
-        if (key != null) this.visualiser?.setNodeAppearance(key, flag, !this.schemaAppearance(flag));
-    }
+
 
     revealSchemaTypes(types: SchemaExplorerType[]): void {
         const keys = types.flatMap(type => {

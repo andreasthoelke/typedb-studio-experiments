@@ -42,7 +42,7 @@ export async function checkGraphCustomise(page, label) {
         if(key) v.pointCaret(key);window.ng.applyChanges(c);
     });
     assert.equal(await section('Types').getAttribute('aria-expanded'),'false');
-    await tab.getByRole('button',{name:'Reveal style',exact:true}).click();
+    await tab.getByRole('button',{name:'Show style row',exact:true}).click();
     assert.equal(await section('Types').getAttribute('aria-expanded'),'true');
     assert.equal(await tab.locator('.caret-style').count(),1);
     // Render a caret style outside the manually filtered/capped list without erasing that filter.

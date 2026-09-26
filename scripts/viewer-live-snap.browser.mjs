@@ -79,9 +79,13 @@ try {
  await explorer.locator('.detail-section').filter({has:query.getByRole('heading',{name:'Attributes',exact:true})}).getByRole('button',{name:'Add all to graph',exact:true}).click();
  await query.waitForFunction(count=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.graph.order>count,count);
  await query.waitForFunction(()=>window.ng.getComponent(document.querySelector('ts-query-page')).currentRun.expansionQueries.length>0);
- await explorer.getByRole('button',{name:'Hide',exact:true}).click();
+ // The header action strip's eye toggles hiding; aria-pressed reflects the state.
+ const hideToggle=explorer.locator('.type-section').getByRole('button',{name:'Hidden this node',exact:true});
+ await hideToggle.click();
  assert.equal(await query.evaluate(key=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.graph.getNodeAttribute(key,'viewHidden'),inspected),true);
- await explorer.getByRole('button',{name:'Show',exact:true}).click();
+ assert.equal(await hideToggle.getAttribute('aria-pressed'),'true');
+ await hideToggle.click();
+ assert.equal(await query.evaluate(key=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.graph.getNodeAttribute(key,'viewHidden'),inspected),false);
  await query.getByRole('button',{name:"every 'motivation'",exact:true}).click();
  await query.locator('ts-graph-type-explorer').waitFor();
  await query.getByRole('button',{name:'here',exact:true}).click();

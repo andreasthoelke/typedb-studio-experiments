@@ -310,7 +310,7 @@ export class NvimQueryBridge {
             candidates.sort((a, b) => Number(b === currentCaret) - Number(a === currentCaret) || distance(a) - distance(b) || a.localeCompare(b));
             // Every match is marked; the nearest/current one takes the primary caret.
             visualiser.pointCarets(candidates, candidates[0]);
-            report(`Caret: ${target.identifier}${candidates.length > 1 ? ` (${candidates.length} matches; secondary carets mark the others)` : ""}.`);
+            report(`Caret: ${target.identifier}${candidates.length > 1 ? ` (${candidates.length} matches; the others are marked)` : ""}.`);
         } catch (error) {
             if (stillCurrent()) report(`Could not resolve ${target.identifier}: ${error instanceof Error ? error.message : String(error)}`, true);
         } finally {

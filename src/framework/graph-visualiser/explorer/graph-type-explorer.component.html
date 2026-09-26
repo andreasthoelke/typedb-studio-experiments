@@ -32,20 +32,12 @@
         </div>
 
         @if (schemaMode) {
-          <div class="detail-section connection-chips">
-            <button class="open-details-button" (click)="revealSchemaTypes([selectedType!])"
-                    [disabled]="!schemaNodeKey(selectedType)">Reveal in graph</button>
-            <button class="open-details-button" (click)="toggleSchemaAppearance('viewHidden')"
-                    [disabled]="!schemaNodeKey(selectedType)"
-                    matTooltip="Hide this type and its edges in the view">
-              {{ schemaAppearance('viewHidden') ? 'Show' : 'Hide' }}
-            </button>
-            <button class="open-details-button" (click)="toggleGraphSelection()"
-                    [disabled]="!schemaNodeKey(selectedType)" [attr.aria-pressed]="isInGraphSelection">
-              {{ isInGraphSelection ? 'Remove from selection' : 'Add to selection' }}
-            </button>
-            <button class="open-details-button" (click)="removeFromGraph()" [disabled]="!schemaNodeKey(selectedType)"
-                    matTooltip="Remove from this graph and its layout. Restore context brings it back; the schema is unchanged.">Remove from graph</button>
+          <div class="detail-section connection-chips action-row">
+            @if (schemaNodeKey(selectedType)) {
+              <ts-node-actions [visualiser]="visualiser" [keys]="[schemaNodeKey(selectedType)]" subject="this type"></ts-node-actions>
+            } @else {
+              <span class="text-muted">Not in this graph</span>
+            }
           </div>
           @if (schemaLoading) { <p role="status">Loading schema connections…</p> }
           @if (schemaLoadError) { <p role="alert">{{ schemaLoadError }}</p> }
@@ -55,13 +47,13 @@
               <div class="connection-chips">
                 <button class="connection-chip all-chip" (click)="revealSchemaGroup(section)"
                         [disabled]="schemaLoading"
-                        [attr.aria-label]="(canExpandSchema ? 'Add all ' : 'Reveal all ') + section.title.toLowerCase() + ' in graph'"
+                        [attr.aria-label]="(canExpandSchema ? 'Add all ' : 'Show and mark all ') + section.title.toLowerCase()"
                         [matTooltip]="canExpandSchema ? 'Add this group and its connections to the graph' : 'Show hidden types and reveal this group in the graph'">*</button>
                 @for (type of section.types; track type.label) {
                   <button class="connection-chip" [class.attribute]="type.kind === 'attributeType'"
                           [class.relation]="type.kind === 'relationType'" [class.role]="type.kind === 'roleType'"
                           [disabled]="schemaLoading || (!schemaNodeKey(type) && !canExpandSchema)" (click)="exploreSchemaType(type)"
-                          [matTooltip]="canExpandSchema ? 'Add this type and its connections to the graph' : 'Reveal in graph and explore this type'">
+                          [matTooltip]="canExpandSchema ? 'Add this type and its connections to the graph' : 'Go to this type in the graph and explore it'">
                     {{ type.label }}@if (schemaAppearance('viewHidden', type)) { <span>(hidden)</span> }
                   </button>
                 }

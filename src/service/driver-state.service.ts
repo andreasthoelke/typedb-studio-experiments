@@ -526,6 +526,14 @@ export class DriverState {
         return false;
     }
 
+    /** Independent auto-committed write, dispatched exactly once. A lost response
+     *  has an unknown outcome, so this never retries (unlike the console path). */
+    writeOnce(query: string, databaseName: string): Observable<ApiResponse<QueryResponse>> {
+        return defer(() => this.requireDriver().oneShotQuery(
+            query, true, databaseName, "write", this.transactionOptions("write"),
+        ));
+    }
+
     /** Independent read for embedded viewers; never reuses or commits a Studio transaction. */
     queryReadOnly(query: string, databaseName: string, queryOptions?: QueryOptions): Observable<ApiResponse<QueryResponse>> {
         return defer(() => this.requireDriver().oneShotQuery(

@@ -105,7 +105,7 @@ try {
  await inspect('take');
  assert.equal(new URL(query.url()).pathname,'/query');
  // Section additions work on restored schema-mode Query runs too.
- await section('Relations').getByRole('button',{name:'Add all relations in graph',exact:true}).click();
+ await section('Relations').getByRole('button',{name:'Add all relations',exact:true}).click();
  await query.waitForFunction(()=>!window.ng.getComponent(document.querySelector('ts-graph-type-explorer')).schemaLoading);
  assert.equal(await explorer.locator('[role=alert]').count(),0);
  const restored=await graphState();

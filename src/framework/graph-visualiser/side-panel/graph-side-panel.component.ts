@@ -15,6 +15,8 @@ import { ThemesTabComponent } from "./themes-tab.component";
 import { CustomiseTabComponent } from "./customise-tab.component";
 import { GraphInstanceExplorerComponent } from "../explorer/graph-instance-explorer.component";
 import { GraphTypeExplorerComponent } from "../explorer/graph-type-explorer.component";
+import { GraphNodeActionsComponent } from "../explorer/graph-node-actions.component";
+import { GraphDataTableComponent } from "../explorer/graph-data-table.component";
 import { PaneDirective } from "../../pane-focus/pane.directive";
 
 @Component({
@@ -26,7 +28,7 @@ import { PaneDirective } from "../../pane-focus/pane.directive";
         MatTooltipModule, MatMenuModule,
         PaneDirective,
         ElementsTabComponent, ThemesTabComponent, CustomiseTabComponent,
-        GraphInstanceExplorerComponent, GraphTypeExplorerComponent,
+        GraphInstanceExplorerComponent, GraphTypeExplorerComponent, GraphNodeActionsComponent, GraphDataTableComponent,
     ],
 })
 export class GraphSidePanelComponent implements OnChanges, OnDestroy, DoCheck {
@@ -103,8 +105,20 @@ export class GraphSidePanelComponent implements OnChanges, OnDestroy, DoCheck {
         const key = this.snapshotNodeKey;
         return key ? this.visualiser!.savedNodeAttributes(key).map(([label, values]) => [label, values.map(v => String(v)).join(", ")]) : [];
     }
-    toggleSnapshotSelection(): void { if (this.snapshotNodeKey) this.visualiser?.toggleNodeSelection(this.snapshotNodeKey); }
-    get snapshotSelected(): boolean { return !!this.snapshotNodeKey && !!this.visualiser?.isNodeInSelection(this.snapshotNodeKey); }
+    /** The Explorer's third view: "every x" as an editable table. */
+    dataView = false;
+    /** The caret instance's type, when the Data view applies (live instance graphs only). */
+    get dataFocusType(): string | null {
+        if (this.schemaMode || this.snapshotMode) return null;
+        const kind = this.selectedType?.kind;
+        return kind === "entityType" || kind === "relationType" ? this.selectedType!.label : null;
+    }
+
+    /** Explicitly selected nodes still in the graph: the Selection strip's target set. */
+    get selectionKeys(): string[] {
+        const v = this.visualiser;
+        return v?.elementSelection.active ? [...v.elementSelection.nodes].filter(key => v.graph.hasNode(key)) : [];
+    }
 
 
     /** Emitted when the user flips the inspector-header mode toggle. The host

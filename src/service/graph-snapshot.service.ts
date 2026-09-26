@@ -3,7 +3,8 @@ import { BehaviorSubject, Subject } from "rxjs";
 import { GraphSnap, parseGraphSnap } from "../framework/util/graph-snap";
 
 export interface GraphSnapshotContext { database: string; projectTempDirectory: string; }
-export interface SavedGraphSnap { filename: string; modifiedAt: string; bytes: number; kind: "data" | "schema" | "unknown"; nodeCount?: number; abbreviation?: string; }
+export interface SnapSummary { entities: number; relations: number; attributes: number; types: number; shape: "instances" | "types" | "mixed" | "empty"; }
+export interface SavedGraphSnap { filename: string; modifiedAt: string; bytes: number; kind: "data" | "schema" | "unknown"; nodeCount?: number; abbreviation?: string; summary?: SnapSummary; }
 export interface GraphSnapLibrary extends GraphSnapshotContext { directory: string; imageDirectory: string; files: SavedGraphSnap[]; }
 const STORAGE_KEY = "typedb-studio-snapshot-projects";
 

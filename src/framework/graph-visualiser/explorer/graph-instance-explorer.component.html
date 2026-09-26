@@ -32,7 +32,7 @@
           </div>
         } @else {
           <!-- Type row (no collapsible heading) -->
-          <div class="detail-section type-section">
+          <div class="detail-section type-section action-row">
             <div class="type-row">
               <span class="type-info">
                 @if (type!.supertype) {
@@ -46,20 +46,11 @@
               <span class="instance-iid">{{ instanceIID }}</span>
             </div>
             <div class="instance-view-actions">
-              <button class="open-details-button reveal-self" (click)="revealSelf()" [disabled]="!selfNodeKey">
-                Reveal in graph
-                <i class="fa-light fa-arrow-right"></i>
-              </button>
-              <button class="open-details-button" (click)="toggleAppearance('viewHidden')" [disabled]="!selfNodeKey"
-                      matTooltip="Hide this node and its edges in this result. The query and database are unchanged.">
-                {{ appearanceEnabled('viewHidden') ? 'Show' : 'Hide' }}
-              </button>
-              <button class="open-details-button" (click)="toggleGraphSelection()" [disabled]="!selfNodeKey"
-                      [attr.aria-pressed]="isInGraphSelection">
-                {{ isInGraphSelection ? 'Remove from selection' : 'Add to selection' }}
-              </button>
-              <button class="open-details-button" (click)="removeFromGraph()" [disabled]="!selfNodeKey"
-                      matTooltip="Remove from this graph and its layout. Restore context brings it back; the database is unchanged.">Remove from graph</button>
+              @if (selfNodeKey) {
+                <ts-node-actions [visualiser]="visualiser" [keys]="[selfNodeKey]" subject="this node"></ts-node-actions>
+              } @else {
+                <span class="text-muted">Not in this graph</span>
+              }
             </div>
           </div>
 
@@ -85,24 +76,15 @@
                 </div>
                 <div class="links-list">
                   @for (link of state.ownLinks; track link.roleLabel + link.playerIID) {
-                    <div class="link-card">
+                    <div class="link-card action-row">
                       <div class="link-info">
                         <span class="role-label">{{ link.roleLabel }}</span>
                         <div class="player-details">
                           <span class="player-type">{{ link.playerTypeLabel }}</span>
                           <span class="player-iid">{{ link.playerIID }}</span>
                         </div>
-                        @if (isLinkAdded(instanceIID!, link)) {
-                          <button class="open-details-button" (click)="revealLink(link)">
-                            Reveal in graph
-                            <i class="fa-light fa-arrow-right"></i>
-                          </button>
-                        } @else {
-                          <button class="open-details-button" (click)="addOwnLink(link)">
-                            <i class="fa-light fa-arrow-up"></i>
-                            Add to graph
-                          </button>
-                        }
+                        <ts-node-actions [visualiser]="visualiser" [keys]="[playerKey(link)]" [addable]="!isLinkAdded(instanceIID!, link)"
+                                         (add)="addOwnLink(link)" [subject]="link.playerTypeLabel"></ts-node-actions>
                       </div>
                       <div class="link-attrs">
                         @for (attr of link.attributes; track attr.type) {
@@ -127,7 +109,7 @@
                 <h6>Attributes</h6>
               </button>
               @if (attributesCollapsed) {
-              } @else if (state.attributes.length === 0) {
+              } @else if (attributeRows.length === 0) {
                 <p class="text-muted">No attributes</p>
               } @else {
                 <div class="section-bulk-action section-bulk-action--tight">
@@ -135,30 +117,42 @@
                     <i class="fa-light fa-arrow-up"></i> Add all to graph
                   </button>
                 </div>
+                @if (editMessage) { <p class="edit-status" role="status">{{ editMessage }}</p> }
                 <table class="attributes-table">
                   <tbody>
-                    @for (attr of state.attributes; track attr.type) {
-                      <tr>
-                        <td class="attr-label">{{ attr.type }}<em class="value-type">, value {{ attr.valueType }}</em>@if (isAttributeAdded(attr)) {<button
-                            class="add-attr-icon-button added"
-                            (click)="revealAttribute(attr)"
-                            matTooltip="Reveal in graph"
-                            matTooltipPosition="above"
-                            [matTooltipShowDelay]="500"><i class="fa-light fa-arrow-right"></i></button>} @else {<button
-                            class="add-attr-icon-button"
-                            (click)="addAttribute(attr)"
-                            matTooltip="Add to graph"
-                            matTooltipPosition="above"
-                            [matTooltipShowDelay]="500"><i class="fa-light fa-arrow-up"></i></button>}</td>
+                    @for (attr of attributeRows; track attr.type) {
+                      <tr class="action-row" [class.empty-attribute]="attr.empty">
+                        <td class="attr-label">{{ attr.type }}<em class="value-type">, value {{ attr.valueType }}</em>
+                          <ts-node-actions class="attr-actions" [visualiser]="visualiser" [keys]="attributeKeys(attr)" [addable]="!attr.empty && !attributeKeys(attr).length"
+                                           (add)="addAttribute(attr)" [subject]="attr.type"></ts-node-actions></td>
                         <td class="attr-value">
                           @for (value of attr.values; track $index) {
-                            <div class="value-row">{{ value }}<button
-                                class="copy-button"
-                                (click)="copyValue(value, tooltip)"
-                                matTooltip="Copied"
-                                matTooltipPosition="above"
-                                matTooltipShowDelay="999999"
-                                #tooltip="matTooltip"><i class="fa-light fa-copy"></i></button></div>
+                            @if (isEditing(attr, $index)) {
+                              <ng-container *ngTemplateOutlet="valueEditor; context: { $implicit: attr }"></ng-container>
+                            } @else {
+                              <div class="value-row">{{ value }}<button
+                                  class="copy-button"
+                                  (click)="copyValue(value, tooltip)"
+                                  matTooltip="Copied"
+                                  matTooltipPosition="above"
+                                  matTooltipShowDelay="999999"
+                                  #tooltip="matTooltip"><i class="fa-light fa-copy"></i></button>@if (canEdit) {<button
+                                  class="copy-button" (click)="startEdit(attr, $index, value)" [attr.aria-label]="'Edit ' + attr.type + ' value'"
+                                  matTooltip="Edit value (writes to the database)" [matTooltipShowDelay]="500"><i class="fa-light fa-pen"></i></button><button
+                                  class="copy-button" [class.confirm]="removePending === attr.type + '|' + value" (click)="removeValue(attr, value)"
+                                  [attr.aria-label]="removePending === attr.type + '|' + value ? 'Confirm removing ' + attr.type + ' value' : 'Remove ' + attr.type + ' value'"
+                                  [matTooltip]="removePending === attr.type + '|' + value ? 'Click again to delete this value from the database' : 'Remove value'"
+                                  [matTooltipShowDelay]="300"><i class="fa-light fa-trash-can"></i></button>}</div>
+                            }
+                          }
+                          @if (canEdit) {
+                            @if (isEditing(attr, 'new')) {
+                              <ng-container *ngTemplateOutlet="valueEditor; context: { $implicit: attr }"></ng-container>
+                            } @else {
+                              <button class="add-value-button" (click)="startEdit(attr, 'new', '')" [attr.aria-label]="'Add ' + attr.type + ' value'">
+                                <i class="fa-light fa-plus"></i> value
+                              </button>
+                            }
                           }
                         </td>
                       </tr>
@@ -210,39 +204,25 @@
                 <div class="relations-list">
                   @for (instance of filteredRelations; track instance.relationIID) {
                     <div class="relation-card">
-                      <div class="relation-card-header">
+                      <div class="relation-card-header action-row">
                         <div class="header-title">
                           <span class="relation-type-label">{{ instance.relationTypeLabel }}</span>
                           <span class="relation-iid">{{ instance.relationIID }}</span>
                         </div>
                         <div class="header-actions">
-                          @if (isRelationAdded(instance)) {
-                            <span class="self-tag">{{ relationVisible(instance) ? 'In graph' : 'Hidden' }}</span>
-                            <button class="open-details-button" (click)="inspectRelation(instance)">{{ relationVisible(instance) ? 'Inspect' : 'Show & inspect' }}</button>
-                            <button class="open-details-button added"
-                                    (click)="revealRelation(instance)">
-                              {{ relationVisible(instance) ? 'Mark in graph' : 'Show & mark' }}
-                              <i class="fa-light fa-arrow-right"></i>
-                            </button>
-                          } @else {
-                            <button class="open-details-button"
-                                    (click)="addRelation(instance)">
-                              <i class="fa-light fa-arrow-up"></i>
-                              Add to graph
-                            </button>
-                          }
+                          <ts-node-actions [visualiser]="visualiser" [keys]="[relationKey(instance)]" [addable]="!isRelationAdded(instance)"
+                                           (add)="addRelation(instance)" [subject]="instance.relationTypeLabel"></ts-node-actions>
                           @if (!allRelationsOfTypeAdded(instance.relationTypeLabel)) {
-                            <button class="open-details-button"
-                                    (click)="addAllRelationsOfType(instance.relationTypeLabel)">
-                              <i class="fa-light fa-arrow-up"></i>
-                              Add all to graph
+                            <button class="open-details-button" (click)="addAllRelationsOfType(instance.relationTypeLabel)"
+                                    [matTooltip]="'Add every ' + instance.relationTypeLabel + ' of this node'" [matTooltipShowDelay]="500">
+                              <i class="fa-light fa-plus"></i> all
                             </button>
                           }
                         </div>
                       </div>
                       <div class="relation-card-body">
                         @for (link of instance.links; track link.roleLabel + link.playerIID) {
-                          <div class="link-card" [class.is-self]="link.isSelf">
+                          <div class="link-card action-row" [class.is-self]="link.isSelf">
                             <div class="link-info">
                               <span class="role-label">{{ link.roleLabel }}</span>
                               <div class="player-details">
@@ -253,17 +233,8 @@
                                 }
                               </div>
                               @if (!link.isSelf) {
-                                @if (isLinkAdded(instance.relationIID, link)) {
-                                  <button class="open-details-button" (click)="revealLink(link)">
-                                    Reveal in graph
-                                    <i class="fa-light fa-arrow-right"></i>
-                                  </button>
-                                } @else {
-                                  <button class="open-details-button" (click)="addPlayer(instance, link)">
-                                    <i class="fa-light fa-arrow-up"></i>
-                                    Add to graph
-                                  </button>
-                                }
+                                <ts-node-actions [visualiser]="visualiser" [keys]="[playerKey(link)]" [addable]="!isLinkAdded(instance.relationIID, link)"
+                                                 (add)="addPlayer(instance, link)" [subject]="link.playerTypeLabel"></ts-node-actions>
                               }
                             </div>
                             @if (!link.isSelf) {
@@ -327,12 +298,13 @@
               } @else {
                 <div class="links-list">
                   @for (owner of state.owners; track owner.ownerIID) {
-                    <div class="link-card">
+                    <div class="link-card action-row">
                       <div class="link-info">
                         <div class="player-details">
                           <span class="player-type" [ngClass]="owner.ownerKind">{{ owner.ownerTypeLabel }}</span>
                           <span class="player-iid">{{ owner.ownerIID }}</span>
                         </div>
+                        <ts-node-actions [visualiser]="visualiser" [keys]="[ownerKey(owner.ownerIID)]" [subject]="owner.ownerTypeLabel"></ts-node-actions>
                       </div>
                       <div class="link-attrs">
                         @for (attr of owner.attributes; track attr.type) {
@@ -353,3 +325,14 @@
     </div>
   }
 </div>
+
+<ng-template #valueEditor let-attr>
+  <div class="value-editor-row">
+    <input class="value-editor" [value]="editText" (input)="editText = $any($event.target).value; editError = ''"
+           (keydown.enter)="commitEdit(attr)" (keydown.escape)="cancelEdit()" [attr.aria-label]="'New ' + attr.type + ' value'"
+           [placeholder]="attr.valueType" [disabled]="edits.busy">
+    <button class="copy-button" (click)="commitEdit(attr)" aria-label="Save value" [disabled]="edits.busy"><i class="fa-light fa-check"></i></button>
+    <button class="copy-button" (click)="cancelEdit()" aria-label="Cancel edit"><i class="fa-light fa-xmark"></i></button>
+  </div>
+  @if (editError) { <p class="edit-error" role="alert">{{ editError }}</p> }
+</ng-template>

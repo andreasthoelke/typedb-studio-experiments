@@ -4,7 +4,8 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { Component, inject, Input, OnChanges, SimpleChanges } from "@angular/core";
+import { Component, DestroyRef, ElementRef, inject, Input, OnChanges, SimpleChanges } from "@angular/core";
+import { takeUntilDestroyed } from "@angular/core/rxjs-interop";
 import { CommonModule } from "@angular/common";
 import { MatProgressSpinnerModule } from "@angular/material/progress-spinner";
 import { MatButtonModule } from "@angular/material/button";
@@ -15,6 +16,8 @@ import { RunOutputState } from "../../../service/query-page-state.service";
 import { SchemaConcept, SchemaRelation, SchemaRole } from "../../../service/schema-state.service";
 import { AttributeData, InstanceDetailState, LinkData, RelationInstanceData } from "../../../service/instance-detail-state.service";
 import { GraphVisualiser } from "../engine";
+import { GraphNodeActionsComponent } from "./graph-node-actions.component";
+import { AttributeEditService } from "../../../service/attribute-edit.service";
 
 /** Sticky-state key for "this instance's link to a specific relation instance
  *  has been loaded". Namespaced with a `rel:` prefix so a relation IID can
@@ -48,6 +51,7 @@ function linkInstanceKey(relationIID: string, playerIID: string): string {
         MatProgressSpinnerModule,
         MatButtonModule,
         MatTooltipModule,
+        GraphNodeActionsComponent,
     ],
 })
 export class GraphInstanceExplorerComponent implements OnChanges {
@@ -68,10 +72,90 @@ export class GraphInstanceExplorerComponent implements OnChanges {
 
     private graphViewState = inject(GraphViewState);
     private clipboard = inject(Clipboard);
+    private host = inject<ElementRef<HTMLElement>>(ElementRef);
+    readonly edits = inject(AttributeEditService);
+
+    // Inline attribute editing: one value (or a new one) at a time.
+    private editing: { attr: string; index: number | "new"; value?: string } | null = null;
+    editText = "";
+    editError = "";
+    editMessage = "";
+    removePending: string | null = null;
+    private removeTimer?: ReturnType<typeof setTimeout>;
+
+    constructor() {
+        // Another surface (Data tab, this panel) changed this instance: re-read it.
+        this.edits.edited$.pipe(takeUntilDestroyed(inject(DestroyRef))).subscribe(iid => {
+            if (iid === this.instanceIID && this.hasSelection) this.state.refresh();
+        });
+    }
+
+    /** Edits need a live, connected run of a database graph (not an offline preview). */
+    get canEdit(): boolean {
+        return !!this.run?.graph.database && !this.run.graph.schemaMode && this.type?.kind !== "attributeType" && !!this.instanceIID?.startsWith("0x");
+    }
+
+    /** Loaded values, plus (when editable) owned attribute types without a value
+     *  yet, so a value can be added. Includes inherited owns. */
+    get attributeRows(): (AttributeData & { empty?: boolean })[] {
+        const rows: (AttributeData & { empty?: boolean })[] = [...this.state.attributes];
+        if (!this.canEdit || !this.type) return rows;
+        const present = new Set(rows.map(row => row.type));
+        const seen = new Set<string>();
+        for (let t: any = this.type; t && !seen.has(t.label); t = t.supertype) {
+            seen.add(t.label);
+            for (const owned of (t.ownedAttributes ?? []) as { label: string; valueType?: string }[]) {
+                if (present.has(owned.label)) continue;
+                present.add(owned.label);
+                rows.push({ type: owned.label, valueType: owned.valueType ?? "", values: [], empty: true });
+            }
+        }
+        return rows;
+    }
+
+    isEditing(attr: AttributeData, index: number | "new"): boolean {
+        return this.editing?.attr === attr.type && this.editing.index === index;
+    }
+
+    startEdit(attr: AttributeData, index: number | "new", value: string): void {
+        this.editing = { attr: attr.type, index, value: index === "new" ? undefined : value };
+        this.editText = value; this.editError = ""; this.editMessage = "";
+        setTimeout(() => this.host.nativeElement.querySelector<HTMLInputElement>("input.value-editor")?.focus());
+    }
+
+    cancelEdit(): void { this.editing = null; this.editError = ""; }
+
+    async commitEdit(attr: AttributeData): Promise<void> {
+        const editing = this.editing;
+        if (!editing || !this.type || !this.instanceIID) return;
+        if (editing.value !== undefined && editing.value === this.editText) { this.cancelEdit(); return; }
+        const invalid = this.edits.validate(attr.type, this.editText);
+        if (invalid) { this.editError = invalid; return; }
+        const result = await this.edits.edit(this.run?.graph.database, this.visualiser, {
+            ownerIid: this.instanceIID, ownerType: this.type.label, attribute: attr.type, oldValue: editing.value, newValue: this.editText });
+        if (result.ok) { this.editing = null; this.editMessage = result.message; }
+        else this.editError = result.message;
+    }
+
+    /** Two clicks: the first arms (3 s), the second deletes the value from the database. */
+    async removeValue(attr: AttributeData, value: string): Promise<void> {
+        const key = `${attr.type}|${value}`;
+        if (this.removePending !== key) {
+            this.removePending = key; clearTimeout(this.removeTimer);
+            this.removeTimer = setTimeout(() => this.removePending = null, 3000);
+            return;
+        }
+        this.removePending = null; clearTimeout(this.removeTimer);
+        if (!this.type || !this.instanceIID) return;
+        const result = await this.edits.edit(this.run?.graph.database, this.visualiser, {
+            ownerIid: this.instanceIID, ownerType: this.type.label, attribute: attr.type, oldValue: value });
+        this.editMessage = result.message;
+    }
 
     ngOnChanges(changes: SimpleChanges) {
         if ((changes["type"] || changes["instanceIID"]) && this.type && this.instanceIID) {
             this.selectedRelationType = null;
+            this.editing = null; this.editMessage = ""; this.removePending = null;
             this.state.initialize(this.type, this.instanceIID);
         }
     }
@@ -130,14 +214,16 @@ export class GraphInstanceExplorerComponent implements OnChanges {
         return this.graphViewState.isInstanceConnectionLoaded(this.run, this.instanceIID, attr.type);
     }
 
-    /** Mark this instance's attribute(s) of the given type with secondary
-     *  carets and pan them into view (no zoom, panel selection unchanged). */
-    revealAttribute(attr: AttributeData) {
-        if (!this.type || !this.instanceIID || this.type.kind === "attributeType") return;
+    /** This instance's attribute nodes of one type (one per loaded value). */
+    attributeKeys(attr: AttributeData): string[] {
+        if (!this.type || !this.instanceIID || this.type.kind === "attributeType") return [];
         const ownerKind = this.type.kind === "relationType" ? "relation" : "entity";
-        const keys = this.visualiser?.attributeNodeKeysOf(ownerKind, this.type.label, this.instanceIID, attr.type) ?? [];
-        this.visualiser?.revealNodes(keys);
+        return this.visualiser?.attributeNodeKeysOf(ownerKind, this.type.label, this.instanceIID, attr.type) ?? [];
     }
+
+    playerKey(link: LinkData): string | null { return this.visualiser?.nodeKeyByIid(link.playerIID) ?? null; }
+    relationKey(rel: RelationInstanceData): string | null { return this.visualiser?.nodeKeyByIid(rel.relationIID) ?? null; }
+    ownerKey(iid: string): string | null { return this.visualiser?.nodeKeyByIid(iid) ?? null; }
 
     addAllRelations() {
         if (!this.run || !this.type || !this.instanceIID) return;
@@ -260,37 +346,6 @@ export class GraphInstanceExplorerComponent implements OnChanges {
         return !!this.visualiser?.nodeKeyByIid(rel.relationIID);
     }
 
-    /** Mark the already-added relation node with a secondary caret and pan it
-     *  into view, without changing the panel selection. */
-    revealRelation(rel: RelationInstanceData) {
-        const key = this.visualiser?.nodeKeyByIid(rel.relationIID);
-        if (!key || !this.visualiser) return;
-        this.visualiser.setNodeAppearance(key, "viewHidden", false);
-        this.visualiser.revealNodes([key]);
-    }
-
-    inspectRelation(rel: RelationInstanceData) {
-        const key = this.visualiser?.nodeKeyByIid(rel.relationIID);
-        if (key) { this.visualiser?.setNodeAppearance(key, "viewHidden", false); this.visualiser?.pointCaret(key, "none", true); }
-    }
-
-    relationVisible(rel: RelationInstanceData): boolean {
-        const key = this.visualiser?.nodeKeyByIid(rel.relationIID);
-        return !!key && !this.visualiser?.graph.getNodeAttribute(key, "viewHidden");
-    }
-
-    /** Put the caret on the inspected instance itself, panning it into view
-     *  only if needed (never zooming). No selection change. */
-    revealSelf() {
-        if (!this.type || !this.instanceIID) return;
-        const kind = this.type.kind === "relationType" ? "relation"
-            : this.type.kind === "attributeType" ? "attribute" : "entity";
-        const key = this.visualiser?.instanceNodeKey(kind, this.type.label, this.instanceIID);
-        if (key) {
-            this.visualiser?.setNodeAppearance(key, "viewHidden", false);
-            this.visualiser?.pointCaret(key, "none", true);
-        }
-    }
 
     get selfNodeKey(): string | null {
         if (!this.type || !this.instanceIID) return null;
@@ -299,30 +354,6 @@ export class GraphInstanceExplorerComponent implements OnChanges {
         return this.visualiser?.instanceNodeKey(kind, this.type.label, this.instanceIID) ?? null;
     }
 
-    get isInGraphSelection(): boolean {
-        const key = this.selfNodeKey;
-        return key != null && !!this.visualiser?.isNodeInSelection(key);
-    }
-
-    toggleGraphSelection(): void {
-        const key = this.selfNodeKey;
-        if (key != null) this.visualiser?.toggleNodeSelection(key);
-    }
-
-    removeFromGraph(): void {
-        const key = this.selfNodeKey;
-        if (key != null) this.visualiser?.removeFromGraph(key);
-    }
-
-    appearanceEnabled(flag: "viewHidden" | "viewDimmed"): boolean {
-        const key = this.selfNodeKey;
-        return !!(key && this.visualiser?.graph.getNodeAttribute(key, flag));
-    }
-
-    toggleAppearance(flag: "viewHidden" | "viewDimmed"): void {
-        const key = this.selfNodeKey;
-        if (key) this.visualiser?.setNodeAppearance(key, flag, !this.appearanceEnabled(flag));
-    }
 
     addLink(_link: LinkData) {
         // No parent relation in scope for a single link row inside a relation
@@ -366,11 +397,5 @@ export class GraphInstanceExplorerComponent implements OnChanges {
         return !!v && !!relation && !!player && v.graph.edges(relation, player).length > 0;
     }
 
-    /** Mark the already-added role-player with a secondary caret and pan it
-     *  into view, without changing the panel selection. */
-    revealLink(link: LinkData) {
-        const key = this.visualiser?.nodeKeyByIid(link.playerIID);
-        if (key) this.visualiser?.revealNodes([key]);
-    }
 
 }

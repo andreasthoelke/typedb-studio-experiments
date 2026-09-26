@@ -548,6 +548,16 @@ export class GraphViewState {
      * Binds the role variable so the graph builder can construct the role
      * edge between $r and $p — without it the edge is missing.
      */
+    /** Add specific entity/relation instances (e.g. Data-tab database rows). */
+    async fetchInstances(run: RunOutputState, type: SchemaConcept, iids: string[]): Promise<void> {
+        const instanceVar = this.instanceVar(type);
+        if (!iids.length || instanceVar === "a") return;
+        const rowLimit = this.appData.preferences.queryRowLimit();
+        const harvested = await this.runIidBatchedHarvesting(run, iids, instanceVar, rowLimit * 50,
+            branches => `match ${branches}; $${instanceVar} isa ${type.label};`, [instanceVar]);
+        await this.fetchLabelAttributesFor(run, harvested);
+    }
+
     async fetchRelation(run: RunOutputState, relationIID: string): Promise<void> {
         const rowLimit = this.appData.preferences.queryRowLimit();
         const harvested = await this.runIidBatchedHarvesting(

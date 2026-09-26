@@ -952,12 +952,83 @@ by unit tests; no user database writes were made.
 - TypeDB 3.12 accepts `relates subject @meta("graph-arrow", "none")` (and on
   relation types); it appears in the schema dump and `match $rel label R; $rel
   relates $r; let $a = get_meta("graph-arrow", $r);` reads it per role. Verified
-  on an isolated temporary server. Not yet consumed by Studio — see
-  [the explorer/actions proposal](graph-actions-proposal.md).
+  on an isolated temporary server. Consumed since the next section.
 
 Validation: `pnpm test:viewer` (120), `pnpm build:viewer`, `viewer-shortcuts`,
 `viewer-workflow` (arrow default/inheritance), and live read-only
 `viewer-multicaret` (relates-clause geo marks the 3 subject players; Schema role
 caret marks the same players in Query; geo typed with the panel focused keeps
 the Schema caret and reaches Query).
+
+
+## Schema defaults, action strip, Data view and direct edits (2026-09-26, second round)
+
+The user approved [the proposal](graph-actions-proposal.md) and delegated the
+open choices. What was built, and where:
+
+- **Schema defaults** — `framework/util/schema-meta.ts`: `parseSchemaMeta` reads
+  `@meta` on types and `relates` clauses plus `@key`/`@unique` owns from the
+  schema *text* SchemaState already fetches for autocomplete (no extra query);
+  annotations after `sub X` / `value T` belong to that edge, as in TypeDB.
+  `SchemaDefaults` resolves through supertypes and is pushed to
+  `GraphStyleService.setSchemaDefaults` after each schema load (guarded by
+  schema identity and database). Keys: `graph-arrow` (player/relation/none) and
+  `graph-label` ("a, b" or "none").
+- **Arrows** — `getRoleArrow`: role override → schema role → schema relation
+  lineage → links override → player. `inheritedRoleArrow` feeds the UI hint.
+- **Labels** — `refreshInstanceLabels(graph, store, overrides, options)` returns
+  the chosen attributes per type (`GraphVisualiser.chosenLabelAttributes`).
+  Precedence: user override (comma list, "none") → schema → heuristic (+120 for
+  identifying attributes, −120 when loaded values average > 80 chars). Values
+  clip at `labelValueLength` (style service, localStorage, not presets; default
+  40); ≤3 values per attribute then `+n`; attributes joined by ` · `.
+  `labelRevision` on the style service makes live visualisers re-derive labels
+  on the next styles$; `labelsVersion` on the visualiser lets views notice
+  refreshed values.
+- **Action strip** — `explorer/graph-node-actions.component` takes node keys and
+  toggles go to / hidden / selected / marked, plus remove and optional add.
+  Engine set APIs: `goToNodes`, `setNodesHidden`, `setNodesSelected` (seeds from
+  the effective highlight only when it narrows the graph — otherwise an empty
+  graph-wide highlight would select everything), `setMarked`/`isMarked`
+  (the former correspondence markers), `removeNodesFromGraph` (one working
+  checkpoint). Rows opt into hover emphasis with `.action-row`; × and ✎ fade
+  with opacity, never visibility, so they stay focusable. Used in the instance
+  and type Explorers, snap preview details, Data rows and the side panel's
+  Selection (n) strip (with Isolate/Clear). Shift/Option-click semantics are
+  unchanged.
+- **Terms** — marks (not secondary carets), Go to, Show style row. Old test
+  labels were updated.
+- **Data view** — `explorer/graph-data-table.component`, shown by the side panel
+  when `dataView` and the caret is an entity/relation instance on a live graph.
+  Sources: graph (no query), selection, database (`match $x isa T; $x has $a;`,
+  independent read, 200 instances). Columns: owned attributes incl. inherited,
+  identifying → label attributes → shared → alphabetical. Rebuilds only when a
+  signature (graph order/size, labelsVersion, source, types, filter, sort,
+  selection) changes. `GraphViewState.fetchInstances` adds database rows.
+- **Editing** — `framework/util/attribute-edit.ts` builds one statement per
+  edit: owner anchored `$x iid …, isa T` (TypeDB cannot type an iid alone:
+  "Left type … not compatible"), old value matched by value, then
+  delete/insert. Zero rows = nothing changed. `DriverState.writeOnce` is an
+  auto-committed one-shot write **without** `fromPromiseWithRetry` (that helper
+  retries, which is unsafe for writes). `AttributeEditService` validates the
+  literal against the schema value type, reports unknown outcomes, emits
+  `edited$` (inspectors re-read), and calls `GraphVisualiser.applyAttributeEdit`
+  (value store, stale attribute node detached/dropped, labels). The Explorer
+  lists owned-but-empty attributes (faint) so values can be added; removal needs
+  a second click within 3 s.
+- **Snaps** — `snapSummary` in `viewer-export.mjs` adds `summary` (visible
+  entity/relation/attribute/type counts and shape) to each listing entry; chips
+  show a badge and the Snaps tab groups by newest/title/content (localStorage
+  `typeDBStudio.snapGrouping`). Needs a bridge restart to appear (server code).
+
+Validation: `pnpm test:viewer` (126, including schema-meta, attribute-edit, label
+and snap-summary tests), `pnpm build:viewer`, and the new isolated
+`node scripts/viewer-actions.browser.mjs` (own TypeDB: @meta arrows/labels,
+strip select/mark/hide/go to, Explorer edit/add/armed remove, validation,
+stale-value refusal, Data identifying columns, graph and database cell edits,
+adding a database row). Also passing: viewer-shortcuts, viewer-workflow (live),
+viewer-multicaret, viewer-live-snap, viewer-schema-expand, viewer-schema-focus,
+viewer-role-edges, viewer-dashes, viewer-run (its insert expectation was stale
+since the 2026-09-21 context-read change and is now updated), nvim-caret.
+No writes touched the user's databases; all write tests own a temporary server.
 

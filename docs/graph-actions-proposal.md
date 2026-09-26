@@ -1,6 +1,14 @@
 # Graph actions, terms and data views: proposal
 
-Status: proposal, 2026-09-26. Nothing here is implemented yet unless marked.
+Status: decided and implemented 2026-09-26 (the user approved the terms, the
+icon row, direct database writes and `@meta` defaults, and delegated the rest).
+Deviations from the proposal: the Data view is the Explorer's third mode
+(**here · every 'x' · data**) rather than a seventh panel tab, which would not
+fit the tab row at the standard 25% width; its default rows are the loaded graph
+(the selection when instances are selected). Edits commit directly with safeguards
+instead of composing into Neovim. Row keys (Enter/a/dd/s/m on focused Explorer
+rows) and the §7 geo suggestions remain open. See the workflow guide's Explorer
+section for the behaviour as built.
 It answers the user's notes on unifying Explorer actions, naming, attribute
 features, an "every x" Data tab, snap labels and edge direction. Open questions
 are collected at the end.

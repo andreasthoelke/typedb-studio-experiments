@@ -52,6 +52,22 @@ function validSnapFilename(filename) {
 }
 
 // Cache only compact metadata; graph documents are released after inspection.
+/** What a snap shows, for chip badges and grouping: visible node counts by
+ *  kind, and whether it holds instance data, types, or both. */
+export function snapSummary(nodes) {
+    const summary = { entities: 0, relations: 0, attributes: 0, types: 0 };
+    for (const node of nodes ?? []) {
+        if (node?.attributes?.viewHidden) continue;
+        const kind = node?.attributes?.metadata?.concept?.kind;
+        if (kind === 'entity') summary.entities++;
+        else if (kind === 'relation') summary.relations++;
+        else if (kind === 'attribute') summary.attributes++;
+        else if (typeof kind === 'string' && kind.endsWith('Type')) summary.types++;
+    }
+    const instances = summary.entities + summary.relations + summary.attributes;
+    return { ...summary, shape: instances && summary.types ? 'mixed' : summary.types ? 'types' : instances ? 'instances' : 'empty' };
+}
+
 const snapMetadata = new Map();
 export async function listGraphSnaps(directory) {
     const entries = await readdir(directory, { withFileTypes: true }).catch(error => {
@@ -80,7 +96,8 @@ export async function listGraphSnaps(directory) {
                     const heading = /^\s*# ─ (.*)$/mu.exec(snap.query ?? '')?.[1];
                     const abbreviation = titledSnapLabel(entry.name, snap.title || snap.sourceLocation?.title || heading)
                         ?? words.slice(0, 10).map(word => [...word].slice(0, 2).join('')).join(' ') + (words.length > 10 ? ' ..' : '');
-                    metadata = { kind: snap.schemaMode ? 'schema' : 'data', nodeCount: snap.graph.nodes.length, abbreviation };
+                    metadata = { kind: snap.schemaMode ? 'schema' : 'data', nodeCount: snap.graph.nodes.length, abbreviation,
+                        summary: snapSummary(snap.graph.nodes) };
                 }
             } catch { /* Keep unreadable files visible; opening reports the error. */ }
             cached = { stamp, metadata };

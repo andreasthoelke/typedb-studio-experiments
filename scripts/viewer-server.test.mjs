@@ -333,6 +333,7 @@ test('snap chips describe node names, and deletion removes only the named snap w
     const first=await save('first');const second=await save('second');
     const list=await(await fetch(`${origin}/api/viewer/snaps?${context}`)).json();
     assert.equal(list.files[0].abbreviation,'me st go');
+    assert.deepEqual(list.files[0].summary,{entities:0,relations:0,attributes:0,types:0,shape:'empty'},'Nodes without concept kinds count as nothing');
     const titled=await (await fetch(`${origin}/api/viewer/snap?${context}&name=8d-read-the-patt-bind&digits=1`,{method:'POST',headers:{'Content-Type':'application/json'},
         body:JSON.stringify({...value,title:'8d · Read the pattern bindings.'})})).json();
     assert.equal(titled.filename,'8d-read-the-patt-bind-0.snap.json');
@@ -349,4 +350,13 @@ test('snap chips describe node names, and deletion removes only the named snap w
     assert.deepEqual(remaining.files.map(file=>file.filename),[second.filename]);
     assert.equal(await readFile(first.path).catch(()=>null),null);
     assert.ok(await readFile(second.path));
+});
+
+test('snap summaries count visible instances and types', async () => {
+    const { snapSummary } = await import('./viewer-export.mjs');
+    const node = (kind, extra = {}) => ({ attributes: { metadata: { concept: { kind } }, ...extra } });
+    assert.deepEqual(snapSummary([node('entity'), node('entity'), node('relation'), node('attribute'), node('entity', { viewHidden: true })]),
+        { entities: 2, relations: 1, attributes: 1, types: 0, shape: 'instances' });
+    assert.deepEqual(snapSummary([node('entityType'), node('relationType'), node('roleType')]), { entities: 0, relations: 0, attributes: 0, types: 3, shape: 'types' });
+    assert.equal(snapSummary([node('entity'), node('entityType')]).shape, 'mixed');
 });

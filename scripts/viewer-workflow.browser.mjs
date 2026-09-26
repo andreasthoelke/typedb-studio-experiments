@@ -202,14 +202,19 @@ try {
             const depiction=v.graph.nodes().find(k=>v.graph.getNodeAttribute(k,'metadata').concept.type?.label==='depiction');
             if(!depiction)throw Error('No depiction in test database');v.pointCaret(depiction,'none',true);c.paneFocus.focus('explorer');});
         await empty.waitForFunction(()=>window.ng.getComponent(document.querySelector('ts-graph-instance-explorer'))?.state.allRelations.length>0);
-        const inspection=await empty.evaluate(()=>{const e=window.ng.getComponent(document.querySelector('ts-graph-instance-explorer')),v=e.visualiser;
+        // The relation card's action strip: Mark keeps the caret, Go to moves it; neither selects.
+        const loadedRel=await empty.evaluate(()=>{const e=window.ng.getComponent(document.querySelector('ts-graph-instance-explorer')),v=e.visualiser;
             const rel=e.state.allRelations.find(r=>v.nodeKeyByIid(r.relationIID));
             if(!rel||!e.isRelationAdded(rel))throw Error('Initially loaded relation not recognised');
-            const old=v.navigation.caret, selection=[...v.elementSelection.nodes];e.revealRelation(rel);
-            if(v.navigation.caret!==old)throw Error('Mark changed primary caret');
-            if(!v.correspondenceNodes.has(v.nodeKeyByIid(rel.relationIID)))throw Error('Missing secondary mark');
-            e.inspectRelation(rel);return {old,current:v.navigation.caret,selection,after:[...v.elementSelection.nodes]};});
-        assert.notEqual(inspection.old,inspection.current);assert.deepEqual(inspection.selection,inspection.after);
+            return {iid:rel.relationIID,type:rel.relationTypeLabel,old:v.navigation.caret,selection:[...v.elementSelection.nodes]};});
+        const card=empty.locator('.relation-card').filter({hasText:loadedRel.iid}).first().locator('.relation-card-header');
+        await card.getByRole('button',{name:'Marked '+loadedRel.type,exact:true}).click();
+        const marked=await empty.evaluate(iid=>{const v=window.ng.getComponent(document.querySelector('ts-graph-instance-explorer')).visualiser;return {caret:v.navigation.caret,marked:v.correspondenceNodes.has(v.nodeKeyByIid(iid))};},loadedRel.iid);
+        assert.deepEqual(marked,{caret:loadedRel.old,marked:true},'Mark keeps the caret and marks the relation');
+        assert.equal(await card.getByRole('button',{name:'Marked '+loadedRel.type,exact:true}).getAttribute('aria-pressed'),'true');
+        await card.getByRole('button',{name:'Go to '+loadedRel.type,exact:true}).click();
+        const inspection=await empty.evaluate(r=>{const v=window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser;return {old:r.old,current:v.navigation.caret,selection:r.selection,after:[...v.elementSelection.nodes],relation:v.nodeKeyByIid(r.iid)};},loadedRel);
+        assert.notEqual(inspection.old,inspection.current);assert.equal(inspection.current,inspection.relation);assert.deepEqual(inspection.selection,inspection.after);
         await empty.keyboard.press('Control+o');
         assert.equal(await empty.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.navigation.caret),inspection.old);
         await empty.getByRole('heading',{name:'Relations',exact:true}).waitFor();

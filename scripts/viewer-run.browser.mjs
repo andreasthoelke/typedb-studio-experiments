@@ -37,7 +37,9 @@ try {
  // can panic in type_cache when that family is first added amid concurrent reads.
  const schema='define attribute person-id, value string; attribute name, value string; entity person, owns person-id @key, owns name; attribute title, value string; attribute intensity, value double; relation tension, relates pole @card(2..2), owns intensity; entity mental-state, owns title, plays tension:pole;';
  let result=await run(schema);assert.equal(result.execution.status,'success',JSON.stringify(result));assert.ok(result.graph,JSON.stringify(result));assert.equal(result.graph.source,'context',JSON.stringify(result));
- result=await run('insert $p isa person, has person-id "p1", has name "Ann";');assert.equal(result.execution.status,'success',JSON.stringify(result));assert.equal(result.graph.source,'result');
+ result=await run('insert $p isa person, has person-id "p1", has name "Ann";');assert.equal(result.execution.status,'success',JSON.stringify(result));
+ // Successful plain inserts are shown through a separate read of their patterns (never a replay).
+ assert.equal(result.graph.source,'context');assert.match(result.graph.note,/successful insert patterns/);
  result=await run('insert $p isa person, has person-id "p1", has name "Changed";');assert.equal(result.execution.status,'error');assert.match(result.response.err.code,/CNT/);assert.equal(result.graph?.source,'context',JSON.stringify(result));assert.match(result.lines.join('\n'),/Ann/);assert.doesNotMatch(result.lines.join('\n'),/already present/);
  const read=await run('match $p isa person, has name $name; select $p, $name;');assert.equal(read.response.ok.answers.length,1);assert.deepEqual(read.response,read.graph.response);
  result=await run('match $p isa person, has name $name; fetch { "name": $name };');assert.match(result.lines.join('\n'),/1 documents/);assert.equal(result.graph.source,'context');

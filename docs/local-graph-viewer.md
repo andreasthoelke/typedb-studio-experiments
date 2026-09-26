@@ -393,6 +393,15 @@ hyphenated names into words: `mental-state`, `goal`, `source` become
 `me st go so`. Long lists end in `..`. There are no hover tooltips. Use `h` / `l`
 to browse snaps (see keyboard controls below). The loaded snap's chip is highlighted.
 
+A faint badge after the name says what the snap shows, counting visible nodes:
+`e` entities, `r` relations, `a` attributes, `t` types — e.g. `5e 3r`, `18t`,
+or `4e 2r · 3t` for a mix. The server derives it from the saved graph, so older
+snaps get badges too; the snap format is unchanged. With more than one snap,
+**Group** arranges chips by **newest** (default, one list), **title** (snaps of
+the same query header together, counters ignored) or **content** (instance data /
+types / both). The choice is remembered in this browser; `Space h/l` still steps
+through snaps newest first.
+
 Each chip has an **×** button that immediately deletes that `.snap.json` file,
 without a confirmation dialog. Other snaps and PNGs are unaffected. Deleting the
 snap currently on screen removes its chip but keeps the loaded graph visible.
@@ -462,23 +471,89 @@ relations, links, or attributes. These actions change the graph result without
 rewriting the query. The Neovim menu controls the initial automatic expansion;
 Explorer is the more direct way to explore further.
 
-**Reveal in graph** marks the node(s) with dotted secondary carets and pans only
-as far as needed to bring them into view — it never zooms, and the Explorer keeps
-its node. On the inspected node itself it places the primary caret the same way.
-Beside it, **Hide / Show** hides the selected node and its incident
-edges. **Add to selection / Remove from selection** changes the same selection
-as the Elements tags. Hidden nodes remain in the result, including
-its counts and layout; they are not deleted from TypeDB. **Restore hidden / dimmed
-nodes** in the panel footer clears these view overrides. Reveal also unhides the
-inspected node. Overrides survive docking and switching run tabs, but a new query
-result starts fresh. They are separate from saved styling presets.
+### Terms
 
-The type Explorer's **Display attribute** selector loads values for node labels
-without adding attribute nodes. New query results load label values automatically
-and restore your saved choice for each type and database. **(auto)** uses Studio's
-existing attribute-name heuristic. Attribute chips and the instance Explorer's
-**Add to graph** buttons still add separate attribute nodes when you want them.
-Label values and choices survive docking and switching run tabs.
+| Term | Meaning |
+| --- | --- |
+| **Caret** | The one node commands address (solid corners); the Explorer always shows it. **Go to** moves it. |
+| **Marks** | Dotted corners on other matches (geo, Space Enter, Mark). Informational: commands ignore them; Esc clears them. Formerly "secondary carets". |
+| **Selection** | The explicit set (Shift-click, Ctrl-Shift motion, the strip's ☐). Drives fading, Enter fit, `d Enter` and Isolate. |
+| **Highlighted / dimmed** | Effects of selection, search and style highlights — not commands. |
+| **Hide / Show** | Keep a node in the graph but invisible. |
+| **Add** / **Remove** | Load from the database / drop from the working graph (Restore context brings it back; the database is unchanged). |
+
+### The action strip
+
+Every node the Explorer mentions — the inspected node, relation cards, role
+players, attribute rows, owners, Data rows — carries the same row of icons. Each
+shows a state and toggles it:
+
+| Icon | Off → click | On (green) → click |
+| --- | --- | --- |
+| + | Add to graph (only when not loaded) | — |
+| ⌖ | Go to: caret there, pan into view (several nodes: caret on the first, marks on the rest) | Lit while it is the caret |
+| 👁 | Hide | Show (eye crossed out) |
+| ☐ | Add to selection | Remove from selection |
+| ⌜⌟ | Mark | Unmark |
+| × | Remove from graph (appears on row hover/focus) | — |
+
+Off icons stay faint; labels are in tooltips. When nodes are explicitly
+selected, **Selection (n)** above the Explorer applies the same strip to all of
+them, plus **Isolate** (R) and **Clear** (Esc). A first selection edit from the
+strip starts empty unless a search or style highlight is narrowing the graph.
+
+### Data view and editing values
+
+With the caret on an instance, the Explorer toggle reads **here · every 'x' ·
+data**. **data** shows the instances as rows and their attributes as columns
+(inherited `owns` included; `@key`/`@unique` first, then label attributes, then
+attributes shared by more types). Rows come from:
+
+- **graph** (default): instances loaded in this graph, no query;
+- **selection** (default when instances are selected): the selected instances,
+  across their types — shared attributes line up for comparison;
+- **database**: a read of up to 200 instances per view, including ones not in
+  the graph (their strip offers **+** to add them).
+
+Type chips switch types off and on; the filter narrows rows; column headers sort.
+Click a row to go to it. Double-click a cell (or its ✎) to edit: Enter saves,
+Esc cancels, an empty value removes it. Cells with several values are edited in
+the Explorer.
+
+**Edits write to the database directly.** In the Explorer's Attributes, ✎
+replaces a value, 🗑 removes it (click twice: the first click arms it for three
+seconds) and **+ value** adds one; owned attributes without a value are listed
+faintly so a value can be added. Each edit is one auto-committed write:
+
+- the owner is matched by iid and type, and the old value by value, so a value
+  changed elsewhere writes nothing ("Nothing changed") and the inspector re-reads;
+- input is checked against the attribute's value type before sending;
+- a lost response is reported as an unknown outcome and **never retried**;
+- server errors (cardinality, `@key` uniqueness, `@values`) are shown inline.
+
+Labels and the Data view update from the edit without another read; a stale
+attribute node of the old value is detached from its owner. Editing is off in
+offline previews and schema graphs. Studio's own manual transaction, if one is
+open, is not used.
+
+### Display labels
+
+A node label shows its type and one or more attribute values. The choice per
+type comes from, in order:
+
+1. **your choice** in the type Explorer's **Display attributes** (a multi-select;
+   **(type only)** shows no value; ↺ returns to the default), saved per database;
+2. the schema: `entity scene @meta("graph-label", "title, scene-id")` (or
+   `"none"`), inherited by subtypes;
+3. the heuristic: name-like attributes (`name`, `title`, `label`, …), then
+   `@key`/`@unique`, then identifier-like names; attributes whose loaded values
+   average over 80 characters rank lower.
+
+The hint under the selector names the source. Several attributes are joined with
+` · `; several values of one attribute show the first three and `+n`. Values
+longer than **Customise → Graph → Label value length** (default 40, 0 = full)
+end in `…`; Explorer and Data show them in full. Label values load without
+adding attribute nodes; the strip's **+** on an attribute row adds them.
 
 All graph routes, including **/schema**, use the same label renderer. Labels use
 1.5 times the normal label area before wrapping, whether or not a narrower wrap
@@ -493,8 +568,8 @@ On **/schema**, select a node to explore its type in the right-hand Explorer:
   types that can play the role.
 - Clicking a chip reveals that type and opens its Explorer details. The **\***
   chip reveals the whole group with the selected type, showing any hidden nodes.
-- **Hide / Show**, **Add to selection / Remove from selection**, and **Reveal in
-  graph** work on the selected schema node. Selection is shared with Elements tags. The panel footer restores all hidden or dimmed nodes.
+- The action strip (go to, hide, select, mark, remove) works on the selected
+  schema node. Selection is shared with Elements tags. The panel footer restores all hidden or dimmed nodes.
 
 These are view controls over the loaded schema; they do not alter the database.
 Schema refresh rebuilds the graph and clears its temporary visibility changes.
@@ -509,7 +584,7 @@ from styling presets and snaps.
 When the caret moves, the **Caret type** indicator follows it. If **Types** is
 expanded, the matching style row is highlighted, placed first and brought into
 view inside the panel. It stays reachable even when a type filter or the 100-row
-limit would otherwise omit it. Collapsed sections stay collapsed; **Reveal style**
+limit would otherwise omit it. Collapsed sections stay collapsed; **Show style row**
 opens Types on request. Following the caret never changes the type's actual style.
 
 The **Themes** panel imports and exports custom presets as JSON. Importing keeps
@@ -620,7 +695,7 @@ explains the miss. The read first uses the whole paragraph's connected pattern, 
 stage-intent;` in a scene/take paragraph resolves to that paragraph's intents
 rather than every stage-intent; when the whole pattern finds nothing (for
 example an uncommitted insert) the focused type read is used instead. Every
-matching node gets a dotted **secondary caret**; the primary caret stays on the
+matching node gets a dotted **mark**; the caret stays on the
 current match or goes to the one nearest the camera centre. Unknown untyped bindings do not
 fall back to unrelated nodes. Blank lines delimit the source context; this is not
 a full evaluator for arbitrary functions, expressions, negations or query stages.
@@ -722,7 +797,7 @@ highlights, including selection edits made while moving. New movement after goin
 back starts a new branch; there is no automatic redo attached to direction keys.
 History holds the latest 256 visits and stops at its beginning without wrapping.
 Clearing/exiting navigation, node deletion or replacing/remounting the graph
-starts fresh; re-layout keeps the caret, its history and secondary carets. Caret
+starts fresh; re-layout keeps the caret, its history and marks. Caret
 history is not saved in snaps.
 
 Hold **Ctrl-Shift** during a motion to add its destination, or **Option/Alt** to remove
@@ -1149,8 +1224,24 @@ the scene node), so one uniform direction needs no semantic inference. In
 **Customise → Graph → Edges**, the **links** row sets the direction for every
 role (**Toward player** / **Toward relation** / **None**); each row under
 **Role types** can **Inherit** it or override it, e.g. **None** for a symmetric
-`tension:pole`. Role → links → toward player; reset clears an override. Settings are shared by the light/dark palettes,
+`tension:pole`. Reset clears an override. Settings are shared by the light/dark palettes,
 export with presets, and render in PNGs. Relation-valued players work too.
+
+**The schema can set the defaults.** Annotate a role or a whole relation:
+
+```typeql
+define
+relation tension @meta("graph-arrow", "none"), relates pole;
+relation occurrence-of,
+  relates occurrence @meta("graph-arrow", "relation"),
+  relates subject @meta("graph-arrow", "player");
+```
+
+Values are `player`, `relation` or `none`. A direction resolves: your role
+setting → the role's `@meta` → the relation's (and its supertypes') `@meta` →
+the links row → toward player. The role's Inherit option says "schema: …" when
+the schema supplies it. Studio reads these from the schema text it already
+fetches; no extra query runs, and a schema refresh picks up changes.
 
 
 ## Panel navigation and startup
@@ -1192,8 +1283,8 @@ of its role edges.
 
 This works across browser tabs/windows at the same Studio origin. It does not
 switch OS focus. Status names the type, how many sub/supertypes were included and
-how many nodes were marked, or reports no answering view. Secondary carets are
-markers: commands (zz, motions, dd, …) still act on the one solid caret.
+how many nodes were marked, or reports no answering view. Marks are
+informational: commands (zz, motions, dd, …) still act on the one solid caret.
 
 ### Layout spacing
 

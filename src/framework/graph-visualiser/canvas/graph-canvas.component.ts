@@ -845,6 +845,39 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
 
     get snapFiles(): SavedGraphSnap[] { return this.snapLibrary?.files.filter(file => file.kind === this.snapKind) ?? []; }
 
+    /** Chip badge from the snap's visible content: "5e 3r", "18t", "4e 2r · 3t". */
+    snapBadge(file: SavedGraphSnap): string {
+        const s = file.summary;
+        if (!s) return "";
+        const instances = [s.entities && `${s.entities}e`, s.relations && `${s.relations}r`, s.attributes && `${s.attributes}a`].filter(Boolean).join(" ");
+        return [instances, s.types ? `${s.types}t` : ""].filter(Boolean).join(" · ");
+    }
+
+    snapGrouping: "date" | "title" | "shape" = (() => {
+        try { const value = localStorage.getItem("typeDBStudio.snapGrouping"); return value === "title" || value === "shape" ? value : "date"; }
+        catch { return "date"; }
+    })();
+
+    setSnapGrouping(value: "date" | "title" | "shape"): void {
+        this.snapGrouping = value;
+        try { localStorage.setItem("typeDBStudio.snapGrouping", value); } catch { /* per-viewer convenience only */ }
+    }
+
+    /** Newest first within each group; groups ordered by their newest snap. */
+    get snapGroups(): { label: string; files: SavedGraphSnap[] }[] {
+        const files = this.snapFiles;
+        if (!files.length) return [];
+        if (this.snapGrouping === "date") return [{ label: "", files }];
+        const shapes: Record<string, string> = { instances: "Instance data", types: "Types", mixed: "Instances and types", empty: "Empty" };
+        const groups = new Map<string, SavedGraphSnap[]>();
+        for (const file of files) {
+            const label = this.snapGrouping === "shape" ? shapes[file.summary?.shape ?? ""] ?? "Unknown"
+                : this.snapName(file).replace(/\s\d+$/, "");
+            groups.set(label, [...groups.get(label) ?? [], file]);
+        }
+        return [...groups].map(([label, list]) => ({ label, files: list }));
+    }
+
     snapName(file: SavedGraphSnap): string {
         if (file.abbreviation) return file.abbreviation;
         const words = file.filename.replace(/-\d+\.snap\.json$/, "").split(/[-_\s]+/);
