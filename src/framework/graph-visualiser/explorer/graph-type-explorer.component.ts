@@ -12,6 +12,8 @@ import { MatTooltipModule } from "@angular/material/tooltip";
 import { GraphVisualiser } from "../engine";
 import { GraphViewState } from "../../../service/graph-view-state.service";
 import { GraphLabelService } from "../../../service/graph-label.service";
+import { GraphStyleService } from "../../../service/graph-style.service";
+import { labelAttributes } from "../../util/schema-meta";
 import { AppData } from "../../../service/app-data.service";
 import { RunOutputState } from "../../../service/query-page-state.service";
 import { Schema, SchemaAttribute, SchemaConcept, SchemaRelation, SchemaRole, SchemaState } from "../../../service/schema-state.service";
@@ -86,6 +88,7 @@ export class GraphTypeExplorerComponent implements DoCheck {
     labelLoadError = "";
     private schemaState = inject(SchemaState);
     private appData = inject(AppData);
+    private graphStyleService = inject(GraphStyleService);
 
     schemaSections: SchemaExplorerSection[] = [];
     schemaLoading = false;
@@ -301,6 +304,34 @@ export class GraphTypeExplorerComponent implements DoCheck {
     get currentLabelOverride(): string {
         if (!this.selectedType || !this.visualiser) return "";
         return this.visualiser.labelOverridesByType.get(this.selectedType.label) ?? "";
+    }
+
+    /** The user's choice as a list; empty means schema/automatic. */
+    get labelSelection(): string[] {
+        const value = this.currentLabelOverride;
+        return !value ? [] : value === "none" || value === "-" ? ["none"] : labelAttributes(value);
+    }
+
+    get labelPlaceholder(): string {
+        if (!this.selectedType || !this.visualiser) return "(auto)";
+        const chosen = this.visualiser.chosenLabelAttributes.get(this.selectedType.label);
+        return chosen ? `(${chosen.length ? chosen.join(", ") : "type only"})` : "(auto)";
+    }
+
+    get labelSource(): string {
+        if (!this.selectedType) return "";
+        if (this.currentLabelOverride) return "Your choice for this database. Long values are shortened in the graph (Customise → Labels).";
+        const schema = this.graphStyleService.schemaDefaults?.label(this.selectedType.label);
+        return schema ? `From the schema: @meta("graph-label", "${schema}").`
+            : "Automatic: name-like attributes first, then @key/@unique; very long values rank lower.";
+    }
+
+    /** "(type only)" excludes attributes and vice versa; the most recent pick wins. */
+    onLabelSelectionChange(values: string[]): void {
+        const before = this.labelSelection;
+        let next = values;
+        if (values.includes("none") && values.length > 1) next = before.includes("none") ? values.filter(v => v !== "none") : ["none"];
+        void this.onLabelOverrideChange(next.includes("none") ? "none" : next.join(", "));
     }
 
     async onLabelOverrideChange(value: string): Promise<void> {

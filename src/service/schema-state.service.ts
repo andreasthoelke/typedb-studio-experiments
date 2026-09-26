@@ -5,6 +5,7 @@
  */
 
 import { inject, Injectable } from "@angular/core";
+import { parseSchemaMeta, SchemaDefaults } from "../framework/util/schema-meta";
 import {
     ApiOkResponse, ApiResponse, AttributeType, ConceptRowsQueryResponse, EntityType,
     isApiErrorResponse, QueryResponse, RelationType, RoleType, Type
@@ -103,17 +104,23 @@ export class SchemaState {
         this.value$.subscribe(schema => {
             if (schema != null) {
                 updateAutocomleteSchemaFromDB(schema)
-                this.refreshAutocompleteFunctions();
-            }
+                this.refreshAutocompleteFunctions(schema);
+            } else this.graphStyleService.setSchemaDefaults(null);
         })
     }
 
-    /** Function definitions aren't visible to the schema concept queries — they only
-     *  exist in the database's schema text, so fetch that separately. */
-    private refreshAutocompleteFunctions() {
+    /** Function definitions and annotations (`@meta`, `@key`) aren't visible to the
+     *  schema concept queries — they only exist in the database's schema text, so
+     *  fetch that separately. Annotations become graph arrow/label defaults. */
+    private refreshAutocompleteFunctions(schema?: Schema) {
         try {
+            const database = this.driver.database$.value?.name;
             this.driver.getDatabaseSchemaText().subscribe(res => {
-                if (!isApiErrorResponse(res)) updateAutocompleteFunctionsFromSchemaText(res.ok);
+                if (isApiErrorResponse(res)) return;
+                updateAutocompleteFunctionsFromSchemaText(res.ok);
+                if (schema && schema === this.value$.value && database === this.driver.database$.value?.name) {
+                    this.graphStyleService.setSchemaDefaults(new SchemaDefaults(parseSchemaMeta(res.ok), schema));
+                }
             });
         } catch (e) {
             // No driver/database (e.g. disconnected mid-refresh) — keep existing completions.

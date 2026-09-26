@@ -39,6 +39,15 @@
 
         @if (nodeLabelsVisible) {
           <div class="style-row">
+            <span class="style-label" matTooltip="Longer attribute values are shortened with … in node labels; Explorer shows them in full. 0 shows full values." [matTooltipShowDelay]="500">Label value length</span>
+            <div class="style-controls">
+              <mat-form-field class="footer-select-field" subscriptSizing="dynamic">
+                <input matInput type="number" min="0" max="400" step="4" aria-label="Label value length"
+                       [value]="styleService.labelValueLength" (change)="styleService.labelValueLength = +$any($event.target).value">
+              </mat-form-field>
+            </div>
+          </div>
+          <div class="style-row">
             <span class="style-label">Node label color</span>
             <div class="style-controls">
               <mat-form-field class="footer-select-field" subscriptSizing="dynamic">
@@ -316,7 +325,7 @@
                   <mat-select [value]="row.tag === 'links' || styleService.hasRoleArrow(row.tag) ? styleService.getRoleArrow(row.tag) : 'inherit'"
                               (selectionChange)="setRoleArrow(row.tag, $event.value)"
                               [aria-label]="'Arrow for ' + row.tag" panelClass="graph-style-select-panel">
-                    @if (row.tag !== 'links') { <mat-option value="inherit">Inherit ({{ arrowLabel(styleService.getRoleArrow('links')) }})</mat-option> }
+                    @if (row.tag !== 'links') { <mat-option value="inherit">Inherit ({{ inheritedArrowLabel(row.tag) }})</mat-option> }
                     <mat-option value="player">Toward player</mat-option>
                     <mat-option value="relation">Toward relation</mat-option>
                     <mat-option value="none">None</mat-option>

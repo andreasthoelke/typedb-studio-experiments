@@ -158,6 +158,7 @@ export class GraphVisualiser {
         this.setupContextRecoveryGuards();
         this.stylesSub = this.styleService.styles$.subscribe(() => {
             this.syncStyles();
+            if (this.labelRevision !== this.styleService.labelRevision && this.labelRevision !== -1) this.refreshLabels();
             try {
                 this.applyStyleUpdate();
                 this.applyEdgeStyleUpdate();
@@ -955,7 +956,7 @@ export class GraphVisualiser {
             let builder = new GraphBuilder(this.graph, res.ok.query, false, this.structureParams, this.styleParams);
             let answers = buildStructuredAnswers(res.ok as any);
             builder.build(answers);
-            refreshInstanceLabels(this.graph, this.displayAttributes, this.labelOverridesByType);
+            this.refreshLabels();
         }
     }
 
@@ -996,8 +997,17 @@ export class GraphVisualiser {
      *  off-graph display-attribute store. Cheap; safe to call after any new
      *  data arrives. */
     refreshLabels(): void {
-        refreshInstanceLabels(this.graph, this.displayAttributes, this.labelOverridesByType);
+        const defaults = this.styleService.schemaDefaults;
+        this.labelRevision = this.styleService.labelRevision;
+        this.chosenLabelAttributes = refreshInstanceLabels(this.graph, this.displayAttributes, this.labelOverridesByType, {
+            schemaLabel: defaults ? type => defaults.label(type) : undefined,
+            identifying: defaults ? type => defaults.identifying(type) : undefined,
+            maxLength: this.styleService.labelValueLength,
+        });
     }
+    private labelRevision = -1;
+    /** The attributes each instance type's labels currently use (after overrides, schema and heuristic). */
+    chosenLabelAttributes = new Map<string, string[]>();
 
     /** Replace the full override map (e.g. when loading from AppData). */
     applyLabelOverrides(overrides: Map<string, string>): void {
@@ -1027,7 +1037,7 @@ export class GraphVisualiser {
             let builder = new GraphBuilder(this.graph, res.ok.query, true, this.structureParams, this.styleParams);
             let answers = buildStructuredAnswers(res.ok as any);
             builder.build(answers);
-            refreshInstanceLabels(this.graph, this.displayAttributes, this.labelOverridesByType);
+            this.refreshLabels();
             if (this.styleService.degreeScaling) this.applyStyleUpdate();
         }
     }
@@ -1510,7 +1520,7 @@ export class GraphVisualiser {
         this.layout.forgetSettled();
         this.applyStyleUpdate();
         this.applyEdgeStyleUpdate();
-        refreshInstanceLabels(this.graph, this.displayAttributes, this.labelOverridesByType);
+        this.refreshLabels();
         this.interactionHandler.recomputeHighlightSet();
         this.sigma.setCustomBBox(context.bbox);
         this.sigma.refresh();
@@ -1598,7 +1608,7 @@ export class GraphVisualiser {
         });
         // The loop above resets every node to its basic type label; re-run the
         // heuristic so entity/relation instances keep their enriched labels.
-        refreshInstanceLabels(this.graph, this.displayAttributes, this.labelOverridesByType);
+        this.refreshLabels();
         this.sigma.refresh();
     }
 

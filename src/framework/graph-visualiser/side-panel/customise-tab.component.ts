@@ -98,6 +98,11 @@ export class CustomiseTabComponent implements OnChanges, OnDestroy, DoCheck, Aft
     arrowLabel(direction: "none" | "relation" | "player"): string {
         return direction === "player" ? "toward player" : direction === "relation" ? "toward relation" : "none";
     }
+    /** Names the schema when a role's default comes from @meta("graph-arrow"). */
+    inheritedArrowLabel(tag: string): string {
+        const label = this.arrowLabel(this.styleService.inheritedRoleArrow(tag));
+        return this.styleService.schemaRoleArrow(tag) ? `schema: ${label}` : label;
+    }
     activeTab: "graph" | "background" = "graph";
 
     private storage = inject(StorageService);

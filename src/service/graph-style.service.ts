@@ -1,5 +1,6 @@
 import { initialThemePair, shareThemeStructure } from "../framework/util/graph-theme-pair";
 import { inheritedEdgeStyle } from "../framework/util/graph-edge";
+import type { SchemaDefaults } from "../framework/util/schema-meta";
 import type { LineStyle } from "../framework/util/line-style";
 import { Injectable, OnDestroy } from "@angular/core";
 import { BehaviorSubject, Subscription } from "rxjs";
@@ -147,7 +148,32 @@ export class GraphStyleService implements OnDestroy {
     /** Role edges are stored relation → player and read "the relation's <role>
      *  is → that player", so arrows point at the player unless a role (or the
      *  links row, for all roles) says otherwise. Role → links → player. */
-    getRoleArrow(role: string): "none" | "relation" | "player" { return inheritedEdgeStyle(this._roleArrows, role, "player"); }
+    getRoleArrow(role: string): "none" | "relation" | "player" { return this._roleArrows[role] ?? this.inheritedRoleArrow(role); }
+    /** What a role shows without its own override: the schema's
+     *  `@meta("graph-arrow", …)` on the role or relation, then links, then player. */
+    inheritedRoleArrow(role: string): "none" | "relation" | "player" {
+        return (role !== "links" ? this._schemaDefaults?.arrow(role) : undefined) ?? this._roleArrows["links"] ?? "player";
+    }
+    schemaRoleArrow(role: string): "none" | "relation" | "player" | undefined { return this._schemaDefaults?.arrow(role); }
+
+    private _schemaDefaults: SchemaDefaults | null = null;
+    /** Bumped whenever label inputs change (schema defaults, value length),
+     *  so visualisers re-derive node labels on the next styles$ emission. */
+    labelRevision = 0;
+    get schemaDefaults(): SchemaDefaults | null { return this._schemaDefaults; }
+    setSchemaDefaults(defaults: SchemaDefaults | null): void {
+        this._schemaDefaults = defaults;
+        this.labelRevision++;
+        this.styles$.next();
+    }
+    private _labelValueLength = 40;
+    /** Longest value fragment shown in a node label; 0 shows full values. */
+    get labelValueLength(): number { return this._labelValueLength; }
+    set labelValueLength(value: number) {
+        this._labelValueLength = Math.max(0, Math.round(value || 0));
+        this.labelRevision++;
+        this.save(); this.styles$.next();
+    }
     hasRoleArrow(role: string): boolean { return Object.hasOwn(this._roleArrows, role); }
     /** Null returns the role to its inherited direction; "none" is an explicit opt-out. */
     setRoleArrow(role: string, direction: "none" | "relation" | "player" | null): void {
@@ -977,6 +1003,7 @@ export class GraphStyleService implements OnDestroy {
                 fillOpacity: this._fillOpacity,
                 sidePanelDock: this._sidePanelDock,
                 background: this._background,
+                labelValueLength: this._labelValueLength,
             };
             localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
         } catch (e) {
@@ -1009,6 +1036,7 @@ export class GraphStyleService implements OnDestroy {
                 this._fillOpacity = data.fillOpacity ?? 0.25;
                 this._sidePanelDock = data.sidePanelDock ?? "right";
                 if (data.background) this._background = { ...DEFAULT_BACKGROUND, ...data.background };
+                this._labelValueLength = typeof data.labelValueLength === "number" ? data.labelValueLength : 40;
             }
         } catch (e) {
             console.warn("Failed to load graph styles from localStorage:", e);

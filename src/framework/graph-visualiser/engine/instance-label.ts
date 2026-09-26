@@ -4,7 +4,18 @@
  * file, You can obtain one at https://mozilla.org/MPL/2.0/.
  */
 
-import { Graph } from "./graph";
+import type { Graph } from "./graph";
+import { labelAttributes } from "../../util/schema-meta";
+
+/** Schema-derived inputs to label selection. */
+export interface InstanceLabelOptions {
+    /** `@meta("graph-label", …)` for a type, inherited. */
+    schemaLabel?: (typeLabel: string) => string | undefined;
+    /** Attributes owned with @key/@unique: good identifiers when nothing is name-like. */
+    identifying?: (typeLabel: string) => Set<string>;
+    /** Longest value fragment; 0 = unlimited. */
+    maxLength?: number;
+}
 
 /** External store of attribute values per instance IID, populated by
  *  label-only fetches that don't push to the graph. Used as a second source
@@ -36,9 +47,17 @@ export function refreshInstanceLabels(
     graph: Graph,
     store?: DisplayAttributeStore,
     overridesByType?: Map<string, string>,
-): void {
-    // Phase 1: collect candidate attribute type labels per instance type.
+    options: InstanceLabelOptions = {},
+): Map<string, string[]> {
+    // Phase 1: collect candidate attribute type labels per instance type,
+    // with their loaded value lengths for the long-value penalty.
     const candidatesByType = new Map<string, Set<string>>();
+    const lengths = new Map<string, { total: number; count: number }>();
+    const measure = (typeLabel: string, attrLabel: string, values: unknown[]) => {
+        const key = `${typeLabel}\u0000${attrLabel}`, entry = lengths.get(key) ?? { total: 0, count: 0 };
+        for (const value of values) if (value != null) { entry.total += String(value).length; entry.count++; }
+        lengths.set(key, entry);
+    };
     graph.forEachNode((nodeKey, attrs) => {
         const concept = attrs.metadata?.concept as any;
         if (!concept) return;
@@ -51,31 +70,36 @@ export function refreshInstanceLabels(
             const n = graph.getNodeAttributes(neighborKey);
             const nc = n?.metadata?.concept as any;
             const tl = nc?.kind === "attribute" ? nc.type?.label : null;
-            if (tl) set!.add(tl);
+            if (tl) { set!.add(tl); measure(typeLabel, tl, [nc.value]); }
         });
         if (store && concept.iid) {
             const perOwner = store.get(concept.iid);
-            if (perOwner) for (const tl of perOwner.keys()) set.add(tl);
+            if (perOwner) for (const [tl, values] of perOwner) { set.add(tl); measure(typeLabel, tl, values); }
         }
     });
 
     // Phase 2: pick the chosen attribute type per instance type. User
     // overrides (set via the type-detail inspector) always win and bypass
     // the heuristic; otherwise we pick the highest-scoring candidate.
-    const chosenByType = new Map<string, string | null>();
+    // Precedence: the user's choice, then the schema's @meta("graph-label"),
+    // then the name heuristic informed by @key/@unique and value length.
+    const chosenByType = new Map<string, string[]>();
     for (const [typeLabel, candidates] of candidatesByType.entries()) {
-        const override = overridesByType?.get(typeLabel);
+        const override = overridesByType?.get(typeLabel) ?? options.schemaLabel?.(typeLabel);
         if (override) {
-            chosenByType.set(typeLabel, override);
+            chosenByType.set(typeLabel, labelAttributes(override));
             continue;
         }
+        const identifying = options.identifying?.(typeLabel);
         let best: { typeLabel: string; score: number } | null = null;
         for (const candTypeLabel of candidates) {
-            const score = scoreAttributeTypeName(candTypeLabel);
+            const stats = lengths.get(`${typeLabel}\u0000${candTypeLabel}`);
+            const score = scoreAttributeTypeName(candTypeLabel) + (identifying?.has(candTypeLabel) ? 120 : 0)
+                - (stats?.count && stats.total / stats.count > 80 ? 120 : 0);
             if (score <= 0) continue;
             if (!best || score > best.score) best = { typeLabel: candTypeLabel, score };
         }
-        chosenByType.set(typeLabel, best?.typeLabel ?? null);
+        chosenByType.set(typeLabel, best ? [best.typeLabel] : []);
     }
 
     // Phase 3: apply.
@@ -84,25 +108,19 @@ export function refreshInstanceLabels(
         if (!concept) return;
         if (concept.kind !== "entity" && concept.kind !== "relation") return;
         const typeLabel: string = concept.type?.label ?? "";
-        const chosen = chosenByType.get(typeLabel) ?? null;
-        const collected = chosen != null
-            ? collectAttributeValues(graph, nodeKey, concept.iid, chosen, store)
-            : { values: [], isBoolean: false };
-        const formatted = formatValues(collected.values);
-        let newLabel: string;
-        if (formatted.length === 0) {
-            newLabel = typeLabel;
-        } else if (collected.isBoolean && chosen) {
-            // A bare `true`/`false` is meaningless on its own, so name the
-            // attribute: `<type>: <attr-type>=<value>`.
-            newLabel = `${typeLabel}: ${chosen}=${formatted}`;
-        } else {
-            newLabel = `${typeLabel}: ${formatted}`;
+        const parts: string[] = [];
+        for (const chosen of chosenByType.get(typeLabel) ?? []) {
+            const collected = collectAttributeValues(graph, nodeKey, concept.iid, chosen, store);
+            const formatted = formatValues(collected.values, options.maxLength ?? 0);
+            // A bare `true`/`false` is meaningless on its own, so name the attribute.
+            if (formatted) parts.push(collected.isBoolean ? `${chosen}=${formatted}` : formatted);
         }
+        const newLabel = parts.length ? `${typeLabel}: ${parts.join(" · ")}` : typeLabel;
         if (attrs.label !== newLabel) {
             graph.setNodeAttribute(nodeKey, "label", newLabel);
         }
     });
+    return chosenByType;
 }
 
 function collectAttributeValues(
@@ -186,7 +204,7 @@ function scoreAttributeTypeName(typeLabel: string): number {
  *  before `"10"`), and joins with commas. Empty strings and null values are
  *  dropped — a `name` with no value at all reduces back to just the type
  *  label rather than `<type>: , `. */
-function formatValues(values: unknown[]): string {
+function formatValues(values: unknown[], maxLength = 0): string {
     if (values.length === 0) return "";
     const seen = new Set<string>();
     const strs: string[] = [];
@@ -200,5 +218,8 @@ function formatValues(values: unknown[]): string {
     }
     if (strs.length === 0) return "";
     strs.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" }));
-    return strs.join(", ");
+    // Long values are shortened with an ellipsis; the Explorer shows them in full.
+    const clip = (text: string) => maxLength > 1 && text.length > maxLength ? `${text.slice(0, maxLength - 1).trimEnd()}…` : text;
+    const shown = strs.slice(0, 3).map(clip);
+    return shown.join(", ") + (strs.length > 3 ? ` +${strs.length - 3}` : "");
 }
