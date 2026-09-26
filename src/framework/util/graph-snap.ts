@@ -24,7 +24,7 @@ export interface GraphSnap {
         viewport: { width: number; height: number };
         finderText?: string;
         typeFilter?: string;
-        layoutDensity?: "spacious" | "default" | "compact" | "dense" | "tight";
+        layoutDensity?: "airy" | "spacious" | "default" | "compact" | "dense" | "tight";
         searchTerm: string;
         finderMatches: string[] | null;
         selectedNode: string | null;
@@ -80,7 +80,7 @@ export function parseGraphSnap(text: string): GraphSnap {
         || (v.selectedNode !== null && !keys.has(v.selectedNode)) || !strings(v.selectedNeighbors)
         || !strings(v.highlightedEdges) || !strings(v.highlightedKinds) || !strings(v.highlightedTypes)) fail();
     if ((v.finderText !== undefined && typeof v.finderText !== "string") || (v.typeFilter !== undefined && typeof v.typeFilter !== "string")) fail();
-    if (v.layoutDensity !== undefined && !["spacious", "default", "compact", "dense", "tight"].includes(v.layoutDensity)) fail();
+    if (v.layoutDensity !== undefined && !["airy", "spacious", "default", "compact", "dense", "tight"].includes(v.layoutDensity)) fail();
     if (v.finderMatches?.some(k => !keys.has(k)) || v.selectedNeighbors.some(k => !keys.has(k))) fail();
     const selection = snap.graph.attributes?.elementSelection;
     if (selection && (typeof selection.active !== "boolean" || !strings(selection.nodes) || selection.nodes.some(k => !keys.has(k)))) fail();

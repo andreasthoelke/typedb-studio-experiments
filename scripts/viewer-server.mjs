@@ -219,7 +219,7 @@ export function createViewerServer({ dist = resolve(root, 'dist/typedb-studio/br
                 }
                 if (url.pathname === '/api/viewer/control') {
                     const commands = ['centreCaret', 'caretTop', 'caretBottom', 'caretLeft', 'caretRight',
-                        'panLeft', 'panRight', 'panUp', 'panDown', 'zoomIn', 'zoomOut', 'focus', 'back', 'relayout', 'snap'];
+                        'panLeft', 'panRight', 'panUp', 'panDown', 'zoomIn', 'zoomOut', 'roomier', 'denser', 'focus', 'back', 'relayout', 'snap'];
                     if (!body || !commands.includes(body.command)
                         || (body.database !== undefined && (typeof body.database !== 'string' || !body.database.trim()))
                         || (body.projectTempDirectory !== undefined && !validProjectTempDirectory(body.projectTempDirectory))) {

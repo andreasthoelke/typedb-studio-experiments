@@ -882,7 +882,8 @@ Bare h/l do not browse snaps. Controls work across the visible graph view; snap
 chips need no keyboard focus. Motion, node nudging, pan and zoom repeat; deletion, saving,
 re-layout and snap browsing do not. Inputs, the query editor, dialogs, menus and
 composition keep their normal behavior. Enter on buttons remains native; in the
-side panel Space is the leader (Space Ctrl-n/p), so it does not click a focused button.
+side panel Space is also the leader (Space Ctrl-n/p), so Space on a focused control
+waits 450 ms for a Ctrl continuation before activating it; Space Space activates at once.
 The Snaps **Keys** button shows the last shortcut Studio received.
 
 ### Moving focus between panes, windows and Neovim
@@ -1294,8 +1295,12 @@ informational: commands (zz, motions, dd, …) still act on the one solid caret.
 ### Layout spacing
 
 New graphs start **Compact**. The density menu also offers **Dense** and **Tight**,
-plus the former spacing levels **Balanced** and **Spacious**. These presets vary
-centering force while retaining collision avoidance. Redraw keeps the chosen
+plus the roomier **Balanced**, **Spacious** and **Airy**. These presets vary
+centering force while retaining collision avoidance; Spacious and Airy also
+lengthen edges (1.6× / 2.6×), since weak gravity alone stops spreading nodes.
+**Ctrl-=** steps one level roomier and **Ctrl--** one level denser, from the
+current positions (a running layout restarts); a toast names the new level.
+From Neovim, `<prefix>]` / `<prefix>[` send the same steps. Redraw keeps the chosen
 spacing; a snap retains its saved density and node positions. Very dense layouts
 can still have crowded labels, so use the menu to suit the graph.
 
@@ -1395,9 +1400,15 @@ In Explorer, relations already present in the graph show **In graph** or
 relation while keeping the current Explorer node. **Go to** moves the caret
 and changes Explorer (see the action strip above).
 **Ctrl-o** follows the existing graph caret history: marks add no history entries.
-**Ctrl-n/p** move between visible Explorer controls; **Space Ctrl-n/p** jump
+**Ctrl-n/p** move between the visible controls of any panel tab (buttons,
+switches, sliders, number/filter fields, closed dropdowns, then the footer);
+a green ring marks the focused one. Inline value editors keep Ctrl-n/p until
+Enter/Escape; an open dropdown uses them for its options. **Space Ctrl-n/p** jump
 between the panel's main sections (Explorer's Links / Attributes / Relations,
-Customise's groups, …). Space on a focused header does not click it; use Enter.
+Customise's groups, …), or by row in tabs without sections (Snaps, Data).
+**Space** or **Enter** activates the focused control (a dropdown opens; toggle
+buttons show their on state). Space first waits 450 ms in case a leader chord
+follows; **Space Space** activates immediately.
 **Ctrl-f/d** cycle the panel's main tabs; **Space Ctrl-f/d** cycle a sub-tab
 group instead: Explorer **here · every · data**, the Data view's **graph ·
 selection · database**, Snaps **Group**, Customise **Graph · Background**. The

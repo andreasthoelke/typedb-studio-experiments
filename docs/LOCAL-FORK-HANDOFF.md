@@ -233,7 +233,7 @@ expansions often offer better choices than asking the user to type relation name
 
 Current shortcuts: Ctrl-w h/j/k/l pane focus (w cycle, p previous across panes and windows, H/L outermost window, t/q/g/e/b direct, Space j/k resize, escalating past the last pane), c caret, hjkl spatial move, n/o/y/. diagonal move (↙/↗/↖/↘), Ctrl-o (also g;) caret history, Shift nudge, Ctrl-Shift add / Option remove destination, ,f node hints, Ctrl-y/e/h/l pan,
 Esc/Ctrl-[ clear (or cancel pending deletion), dd remove caret / d Enter remove selection from view, Space h/l browse, Space Enter / geo other view, Backspace close preview,
-zz centre caret without zoom, zt/zb/zh/zl position it at a ⅛ viewport inset, Enter focus, +/- zoom, r re-layout (caret kept), s save, / node picker, ? help.
+zz centre caret without zoom, zt/zb/zh/zl position it at a ⅛ viewport inset, Enter focus, +/- zoom, Ctrl-=/Ctrl-- roomier/denser layout, r re-layout (caret kept), s save, / node picker, ? help.
 In the picker, Ctrl-n/p or arrows browse; Enter sets the caret and Esc/Ctrl-[ cancels.
 See the workflow guide for selection semantics and Vimium instructions. No hover
 preview or tooltip is attached to snap chips; × deletes immediately, without a dialog.
@@ -1055,3 +1055,39 @@ No writes touched the user's databases; all write tests own a temporary server.
 Validation: `pnpm test:viewer` (127), build, viewer-actions (now also Space
 Ctrl-f/d), viewer-workflow live, viewer-live-snap, role-edges, dashes, shortcuts.
 
+
+## Density keys, arrowhead size, panel keyboard stops (2026-09-26, fourth round)
+
+- **Ctrl-= / Ctrl--** (`roomier` / `denser` in `graph-shortcuts.ts`) call
+  `GraphVisualiser.stepLayoutDensity`, which steps `DENSITY_ORDER`
+  (`framework/util/graph-density.ts`, d3-free so unit tests can load it). A new
+  roomiest level **airy** (gravity default/9) was added; `DENSITY_LINK_DISTANCE`
+  lengthens edges for spacious (1.6×) and airy (2.6×) because weak gravity alone
+  no longer spreads charge-dominated graphs. Snap parser accepts `airy`.
+  Neovim: `<control_prefix>]` / `[` send the same commands (server allowlist
+  updated — the Neovim-owned bridge needs a restart to accept them).
+- **Arrowhead size** (Customise → Settings, just below Node fill opacity):
+  `GraphStyleService.arrowHeadScale` (0.25–3, localStorage like
+  `labelValueScale`, not presets) → `setArrowHeadScale` in `semantic-arrows.ts`,
+  multiplying the clamped 3–7px head. PNG export shares the module value.
+- **Panel keyboard stops** (`PaneFocusService.panelKey`, replacing
+  `explorerKey`): Ctrl-n/p walk `PANEL_ITEMS` in every tab's `.panel-content` /
+  `.panel-scroll` plus `.panel-footer`. Inputs are stops, except inline editors
+  (`.value-editor`, `.cell-editor`, `.save-preset-input`), textareas and
+  textboxes. A *closed* panel mat-select is a stop; an open one still gets the
+  arrow adapter. Space Ctrl-n/p: sections when a tab has ≥2, else next row
+  (`rowOf`). Chrome does not treat Ctrl chords as keyboard modality, so moved
+  focus gets `.kbd-focus` (until blur); the ring is a global `!important` rule
+  at the end of `styles/base.scss`.
+- **Space activates** the focused control (`activatable`: buttons, switches,
+  tabs, summary, links, checkbox/colour inputs, mat-select → its trigger) after
+  `SPACE_ACTIVATION_MS` (450) unless another key arrives; Space Space fires at
+  once. Because the canvas's capture listener may run first and stop
+  propagation, `handlesPanelKey` also cancels a pending activation and claims
+  Space on activatable panel targets.
+
+Validation: `pnpm test:viewer` (128), build, `viewer-actions` (density keys,
+Customise walk with ring, slider arrow keys, Space wait / Space Space / Space
+Ctrl-n), `viewer-workflow` live (density menu now starts at Airy, so its
+Ctrl-n pick is Spacious), shortcuts, dashes, role-edges, live-snap, multicaret,
+nvim-caret.

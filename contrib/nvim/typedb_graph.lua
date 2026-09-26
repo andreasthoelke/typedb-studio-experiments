@@ -181,7 +181,7 @@ function M.buffer_maps(buffer)
     for suffix, command in pairs({ zz = 'centreCaret', zt = 'caretTop', zb = 'caretBottom', zh = 'caretLeft', zl = 'caretRight',
       ['<C-h>'] = 'panLeft', ['<C-l>'] = 'panRight', ['<C-y>'] = 'panUp', ['<C-e>'] = 'panDown',
       ['<C-k>'] = 'panUp', ['<C-j>'] = 'panDown', ['<C-o>'] = 'back',
-      ['+'] = 'zoomIn', ['='] = 'zoomIn', ['-'] = 'zoomOut', ['<CR>'] = 'focus', s = 'snap', r = 'relayout' }) do
+      ['+'] = 'zoomIn', ['='] = 'zoomIn', ['-'] = 'zoomOut', [']'] = 'roomier', ['['] = 'denser', ['<CR>'] = 'focus', s = 'snap', r = 'relayout' }) do
       vim.keymap.set('n', config.control_prefix .. suffix, function() M.control(command) end,
         { buffer = buffer, silent = true, desc = 'TypeDB viewer: ' .. command })
     end

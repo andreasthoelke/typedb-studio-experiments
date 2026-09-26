@@ -102,6 +102,7 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
             case "panLeft": case "panRight": case "panUp": case "panDown":
                 v.panNavigation(command === "panLeft" ? "left" : command === "panRight" ? "right" : command === "panUp" ? "up" : "down"); return true;
             case "zoomIn": case "zoomOut": v.zoom(command === "zoomIn" ? "in" : "out"); return true;
+            case "roomier": case "denser": return !!v.stepLayoutDensity(command);
             case "focus": v.focusHighlightedNodes(); return true;
             case "back": return v.backNavigation();
             case "relayout": v.reLayout(); return true;
@@ -299,6 +300,12 @@ export class GraphCanvasComponent implements OnChanges, DoCheck, AfterViewInit, 
         }
         else if (action === "relayout") { if (!this.queryRunning) this.visualiser?.reLayout(); }
         else if (action === "zoomIn" || action === "zoomOut") { this.visualiser?.zoom(action === "zoomIn" ? "in" : "out"); }
+        else if (action === "roomier" || action === "denser") {
+            if (this.queryRunning || !this.visualiser) return;
+            const density = this.visualiser.stepLayoutDensity(action);
+            this.lastShortcut += density ? ` (${density})` : ` (already ${this.visualiser.layoutDensity})`;
+            this.snackbar.info(density ? `Layout density: ${density}` : `Layout is already ${this.visualiser.layoutDensity}`);
+        }
         else if (action === "focus") { this.visualiser?.focusHighlightedNodes(); }
         else if (action === "live") { if (this.inlineSnap || this.snapsBusy) this.closeInlineSnap(); }
         else if (action === "find") {

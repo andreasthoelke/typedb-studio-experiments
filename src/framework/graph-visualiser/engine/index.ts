@@ -24,8 +24,9 @@ import { Graph, GraphBuilderStructureParams, defaultStructureParams } from "./gr
 import { GraphBuilder, EDGE_CURVATURE } from "./graph-builder";
 import { GraphStyles, colorEdgesByConstraintIndex as _colorEdgesByConstraintIndex, colorQuery as _colorQuery } from "./styles";
 import { setUseBorderColorForLabels, setLabelsVisible, setShowHoverLabel, setLabelValueScale } from "./sigma-label-utils";
+import { setArrowHeadScale } from "./semantic-arrows";
 import { InteractionHandler, StudioState } from "./interaction-handler";
-import { LayoutWrapper, LayoutDensity } from "./layout";
+import { LayoutWrapper, LayoutDensity, stepDensity } from "./layout";
 import { createSigmaRenderer, defaultSigmaSettings } from "./sigma-settings";
 import { DisplayAttributeStore, refreshInstanceLabels } from "./instance-label";
 
@@ -209,6 +210,7 @@ export class GraphVisualiser {
         setLabelsVisible(this.styleService.labelsVisible);
         setShowHoverLabel(this.styleService.showHoverLabel);
         setLabelValueScale(this.styleService.labelValueScale);
+        setArrowHeadScale(this.styleService.arrowHeadScale);
         // Edge labels are controlled independently of node labels — they are by
         // far the most expensive thing to render during a sim (one per visible
         // edge, every frame), so letting users turn them off without losing node
@@ -1734,6 +1736,15 @@ export class GraphVisualiser {
     setLayoutDensity(mode: LayoutDensity): void {
         this.autoZoomEnabled = false;
         this.layout.setDensity(mode);
+    }
+
+    /** Ctrl-= / Ctrl--: one density step roomier or denser, from current
+     *  positions (a running layout restarts). Null when already at the end. */
+    stepLayoutDensity(direction: "roomier" | "denser"): LayoutDensity | null {
+        if (!this.graph.order) return null;
+        const next = stepDensity(this.layout.density, direction);
+        if (next) this.setLayoutDensity(next);
+        return next;
     }
 
     /** The currently-applied node-spacing density (for the controls' menu). */

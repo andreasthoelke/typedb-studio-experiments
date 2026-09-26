@@ -2,6 +2,13 @@ import Sigma from 'sigma';
 import type { NodeDisplayData } from 'sigma/types';
 import { graphArrow, ArrowNode } from '../../util/graph-arrow';
 
+let _headScale = 1;
+
+/** Multiplier for arrowhead size (Customise → Arrowhead size, 0.25–3). */
+export function setArrowHeadScale(value: number): void {
+    _headScale = Math.max(0.25, Math.min(3, value || 1));
+}
+
 /** A small canvas layer preserves existing WebGL dash/curve programs and edge
  * picking. createSigmaRenderer also installs it for PNG exports. */
 export function installSemanticArrows(renderer: Sigma): void {
@@ -29,7 +36,7 @@ export function installSemanticArrows(renderer: Sigma): void {
                 width: renderer.scaleSize(data['width'] ?? data.size), height: renderer.scaleSize(data['height'] ?? data.size), type: data.type });
             const triangle = graphArrow(node(reverse ? to : from), node(reverse ? from : to), (reverse ? -1 : 1) * (edge.type === 'curved' ? (edge as typeof edge & { curvature?: number }).curvature ?? .25 : 0),
                 // Half the original 6–14px heads (2026-09-26, user request).
-                Math.max(3, Math.min(7, renderer.scaleSize(edge.size) * 2 + 2.5)));
+                Math.max(3, Math.min(7, renderer.scaleSize(edge.size) * 2 + 2.5)) * _headScale);
             if (!triangle) return;
             ctx.fillStyle = edge.color; ctx.beginPath(); ctx.moveTo(triangle[0].x, triangle[0].y);
             ctx.lineTo(triangle[1].x, triangle[1].y); ctx.lineTo(triangle[2].x, triangle[2].y); ctx.closePath(); ctx.fill();

@@ -160,8 +160,47 @@ try {
     assert.match(await s2row.innerText(), /Second/);
     await s2row.getByRole('button', { name: 'Add to graph scene', exact: true }).click();
     await page.waitForFunction(() => { const v = window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser; return v.graph.nodes().some(k => v.graph.getNodeAttribute(k, 'label') === 'scene: S2 · Second'); }, null, { timeout: 15000 });
+    // Ctrl-= / Ctrl-- step the layout density from graph focus.
+    await canvas(() => window.ng.getComponent(document.querySelector('ts-graph-canvas')).paneFocus.focus('graph'));
+    const density = () => canvas(() => window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.layoutDensity);
+    const before = await density();
+    await page.keyboard.press('Control+=');
+    assert.notEqual(await density(), before, 'Ctrl-= makes the layout roomier');
+    await page.keyboard.press('Control+-');
+    assert.equal(await density(), before, 'Ctrl-- steps back');
+    // Panel keyboard stops in a non-Explorer tab: Ctrl-n/p walk the controls,
+    // the focus ring shows, Space activates after its leader wait, Space Space
+    // at once, and Space Ctrl-n still jumps sections without activating.
+    await canvas(() => window.ng.getComponent(document.querySelector('ts-graph-canvas')).paneFocus.focus('panel'));
+    await page.locator('[data-panel-tab="customise"]').click();
+    await canvas(() => window.ng.getComponent(document.querySelector('ts-graph-canvas')).paneFocus.focus('panel'));
+    const active = () => page.evaluate(() => { const a = document.activeElement; return { label: a?.getAttribute('aria-label') ?? '', text: a?.textContent.trim() ?? '',
+        role: a?.getAttribute('role') ?? '', ring: a ? getComputedStyle(a).outlineWidth : '', visible: !!a?.matches(':focus-visible, .kbd-focus') }; });
+    const walkTo = async (predicate, key = 'Control+n') => { for (let i = 0; i < 80; i++) { await page.keyboard.press(key); const a = await active(); if (predicate(a)) return a; } throw Error('Ctrl-n never reached the control'); };
+    await walkTo(a => a.text === "Settings");
+    const arrow = await walkTo(a => a.label === 'Arrowhead size');
+    assert.ok(arrow.visible && arrow.ring === '2px', `Focus ring on keyboard stops: ${JSON.stringify(arrow)}`);
+    await page.keyboard.press('ArrowRight');
+    assert.equal(await canvas(() => window.ng.getComponent(document.querySelector('ts-graph-canvas')).liveStyleService.arrowHeadScale), 1.05);
+    assert.match(await page.locator('.style-row').filter({ hasText: 'Arrowhead size' }).innerText(), /105%/);
+    const rows = await page.locator('.style-row .style-label').allInnerTexts();
+    assert.equal(rows[rows.indexOf('Node fill opacity') + 1], 'Arrowhead size', 'Arrowhead size sits just below Node fill opacity');
+    await page.keyboard.press('Control+p');
+    assert.equal((await active()).label, '', 'Ctrl-p steps back from the slider');
+    await walkTo(a => a.role === 'switch');
+    const labels = () => canvas(() => window.ng.getComponent(document.querySelector('ts-graph-canvas')).liveStyleService.labelsVisible);
+    const shown = await labels();
+    await page.keyboard.press(' ');
+    assert.equal(await labels(), shown, 'Space waits for a leader continuation');
+    await page.waitForFunction(v => window.ng.getComponent(document.querySelector('ts-graph-canvas')).liveStyleService.labelsVisible !== v, shown, { timeout: 2000 });
+    await page.keyboard.press(' '); await page.keyboard.press(' ');
+    assert.equal(await labels(), shown, 'Space Space activates at once');
+    await page.keyboard.press(' '); await page.keyboard.press('Control+n');
+    await page.waitForTimeout(700);
+    assert.equal(await labels(), shown, 'Space Ctrl-n does not activate');
+    assert.notEqual((await active()).role, 'switch', 'Space Ctrl-n moved focus');
     assert.ok(errors.length === 0, errors.join('\n'));
-    console.log('PASS isolated: schema @meta arrows and labels, Space Ctrl-f/d sub-tabs, action strip (exact select, mark, hide, go to), Explorer edit/add/remove with confirmation, validation, stale-value refusal, Data view identifying columns, graph and database cell edits, adding a database row to the graph');
+    console.log('PASS isolated: schema @meta arrows and labels, Space Ctrl-f/d sub-tabs, Ctrl-=/- density, panel Ctrl-n/p stops with focus ring and Space activation, arrowhead size, action strip (exact select, mark, hide, go to), Explorer edit/add/remove with confirmation, validation, stale-value refusal, Data view identifying columns, graph and database cell edits, adding a database row to the graph');
 } finally {
     await browser?.close(); server?.closeAllConnections(); server?.close();
     typedb.kill(); await once(typedb, 'exit').catch(() => {}); await rm(root, { recursive: true, force: true });

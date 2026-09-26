@@ -16,12 +16,12 @@ test('graph commands, modal movement and Space snap sequences are distinct', () 
     }
 });
 test('Ctrl camera/reset allowlist preserves other browser modifiers and composition', () => {
-    for (const [name,action] of [['e','panDown'],['y','panUp'],['h','panLeft'],['l','panRight'],['o','back'],['[','clear']]) {
+    for (const [name,action] of [['e','panDown'],['y','panUp'],['h','panLeft'],['l','panRight'],['o','back'],['[','clear'],['=','roomier'],['-','denser']]) {
         assert.equal(graphShortcut(key(name,{ctrlKey:true})),action);
         assert.equal(graphShortcut(key(name,{ctrlKey:true,shiftKey:true})),null);
         for(const flag of ['metaKey','altKey','isComposing','defaultPrevented']) assert.equal(graphShortcut(key(name,{ctrlKey:true,[flag]:true})),null);
     }
-    for (const name of ['d','r','s','+','-','c','v']) assert.equal(graphShortcut(key(name,{ctrlKey:true})),null);
+    for (const name of ['d','r','s','+','c','v']) assert.equal(graphShortcut(key(name,{ctrlKey:true})),null);
     for (const flag of ['metaKey','altKey','isComposing','defaultPrevented']) assert.equal(graphShortcut(key('s',{[flag]:true})),null);
 });
 test('motion/camera keys repeat but deletion, modes, saves and snap sequences never do', () => {
@@ -98,4 +98,12 @@ test('Space Enter synchronizes caret without changing plain Enter', () => {
 
 test('Shift-r isolates even when the browser reports a lowercase modified key', () => {
     assert.equal(graphShortcut(key('r', {shiftKey:true})), 'isolate');
+});
+test('Ctrl-= / Ctrl-- step density along the roomy → tight order and stop at the ends', async () => {
+    const { stepDensity, DENSITY_ORDER } = await import('../src/framework/util/graph-density.ts');
+    assert.equal(stepDensity('default','roomier'),'spacious');
+    assert.equal(stepDensity('spacious','roomier'),'airy');
+    assert.equal(stepDensity('airy','roomier'),null);
+    assert.equal(stepDensity('tight','denser'),null);
+    assert.deepEqual(DENSITY_ORDER,['airy','spacious','default','compact','dense','tight']);
 });

@@ -9,6 +9,7 @@ import forceAtlas2, {
 } from "graphology-layout-forceatlas2";
 import FA2LayoutSupervisor from "graphology-layout-forceatlas2/worker";
 import noverlap, {NoverlapLayoutParameters} from "graphology-layout-noverlap";
+import type { LayoutDensity } from "../../util/graph-density";
 import { forceSimulation, forceLink, forceManyBody, forceCollide, forceCenter, forceX, forceY, SimulationNodeDatum, SimulationLinkDatum } from "d3-force";
 
 export class Layouts {
@@ -117,7 +118,7 @@ export class Layouts {
 
 
 /** Node-spacing density presets for the force layout's centering gravity. */
-export type LayoutDensity = "spacious" | "default" | "compact" | "dense" | "tight";
+export { DENSITY_ORDER, stepDensity, type LayoutDensity } from "../../util/graph-density";
 
 /** Persistent gravity multiplier per density mode. "default" is 1.5× the base
  *  gravity; "compact" is 4× the base and "spacious" is the default / 3. */
@@ -157,11 +158,18 @@ const SIM_MIN_SYNC_INTERVAL_MS = 1000 / SIM_DISPLAY_FPS;
  */
 const DRAG_ALPHA_TARGET = 0.3;
 export const DENSITY_GRAVITY: Record<LayoutDensity, number> = {
+    airy: DEFAULT_GRAVITY_MULTIPLIER / 9,
     spacious: DEFAULT_GRAVITY_MULTIPLIER / 3,
     default: DEFAULT_GRAVITY_MULTIPLIER,
     compact: 4,
     dense: 8,
     tight: 16,
+};
+
+/** Link rest length multiplier. Gravity alone stops mattering once it is weak
+ *  (charge dominates), so the roomy presets also lengthen edges. */
+export const DENSITY_LINK_DISTANCE: Record<LayoutDensity, number> = {
+    airy: 2.6, spacious: 1.6, default: 1, compact: 1, dense: 1, tight: 1,
 };
 
 export interface LayoutStartOptions {
@@ -432,7 +440,7 @@ class D3ForceSupervisorWrapper implements LayoutWrapper {
             .force("charge", forceManyBody()
                 .strength(baseCharge))
                 // .distanceMax(maxRadius * 20))
-            .force("link", forceLink(links).distance(maxRadius).strength(1))
+            .force("link", forceLink(links).distance(maxRadius * DENSITY_LINK_DISTANCE[this.density]).strength(1))
             .force("collide", forceCollide<D3Node>().radius(maxRadius))
             .force("center", forceCenter(0, 0))
             .force("x", forceX(0).strength(gravityStrength))

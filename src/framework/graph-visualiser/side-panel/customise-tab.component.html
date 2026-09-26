@@ -31,6 +31,16 @@
         </div>
 
         <div class="style-row">
+          <span class="style-label" matTooltip="Scales isa and role arrowheads; 100% is the default size" [matTooltipShowDelay]="500">Arrowhead size</span>
+          <div class="style-controls angle-control">
+            <input type="range" class="angle-slider" min="25" max="300" step="5" aria-label="Arrowhead size"
+                   [value]="styleService.arrowHeadScale * 100"
+                   (input)="styleService.arrowHeadScale = +$any($event.target).value / 100">
+            <span class="angle-value">{{ (styleService.arrowHeadScale * 100).toFixed(0) }}%</span>
+          </div>
+        </div>
+
+        <div class="style-row">
           <span class="style-label">Node labels</span>
           <div class="style-controls">
             <mat-slide-toggle color="primary" [checked]="nodeLabelsVisible" (change)="toggleNodeLabels()"></mat-slide-toggle>

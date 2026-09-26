@@ -11,6 +11,12 @@ import {
     type PaneAction, type PaneDirection, type PaneEscalation, type PaneGeometry, type PaneId,
 } from "../framework/util/pane-focus";
 
+/** Keyboard stops for Ctrl-n/p inside the side panel. */
+const PANEL_ITEMS = "button:not(:disabled):not([tabindex='-1']), summary, a[href], input:not([type='hidden']):not([hidden]):not(:disabled), "
+    + "textarea:not(:disabled), mat-select, [role='switch']:not(button), [tabindex='0']:not(mat-select *)";
+/** How long Space on a focused control waits for a leader continuation. */
+const SPACE_ACTIVATION_MS = 450;
+
 interface PaneRegistration { element: HTMLElement; focusTarget: () => HTMLElement | null }
 
 /** `<c-w>` window navigation, in the browser.
@@ -145,10 +151,14 @@ export class PaneFocusService {
 
     /** Guard in the canvas too: capture-listener registration order can vary. */
     handlesPanelKey(event: KeyboardEvent): boolean {
+        // The canvas may run first and stop propagation, so a pending Space
+        // activation is also settled here: any other key cancels it.
+        if (this.pendingActivation && event.key !== " " && !["Shift", "Alt", "Control", "Meta"].includes(event.key)) this.cancelActivation();
         if (event.altKey || event.metaKey || event.isComposing) return false;
+        if (this.focusedPane === "panel" && event.key === " " && !event.ctrlKey && !event.shiftKey
+            && event.target instanceof HTMLElement && PaneFocusService.activatable(event.target)) return true;
         if (event.ctrlKey && !event.shiftKey && ["d", "f"].includes(event.key.toLowerCase())) return true;
-        if (this.focusedPane === "panel" && event.ctrlKey && ["n", "p"].includes(event.key)
-            && (this.sectionLeader || document.querySelector("ts-graph-side-panel .explorer-pane"))) return true;
+        if (this.focusedPane === "panel" && event.ctrlKey && !event.shiftKey && ["n", "p"].includes(event.key)) return true;
         return !!this.focusedPane && !["graph", "query"].includes(this.focusedPane)
             && ((!event.ctrlKey && ["g", "G"].includes(event.key)) || (event.ctrlKey && ["e", "y"].includes(event.key)));
     }
@@ -199,42 +209,107 @@ export class PaneFocusService {
         const next = tabs[(current + (event.key.toLowerCase() === "f" ? 1 : -1) + tabs.length) % tabs.length];
         const hadFocus = active instanceof Node && group.contains(active);
         next.click();
-        if (hadFocus) next.focus();
+        if (hadFocus) PaneFocusService.keyboardFocus(next);
         this.lastAction = "Space Ctrl-" + event.key + " sub-tab";
         return true;
     }
 
-    private explorerKey(event: KeyboardEvent): boolean {
+    /** Every keyboard stop in the visible panel tab plus the footer, in DOM
+     *  order: buttons, switches, inputs, closed dropdowns, links. */
+    private panelItems(): HTMLElement[] {
+        const root = this.panes.get("panel")?.element;
+        if (!root) return [];
+        const scopes = [...root.querySelectorAll<HTMLElement>(".panel-content, .panel-scroll, .panel-footer")].filter(el => this.visible(el));
+        return scopes.flatMap(scope => [...scope.querySelectorAll<HTMLElement>(PANEL_ITEMS)])
+            .filter(el => this.visible(el) && !el.closest(".mat-mdc-select-disabled, [inert]"));
+    }
+
+    /** Space Ctrl-n/p without sections: the next control on a different row. */
+    private static rowOf(el: HTMLElement): Element | null {
+        return el.closest("tr, li, .style-row, .action-row, .snap-chip, .detail-row, [role='row'], .panel-section, .detail-section") ?? el.parentElement;
+    }
+
+    /** What Space activates on a focused control, or null when Space belongs
+     *  to the control itself (text entry, sliders) or nothing. */
+    private static activatable(el: HTMLElement): HTMLElement | null {
+        if (el.matches("mat-select")) return el.querySelector<HTMLElement>(".mat-mdc-select-trigger") ?? el;
+        if (el.matches("input")) return ["checkbox", "radio", "color"].includes((el as HTMLInputElement).type) ? el : null;
+        return el.closest<HTMLElement>("button, summary, a[href], [role='button'], [role='switch'], [role='tab'], [role='checkbox']");
+    }
+
+    /** Space on a focused panel control waits briefly for a leader continuation
+     *  (Space Ctrl-n/p/f/d); any other key, or the wait running out, settles it.
+     *  Space Space activates at once. */
+    private pendingActivation: { target: HTMLElement; focus: HTMLElement; timer: ReturnType<typeof setTimeout> } | null = null;
+
+    private cancelActivation(): void {
+        if (this.pendingActivation) clearTimeout(this.pendingActivation.timer);
+        this.pendingActivation = null;
+    }
+
+    private activate(): void {
+        const pending = this.pendingActivation;
+        this.cancelActivation();
+        if (!pending || !pending.target.isConnected || document.activeElement !== pending.focus) return;
+        this.sectionLeaderAt = -Infinity;
+        this.lastAction = "Space activate";
+        this.zone.run(() => pending.target.click());
+    }
+
+    /** Chrome does not treat Ctrl-modified keys as keyboard use, so focus moved
+     *  by Ctrl-n/p would not match :focus-visible. Mark it until blur. */
+    private static keyboardFocus(el: HTMLElement): void {
+        el.focus();
+        el.classList.add("kbd-focus");
+        el.addEventListener("blur", () => el.classList.remove("kbd-focus"), { once: true });
+    }
+
+    private panelKey(event: KeyboardEvent): boolean {
         if (this.focusedPane !== "panel" || event.altKey || event.metaKey || event.isComposing) return false;
-        if (event.target instanceof HTMLElement && event.target.closest("input, textarea, select, [contenteditable='true']")) return false;
+        const target = event.target instanceof HTMLElement ? event.target : null;
         if (!event.ctrlKey && !event.shiftKey && event.key === " ") {
+            if (target?.closest("input, textarea, select, [contenteditable='true'], [role='textbox']") && !(target && PaneFocusService.activatable(target))) return false;
             // Arm the leader; the graph canvas still sees Space for its own leader.
-            // A focused button must not also activate on this Space.
             this.sectionLeaderAt = performance.now();
-            if (event.target instanceof HTMLElement && event.target.closest("button, summary, [role='button']")) {
+            const activatable = target && PaneFocusService.activatable(target);
+            if (activatable) {
                 event.preventDefault(); this.swallowSpaceUp = true;
+                this.cancelActivation();
+                if (!event.repeat) this.pendingActivation = { target: activatable, focus: target!, timer: setTimeout(() => this.activate(), SPACE_ACTIVATION_MS) };
             }
             return false;
         }
         if (!event.ctrlKey || event.shiftKey || !["n", "p"].includes(event.key)) return false;
+        // Inline value editors keep the keyboard until Enter/Escape; filters,
+        // number fields and sliders are just stops along the way.
+        if (target?.closest("textarea, [contenteditable='true'], [role='textbox'], .value-editor, .cell-editor, .save-preset-input")) return false;
         const direction = event.key === "n" ? 1 : -1;
         const active = document.activeElement as HTMLElement | null;
-        if (this.sectionLeader) {
-            this.sectionLeaderAt = -Infinity;
-            const sections = this.panelSections();
-            if (!sections.length) return false;
+        const leader = this.sectionLeader;
+        this.sectionLeaderAt = -Infinity;
+        const sections = leader ? this.panelSections() : [];
+        if (leader && sections.length > 1) {
             const index = sections.findIndex(section => section === active || section.contains(active));
             const next = sections[index < 0 ? (direction > 0 ? 0 : sections.length - 1) : (index + direction + sections.length) % sections.length];
-            this.sectionTarget(next).focus();
+            PaneFocusService.keyboardFocus(this.sectionTarget(next));
             next.scrollIntoView({ block: "nearest" });
             this.lastAction = "Space Ctrl-" + event.key + " section";
         } else {
-            const root = this.panes.get("panel")?.element.querySelector<HTMLElement>(".explorer-pane");
-            if (!root) return false;
-            const items = [...root.querySelectorAll<HTMLElement>("button:not(:disabled), summary, [tabindex='0']")].filter(el => this.visible(el));
-            if (!items.length) return false;
-            const index = items.indexOf(active as HTMLElement);
-            items[index < 0 ? (direction > 0 ? 0 : items.length - 1) : (index + direction + items.length) % items.length].focus();
+            const items = this.panelItems();
+            if (!items.length) { this.lastAction = "Ctrl-" + event.key + ": nothing to focus here"; event.preventDefault(); event.stopImmediatePropagation(); return true; }
+            const index = items.findIndex(item => item === active || item.contains(active));
+            let next = items[index < 0 ? (direction > 0 ? 0 : items.length - 1) : (index + direction + items.length) % items.length];
+            if (leader && index >= 0) {
+                // No sections in this tab: jump by row instead of by control.
+                const row = PaneFocusService.rowOf(items[index]);
+                for (let step = 1; step < items.length; step++) {
+                    const candidate = items[(index + direction * step + items.length * step) % items.length];
+                    if (PaneFocusService.rowOf(candidate) !== row) { next = candidate; break; }
+                }
+            }
+            PaneFocusService.keyboardFocus(next);
+            next.scrollIntoView({ block: "nearest", inline: "nearest" });
+            this.lastAction = (leader ? "Space Ctrl-" : "Ctrl-") + event.key + (leader ? " row" : "");
         }
         event.preventDefault(); event.stopImmediatePropagation(); return true;
     }
@@ -323,6 +398,14 @@ export class PaneFocusService {
 
     private onKey = (event: KeyboardEvent): void => {
         if (!this.panes.size) return;
+        if (this.pendingActivation && !["Shift", "Alt", "Control", "Meta"].includes(event.key)) {
+            if (event.key === " " && !event.ctrlKey && !event.altKey && !event.metaKey && !event.shiftKey
+                && document.activeElement === this.pendingActivation.focus) {
+                event.preventDefault(); event.stopImmediatePropagation(); this.swallowSpaceUp = true;
+                this.activate(); return;
+            }
+            this.cancelActivation();
+        }
         if (!this.chordPending) {
             // Material selects/menus use the same key manager for arrows. Native
             // selects need an explicit change because synthetic arrows have no default action.
@@ -335,7 +418,9 @@ export class PaneFocusService {
                     if (options[next]) { target.selectedIndex = next; target.dispatchEvent(new Event("change", { bubbles: true })); }
                     event.preventDefault(); event.stopImmediatePropagation(); return;
                 }
-                if (target instanceof HTMLElement && target.closest("mat-select, input[role='combobox'], [role='listbox'], [role='menu'], .mat-mdc-menu-panel")) {
+                const closedPanelSelect = target instanceof HTMLElement && target.matches("mat-select") && target.getAttribute("aria-expanded") !== "true"
+                    && !!this.panes.get("panel")?.element.contains(target);
+                if (!closedPanelSelect && target instanceof HTMLElement && target.closest("mat-select, input[role='combobox'], [role='listbox'], [role='menu'], .mat-mdc-menu-panel")) {
                     event.preventDefault(); event.stopImmediatePropagation();
                     const down = event.key === "n";
                     target.dispatchEvent(new KeyboardEvent("keydown", { key: down ? "ArrowDown" : "ArrowUp", code: down ? "ArrowDown" : "ArrowUp",
@@ -344,7 +429,7 @@ export class PaneFocusService {
                 }
             }
             if (this.subtabKey(event)) return;
-            if (this.explorerKey(event)) return;
+            if (this.panelKey(event)) return;
             if (this.scrollPane(event)) return;
             if (!panePrefix(event)) return;
             event.preventDefault();

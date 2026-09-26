@@ -1,9 +1,9 @@
 import type { GraphDirection, GraphNavigationMode } from "./graph-navigation";
 
 export type GraphViewCommand = "centreCaret" | "caretTop" | "caretBottom" | "caretLeft" | "caretRight"
-    | "panLeft" | "panRight" | "panUp" | "panDown" | "zoomIn" | "zoomOut" | "focus" | "back" | "relayout" | "snap";
+    | "panLeft" | "panRight" | "panUp" | "panDown" | "zoomIn" | "zoomOut" | "roomier" | "denser" | "focus" | "back" | "relayout" | "snap";
 
-export type GraphShortcut = "syncCaret" | "uiHints" | "isolate" | "previous" | "next" | "live" | "snap" | "find" | "help" | "focus" | "relayout" | "zoomIn" | "zoomOut"
+export type GraphShortcut = "roomier" | "denser" | "syncCaret" | "uiHints" | "isolate" | "previous" | "next" | "live" | "snap" | "find" | "help" | "focus" | "relayout" | "zoomIn" | "zoomOut"
     | "caret" | "clear" | "remove" | "deleteLeader" | "removeCaret" | "leader" | "hintLeader" | "centreLeader" | "centreCaret" | "hints" | "cancelLeader" | "geLeader"
     | GraphDirection | `nudge:${GraphDirection}` | "historyLeader" | "back" | "panLeft" | "panRight" | "panUp" | "panDown" | "caretTop" | "caretBottom" | "caretLeft" | "caretRight";
 export type GraphKeyEvent = Pick<KeyboardEvent, "key" | "code" | "ctrlKey" | "metaKey" | "altKey" | "shiftKey" | "isComposing" | "defaultPrevented" | "repeat">;
@@ -25,7 +25,8 @@ export function graphShortcut(event: GraphKeyEvent, mode: GraphNavigationMode = 
     if (event.ctrlKey) {
         if (event.altKey) return null;
         if (event.shiftKey) return mode === "caret" ? movement[motionKey] ?? null : null;
-        const chords: Record<string, GraphShortcut> = { e: "panDown", y: "panUp", h: "panLeft", l: "panRight", o: "back", "[": "clear" };
+        // Ctrl-= / Ctrl-- step the layout density (roomier / denser).
+        const chords: Record<string, GraphShortcut> = { e: "panDown", y: "panUp", h: "panLeft", l: "panRight", o: "back", "[": "clear", "=": "roomier", "-": "denser" };
         action = leader === "d" && event.key === "[" ? "cancelLeader"
             : chords[event.key] ?? null;
     } else if (event.key === "Escape") action = leader === "d" ? "cancelLeader" : "clear";

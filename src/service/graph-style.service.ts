@@ -173,6 +173,13 @@ export class GraphStyleService implements OnDestroy {
         this._labelValueScale = Math.max(0.5, Math.min(1, value || 0.8));
         this.save(); this.styles$.next();
     }
+    private _arrowHeadScale = 1;
+    /** Multiplies the size of isa / role arrowheads (0.25–3). */
+    get arrowHeadScale(): number { return this._arrowHeadScale; }
+    set arrowHeadScale(value: number) {
+        this._arrowHeadScale = Math.max(0.25, Math.min(3, value || 1));
+        this.save(); this.styles$.next();
+    }
     private _labelValueLength = 40;
     /** Longest value fragment shown in a node label; 0 shows full values. */
     get labelValueLength(): number { return this._labelValueLength; }
@@ -1012,6 +1019,7 @@ export class GraphStyleService implements OnDestroy {
                 background: this._background,
                 labelValueLength: this._labelValueLength,
                 labelValueScale: this._labelValueScale,
+                arrowHeadScale: this._arrowHeadScale,
             };
             localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
         } catch (e) {
@@ -1046,6 +1054,7 @@ export class GraphStyleService implements OnDestroy {
                 if (data.background) this._background = { ...DEFAULT_BACKGROUND, ...data.background };
                 this._labelValueLength = typeof data.labelValueLength === "number" ? data.labelValueLength : 40;
                 this._labelValueScale = typeof data.labelValueScale === "number" ? data.labelValueScale : 0.8;
+                this._arrowHeadScale = typeof data.arrowHeadScale === "number" ? data.arrowHeadScale : 1;
             }
         } catch (e) {
             console.warn("Failed to load graph styles from localStorage:", e);

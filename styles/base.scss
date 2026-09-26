@@ -842,3 +842,14 @@ app-drag-handle span {
 .pane-active [tabindex="-1"]:focus {
     outline: none;
 }
+
+// Side panel keyboard stops (Ctrl-n/p, Space activates). Component styles
+// often remove outlines, so this ring is deliberately global and !important.
+// :focus-visible keeps it off mouse clicks; .kbd-focus marks focus moved by
+// Ctrl-n/p, which Chrome does not count as keyboard use.
+ts-graph-side-panel :is(button, a[href], summary, input, mat-select, [role='switch'], [tabindex='0']):focus-visible,
+ts-graph-side-panel .kbd-focus:focus {
+    outline: 2px solid var(--theme-green) !important;
+    outline-offset: 1px;
+    border-radius: 3px;
+}

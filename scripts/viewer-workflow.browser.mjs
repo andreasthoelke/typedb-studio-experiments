@@ -97,7 +97,7 @@ try {
     // Both native menu entries and Material selects accept the control aliases.
     await query.locator('button').filter({has:query.locator('.fa-line-height')}).click();
     await query.keyboard.press('Control+n');await query.keyboard.press('Enter');
-    assert.equal(await query.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.layoutDensity),'default');
+    assert.equal(await query.evaluate(()=>window.ng.getComponent(document.querySelector('ts-graph-canvas')).visualiser.layoutDensity),'spacious');
     await query.getByRole('tab',{name:'Customise',exact:true}).click();
     await query.locator('mat-select').first().click();
     await query.keyboard.press('Control+n');await query.keyboard.press('Enter');
