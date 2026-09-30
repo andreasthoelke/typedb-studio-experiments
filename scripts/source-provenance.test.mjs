@@ -8,11 +8,52 @@ import { tmpdir } from 'node:os';
 import { once } from 'node:events';
 import { createViewerServer } from './viewer-server.mjs';
 import { sourceHeading } from '../src/framework/util/graph-source.ts';
-import { snapTitleBase, titledSnapLabel } from '../src/framework/util/graph-title.mjs';
+import { snapTitleBase, splitPlainHeading, titledSnapLabel } from '../src/framework/util/graph-title.mjs';
 const exec = promisify(execFile);
 test('source heading extracts title and contiguous comments', () => {
     assert.deepEqual(sourceHeading('# ─ 6f · Fill the slots\n# Keep the identity\n# when moving.\nmatch'), {title:'6f · Fill the slots',comment:'Keep the identity\nwhen moving.'});
     assert.equal(sourceHeading('define\n# ─ 9a ─ Override entity + attachment. ───────\nattribute pos-x value double;').title, '9a ─ Override entity + attachment.');
+});
+const plainCases = [
+    ['1. Four things we can point at in the painting. These ids are shared by both readings.', '1. Four things we can point at in the painting', 'These ids are shared by both readings.'],
+    ['2. The source is a retained public-domain image, not an authority.', '2. The source is a retained public-domain image', 'not an authority.'],
+    ['The artwork vocabulary: two figures, two motifs', 'The artwork vocabulary', 'two figures, two motifs'],
+    ['Artwork tour — two readings of one painting.', 'Artwork tour', 'two readings of one painting.'],
+    ['6a. Which mental states exist? Expect two.', '6a. Which mental states exist?', 'Expect two.'],
+    ['Shared foundation (reused unchanged)', 'Shared foundation (reused unchanged)', ''],
+    ['Version 1.2 is kept', 'Version 1.2 is kept', ''],
+];
+test('plain headings split the leading words from the comment', () => {
+    for (const [line, title, comment] of plainCases) assert.deepEqual(splitPlainHeading(line), {title, comment}, line);
+    assert.deepEqual(sourceHeading('# 4. An alternative interpretation. Accepted within its Take.\n# Second line.\nmatch\n  $x isa oak;'),
+        {title:'4. An alternative interpretation', comment:'Accepted within its Take.\nSecond line.'});
+    assert.deepEqual(sourceHeading('define\n# ═══\n# Shared foundation\nattribute origin value string;'), {title:'Shared foundation', comment:''});
+    assert.deepEqual(sourceHeading('match $x isa oak;'), {title:'', comment:''});
+});
+test('Neovim capture reads plain paragraph headers like the browser', {timeout:15000}, async t => {
+    const dir = await mkdtemp(join(tmpdir(),'studio-plain-')), script = join(dir,'capture.lua');
+    t.after(()=>rm(dir,{recursive:true,force:true}));
+    const module = join(process.cwd(),'contrib/nvim/typedb_graph.lua');
+    await writeFile(script, `local m = dofile(${JSON.stringify(module)})
+local out = {}
+for _, case in ipairs(vim.json.decode(${JSON.stringify(JSON.stringify(plainCases))})) do
+  local title, comment = m.split_heading(case[1]); table.insert(out, { title, comment })
+end
+vim.api.nvim_buf_set_name(0, ${JSON.stringify(join(dir,'tour.tql'))})
+vim.api.nvim_buf_set_lines(0, 0, -1, false, { '# Intro, not this one.', '', '# 3. One shared reading: the figures attend.', '# Keep going.', 'match', '  $x isa oak;', '' })
+vim.api.nvim_win_set_cursor(0, { 5, 0 })
+table.insert(out, m.source_location('# 3. One shared reading: the figures attend.\\n# Keep going.\\nmatch\\n  $x isa oak;'))
+table.insert(out, m.source_location('match\\n  $x isa oak;'))
+io.stdout:write(vim.json.encode(out))`);
+    const {stdout} = await exec('/opt/homebrew/bin/nvim',['--headless','-u','NONE','-n','-l',script]);
+    const out = JSON.parse(stdout);
+    assert.deepEqual(out.slice(0, plainCases.length), plainCases.map(([, title, comment]) => [title, comment]));
+    for (const location of out.slice(plainCases.length)) {
+        assert.equal(location.title, '3. One shared reading');
+        assert.equal(location.comment, 'the figures attend.\nKeep going.');
+        assert.equal(location.line, 3);
+        assert.equal(location.anchor, '# 3. One shared reading: the figures attend.');
+    }
 });
 test('titled snaps use four-character words, a bounded length and a single-digit index', () => {
     assert.equal(snapTitleBase('8d · Read the pattern bindings.'), '8d-read-the-patt-bind');

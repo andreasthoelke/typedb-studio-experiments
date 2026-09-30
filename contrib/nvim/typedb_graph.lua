@@ -188,6 +188,36 @@ function M.buffer_maps(buffer)
   end
 end
 
+-- Plain paragraph headers (`# 2. The source is kept, not trusted.`): leading
+-- words up to the first `,` `.` `;` `:` or dash are the title, the rest of the
+-- line is the comment. Mirrors `splitPlainHeading` in graph-title.mjs.
+function M.split_heading(line)
+  local text = vim.trim(line)
+  local prefix = text:match('^%d+%l?[.)]?%s+') or ''
+  local rest, best, stop, keep = text:sub(#prefix + 1), nil, nil, 0
+  local function consider(from, to, kept)
+    if from and (not best or from < best) then best, stop, keep = from, to, kept end
+  end
+  for _, mark in ipairs({ ',', '.', ';', ':', '?', '!' }) do
+    local at = 1
+    while true do
+      local from = rest:find(mark, at, true)
+      if not from then break end
+      local after = rest:sub(from + 1, from + 1)
+      if after == '' or after:match('%s') then
+        consider(from, from, (mark == '?' or mark == '!') and 1 or 0); break
+      end
+      at = from + 1
+    end
+  end
+  for _, dash in ipairs({ ' — ', ' – ' }) do
+    local from, to = rest:find(dash, 1, true)
+    consider(from, to, 0)
+  end
+  if not best then return text, '' end
+  return vim.trim(prefix .. rest:sub(1, best - 1 + keep)), vim.trim(rest:sub(stop + 1))
+end
+
 -- Capture before terminal jobs can change the current buffer. Match the sent
 -- text, preferring the occurrence nearest the caret when a snippet repeats.
 function M.source_location(query)
@@ -219,6 +249,20 @@ function M.source_location(query)
       local comment = lines[i]:match('^%s*#%s?(.*)')
       if not comment then break end
       table.insert(comments, comment)
+    end
+  else
+    -- No `# ─` header: the comment block touching the first code line.
+    local code = at
+    while code <= #lines and lines[code]:match('^%s*#') do code = code + 1 end
+    local top = code
+    while top > 1 and lines[top - 1]:match('^%s*#') do top = top - 1 end
+    while top < code and lines[top]:gsub('[#═─%s-]', '') == '' do top = top + 1 end
+    if top < code then
+      header = top
+      local first
+      title, first = M.split_heading(lines[top]:match('^%s*#+%s?(.*)'))
+      if first ~= '' then table.insert(comments, first) end
+      for i = top + 1, code - 1 do table.insert(comments, lines[i]:match('^%s*#+%s?(.*)')) end
     end
   end
   return { path = path, line = header, anchor = lines[header], title = title,

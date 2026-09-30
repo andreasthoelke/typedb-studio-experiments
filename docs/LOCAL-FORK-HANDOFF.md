@@ -847,6 +847,14 @@ the existing job. No Hammerspoon or Neovim restart was needed.
   the user's Neovim/Hammerspoon sessions to adopt it.
 - Local `NewBuf-LinkPaths.vim` handles TypeQL `# ─ ` headers before its older
   three-space heading parser. The same generator serves relative/absolute links.
+- Plain tour headers (2026-09-30, artwork tour): without a `# ─ ` header,
+  `M.source_location` and `sourceHeading` take the comment block touching the
+  paragraph's first code line; `split_heading` / `splitPlainHeading` (mirrored,
+  tested together in `source-provenance.test.mjs`, including headless Neovim)
+  cut the first line at `, . ; :` or a spaced dash into title + comment. The
+  anchor is that first comment line. `typedb.vim` adds buffer-local q/Q and
+  gs;/gs: on `g:Tdb_headingPttn` (`# ─ ` or `# 1. `/`# 6a. `), also added to
+  `g:Tdb_TopLevPattern`.
 - Explorer relation presence now consults the actual graph, not just expansion
   bookkeeping. Mark retains primary inspection and selection; Inspect uses the
   normal caret/history path. Hidden relations can be explicitly revealed.

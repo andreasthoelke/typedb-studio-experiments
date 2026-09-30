@@ -4,6 +4,19 @@ export function cleanSourceTitle(title) {
     return String(title ?? '').replace(/^[\s─━—-]+|[\s─━—-]+$/gu, '');
 }
 
+/** Plain paragraph headers (`# 2. The source is kept, not trusted.`): the
+ * leading words up to the first `,` `.` `;` `:` or dash are the title and the
+ * rest of the line is the comment. A numeric prefix such as `2.` or `6a.` stays
+ * in the title; `?` and `!` end the title and are kept. Mirrored in
+ * contrib/nvim/typedb_graph.lua (`split_heading`). */
+export function splitPlainHeading(line) {
+    const text = String(line ?? '').trim(), prefix = /^\d+[a-z]?[.)]?\s+/u.exec(text)?.[0] ?? '';
+    const match = /[,.;:](?=\s|$)|[?!](?=\s|$)|\s[—–]\s/u.exec(text.slice(prefix.length));
+    if (!match) return { title: text, comment: '' };
+    const end = prefix.length + match.index, keep = /[?!]/u.test(match[0]) ? 1 : 0;
+    return { title: text.slice(0, end + keep).trim(), comment: text.slice(end + match[0].length).trim() };
+}
+
 /** A short, filesystem-safe snap base for a titled query: words cut to four
  * characters, joined with `-`, and bounded to about 28 characters at a word
  * boundary. The server appends `-<index>`, starting at 0. */

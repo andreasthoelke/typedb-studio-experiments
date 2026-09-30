@@ -327,7 +327,7 @@ If no project is known, saving activates the Snaps tab with this setting open. M
 unwritable folders and other save errors are reported; files never silently
 fall back to Downloads.
 
-When the query has a `# ─ ` title, PNGs and snaps are named after it: each word
+When the query has a title (see Source provenance), PNGs and snaps are named after it: each word
 is cut to four characters, words are joined with `-`, the name stays under about
 28 characters, and the counter is a single digit starting at 0 — `# ─ 8d · Read
 the pattern bindings.` saves `8d-read-the-patt-bind-0.png`, then `-1`, and so on.
@@ -1426,7 +1426,19 @@ These actions change the view, not database contents.
 Neovim submissions capture the originating file, line and header text alongside
 the executed query. A header beginning `# ─ ` supplies the graph title (trailing
 `───` decoration is dropped), and contiguous following comment lines supply its
-explanation. Both appear top-left on one translucent plate over the canvas
+explanation.
+
+Tours without `# ─ ` headers use the comment lines directly above the
+paragraph's first code line (the paragraph's own comment block, not one
+separated from it by a blank line). Its first line's leading words, up to the
+first `,` `.` `;` `:` or ` — `, are the title; a number prefix such as `4.` or
+`6a.` stays in it and `?`/`!` are kept. The rest of that line and any further
+comment lines are the explanation. So `# 4. An alternative interpretation.
+Accepted within its Take…` is titled **4. An alternative interpretation**, and
+`# Read the two landscape interpretations. Expected: …` is titled **Read the two
+landscape interpretations**. Decoration-only lines (`# ═══`) are skipped.
+
+Title and explanation appear top-left on one translucent plate over the canvas
 (click it to open Source), and in exported PNGs. The Neovim button sits top-right
 beside Snap. Schema paragraphs keep their title in Query too: the helper ignores
 the `define` line the runner prepends when matching the header. The sixth
@@ -1441,6 +1453,15 @@ through Ctrl-w. If that Neovim session has ended, send the snippet again to
 refresh its source link. Snaps retain provenance without executing any source.
 Old snaps can still derive a title/comment from their saved query, but cannot
 invent an absent file location. Fetching/re-running edited source is deferred.
+
+In `.tql` buffers **q / Q** step to the next/previous heading: `# ─ ` headers
+and numbered plain ones (`# 1. `, `# 6a. `). Unnumbered paragraph comments are
+not stops. **gs;** lists the same headings for the file in Telescope, **gs:**
+for the working directory; the pattern is prefilled and editable. **Space
+Ctrl-n/p** (`<leader><c-n>`) also stops at them alongside `define` and the panel
+section headers; plain **Ctrl-n/p** still step paragraph by paragraph to each
+first binding. All of these share `g:Tdb_headingPttn` / `g:Tdb_headingRg` in
+`~/.config/nvim/plugin/ftype/typedb.vim` (outside this repo).
 
 The local code-link generator also recognises `# ─ ` headers, retaining the
 existing `‖/` search suffix and `ˍ` space encoding. It no longer produces an empty
