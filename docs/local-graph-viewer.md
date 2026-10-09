@@ -715,7 +715,7 @@ The default buffer-local prefix is **`\`**. Remote commands intentionally reach 
 | --- | --- |
 | `zz / zt / zb / zh / zl` | Centre / top / bottom / left / right caret placement |
 | `Ctrl-h / Ctrl-l` | Pan graph left / right (the graph moves with the key) |
-| `Ctrl-y / Ctrl-e` (also `Ctrl-k / Ctrl-j`) | Pan graph up / down (the graph moves with the key) |
+| `Ctrl-y / Ctrl-e` (also `Ctrl-k / Ctrl-j`) | Pan camera up / down |
 | `+` or `=` / `-` | Zoom in / out |
 | `Ctrl-o` | Previous caret visit |
 | `Enter` | Fit highlights |

@@ -722,9 +722,9 @@ export class GraphVisualiser {
         const { width, height } = this.sigma.getDimensions();
         if (!width || !height) return;
         const distance = Math.min(width, height) * 0.1;
-        // The graph moves in the key's direction, so the camera travels the opposite way.
+        // Horizontal keys move the graph with the key; the camera travels the opposite way.
         const dx = direction === "left" ? distance : direction === "right" ? -distance : 0;
-        const dy = direction === "up" ? distance : direction === "down" ? -distance : 0;
+        const dy = direction === "up" ? -distance : direction === "down" ? distance : 0;
         const centre = this.sigma.viewportToFramedGraph({ x: width / 2 + dx, y: height / 2 + dy });
         this.animateNavigationCamera({ ...this.sigma.getCamera().getState(), ...centre });
     }
